@@ -26,20 +26,16 @@ A good bug report must include:
 - exact reproduction steps (numbered)
 - frequency (`always`, `sometimes`, `once`)
 - environment details:
-  - OS + version (macOS 15.x / Windows 11 24H2 / etc.)
+  - OS + version (macOS 15.x)
   - look app version or commit SHA
-  - install method:
-    - macOS: Xcode run, zip install, Homebrew tap
-    - Windows: NSIS installer (`.exe`), or a local `make app-run` dev build
-    - Linux: `.deb`, AppImage, AUR, or a local `make app-run` dev build
-  - architecture (`arm64` / `x86_64` on macOS; `x64` / `ARM64` on Windows)
+  - install method: Xcode run, zip install, Homebrew tap
+  - architecture (`arm64` / `x86_64`)
 - logs or screenshots if available
 
 If crash related, include:
 
 - crash dialog text
-- macOS: stack trace or Xcode console output
-- Windows: contents of `%LOCALAPPDATA%\look\look-crash.log`, plus `Get-WinEvent -LogName Application -MaxEvents 10` filtered to `lookapp`
+- stack trace or Xcode console output
 - whether it happens on clean launch
 
 ## Feature requests
@@ -59,9 +55,9 @@ Quick Actions are the interactive toggles/buttons in the launcher's right panel 
 
 ## Development setup
 
-[DEVELOPMENT.md](DEVELOPMENT.md) has the full per-platform prerequisites and build walkthrough. In short: Rust stable plus GNU Make everywhere, with Xcode on macOS, Visual Studio 2022 Build Tools (Desktop C++ workload) for the Tauri app on Windows, and the WebKitGTK/GTK system libraries on Linux.
+[DEVELOPMENT.md](DEVELOPMENT.md) has the full prerequisites and build walkthrough. In short: Rust stable plus GNU Make plus Xcode on macOS.
 
-Before opening a PR, run the cross-platform checks:
+Before opening a PR, run the checks:
 
 ```bash
 cargo test --workspace --manifest-path core/Cargo.toml
@@ -121,7 +117,6 @@ CI runs for pushes to `main` and for pull requests targeting `main`.
 - Rust jobs (`lint`, `test`, `cargo-audit`, release `build`) run only when Rust-related paths change
 - secrets scanning (`gitleaks`) always runs
 - macOS app build runs only for PRs to `main` when Swift files change
-- linows (Tauri) build runs when `apps/linows/**` or `core/**` changes
 - release-style Rust build artifacts run only on push to `main`
 
 ## Pull request checklist

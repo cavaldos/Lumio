@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel any prior in-progress run for the same branch / PR when a new
-# push comes in. Stops the slow linows build from keeping a stale
-# commit's lane busy after you've already force-pushed an update.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -29,9 +26,6 @@ jobs:
     outputs:
       swift: ${{ steps.filter.outputs.swift }}
       rust: ${{ steps.filter.outputs.rust }}
-      linows: ${{ steps.filter.outputs.linows }}
-      linows_linux: ${{ steps.filter.outputs.linows_linux }}
-      linows_windows: ${{ steps.filter.outputs.linows_windows }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,25 +42,6 @@ jobs:
             rust:
               - 'core/**'
               - 'bridge/ffi/**'
-              - '.github/workflows/ci.yml'
-            linows:
-              - 'apps/linows/**'
-              - 'core/**'
-              - '.github/workflows/ci.yml'
-            # NOTE: dorny/paths-filter matches each changed file against the rule
-            # list with OR semantics, and a leading "!" is a picomatch negation
-            # that matches every file *outside* that path - so an excluded-subdir
-            # line like "!.../platform/windows/**" matched virtually any change
-            # (macOS code, docs, README), firing these builds on unrelated PRs.
-            # There's no AND across rules to express "linows changes except subdir
-            # X", so we just trigger on any apps/linows or core change.
-            linows_linux:
-              - 'apps/linows/**'
-              - 'core/**'
-              - '.github/workflows/ci.yml'
-            linows_windows:
-              - 'apps/linows/**'
-              - 'core/**'
               - '.github/workflows/ci.yml'
 
   lint:
@@ -103,7 +78,7 @@ jobs:
     name: security
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.linows == 'true'
+    if: needs.changes.outputs.rust == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -125,18 +100,6 @@ jobs:
 
       - name: Audit dependencies (ffi crate)
         run: cargo audit --file bridge/ffi/Cargo.lock
-
-      - name: Audit dependencies (linows/tauri)
-        # RUSTSEC-2026-0194/-0195 (quick-xml <0.41) still enter via
-        # wayland-scanner, a build-time proc-macro that parses trusted local
-        # protocol XML (no runtime attack surface). wayland-rs has no release
-        # or master commit on quick-xml >=0.41 yet. The runtime-exposed path
-        # (tauri -> plist) is fixed by bumping plist to 1.10 (quick-xml 0.41)
-        # in the lockfile.
-        # Drop these ignores once wayland-rs moves to quick-xml >=0.41.
-        run: >
-          cargo audit --file apps/linows/src-tauri/Cargo.lock
-          --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
   secrets-scan:
     name: secrets-scan
@@ -178,14 +141,10 @@ jobs:
         run: cargo test --manifest-path bridge/ffi/Cargo.toml
 
   rust-platform-check:
-    name: rust-platform-check (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: rust-platform-check (macos)
+    runs-on: macos-latest
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -261,103 +220,3 @@ jobs:
 
       - name: Build Look app (Debug)
         run: xcodebuild -project "apps/macos/LauncherApp/look-app.xcodeproj" -scheme "Look" -configuration Debug -destination "platform=macOS" build
-
-  linows-js-test:
-    name: Test linows (JS)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.linows == 'true'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Run tests
-        run: node --test apps/linows/tests/*.test.js
-
-  linows-build:
-    name: Build linows (Tauri, Linux)
-    runs-on: ubuntu-22.04
-    needs: changes
-    if: needs.changes.outputs.linows_linux == 'true'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
-            libglib2.0-dev libcairo2-dev libpango1.0-dev \
-            libgdk-pixbuf-2.0-dev libharfbuzz-dev libdbus-1-dev \
-            libasound2-dev librsvg2-dev libssl-dev \
-            libappindicator3-dev pkg-config
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            core
-            apps/linows/src-tauri
-
-      - name: Check formatting
-        run: cargo fmt --all --manifest-path apps/linows/src-tauri/Cargo.toml -- --check
-
-      - name: Run clippy
-        run: cargo clippy --locked --manifest-path apps/linows/src-tauri/Cargo.toml -- -D warnings
-
-      - name: Build (debug)
-        run: cargo build --locked --manifest-path apps/linows/src-tauri/Cargo.toml
-
-      - name: Run tests
-        run: cargo test --locked --manifest-path apps/linows/src-tauri/Cargo.toml
-
-  linows-build-windows:
-    name: Build linows (Tauri, Windows)
-    runs-on: windows-latest
-    needs: changes
-    if: needs.changes.outputs.linows_windows == 'true'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      # On windows-2025-vs2026, the rust-cache post-step's `tar` call hangs/
-      # crashes when archiving the full `target/` dir (no error surfaced, job
-      # ends FAILURE even though the build itself passes). Skipping target
-      # caching keeps registry/git caching - the win that matters for cargo
-      # fetch - while sidestepping the tar issue. Target rebuild on Windows
-      # in this job is ~2 min, acceptable.
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/linows/src-tauri
-          cache-targets: false
-
-      - name: Check formatting
-        run: cargo fmt --all --manifest-path apps/linows/src-tauri/Cargo.toml -- --check
-
-      - name: Run clippy
-        run: cargo clippy --locked --manifest-path apps/linows/src-tauri/Cargo.toml -- -D warnings
-
-      - name: Build (debug)
-        run: cargo build --locked --manifest-path apps/linows/src-tauri/Cargo.toml
-
-      - name: Run tests
-        run: cargo test --locked --manifest-path apps/linows/src-tauri/Cargo.toml

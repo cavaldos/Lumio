@@ -7,13 +7,9 @@ Guide for building Look locally and contributing to the project.
 ```text
 .
 ├── apps/
-│   ├── macos/
-│   │   └── LauncherApp/          # Swift macOS app (Xcode project)
-│   └── linows/                   # Tauri v2 app, Linux + Windows
-│       ├── src-tauri/            #   Rust backend (commands, config, platform, etc.)
-│       ├── src/                  #   Frontend (vanilla HTML/CSS/JS, ES modules)
-│       └── flake.nix             #   NixOS dev shell
-├── core/                         # Shared Rust, consumed by every shell
+│   └── macos/
+│       └── LauncherApp/          # Swift macOS app (Xcode project)
+├── core/                         # Shared Rust, consumed by the app shell
 │   ├── ai/                       # Routing, planning, lexicon
 │   ├── answers/                  # Platform-agnostic "web answer" features
 │   ├── calc/                     # Calculator expression evaluation
@@ -29,7 +25,7 @@ Guide for building Look locally and contributing to the project.
 │   ├── todo/                     # Todo backend
 │   └── tools/                    # Preferred tools: catalog + command composition
 ├── bridge/
-│   └── ffi/                      # Rust FFI bridge (consumed by macOS/Windows native apps)
+│   └── ffi/                      # Rust FFI bridge (consumed by the macOS app)
 ├── tools/
 │   └── perf/                     # Watcher / refresh benchmarks (separate crate, never bundled)
 ├── docs/                         # User guide, architecture, design decisions
@@ -39,23 +35,10 @@ Guide for building Look locally and contributing to the project.
 
 ## Prerequisites
 
-Common:
-
 - Rust stable toolchain (for the core engine and FFI bridge)
-- GNU Make (top-level `Makefile` dispatches to `scripts/Makefile.mac` or `scripts/Makefile.win` based on host OS)
-
-macOS:
-
+- GNU Make
 - macOS 15.0+
 - Xcode (for the app shell)
-
-Windows / Linux (linows, the Tauri app):
-
-- Rust stable + `cargo-tauri` CLI (`cargo install tauri-cli --version "^2" --locked`)
-- Windows: Visual Studio 2022 Build Tools (Desktop C++ workload); WebView2 ships with Windows 11
-- Linux: distro WebKitGTK/GTK system libraries (or `nix develop` on NixOS)
-
-The per-distro package lists, the Windows `vcvars` setup and `LNK1104` notes, and all packaging/installer details are canonical in [apps/linows/BUILDING.md](apps/linows/BUILDING.md).
 
 ## Building and running
 
@@ -75,34 +58,26 @@ cargo check
 cargo test
 ```
 
-Linows (Tauri) dev run: `cd apps/linows && cargo tauri dev` (release: `cargo tauri build`; on NixOS prefix with `nix develop -c`). Per-distro and Windows `vcvars` specifics are in [apps/linows/BUILDING.md](apps/linows/BUILDING.md).
-
-Run the local dev app, macOS/Windows (from repo root):
+Run the local dev app (from repo root):
 
 ```bash
 make app-run
 ```
 
-`make app-run` behavior (macOS):
+`make app-run` behavior:
 
 - builds a local Debug app bundle with Xcode
 - stops any running `Look` process (including a Homebrew-installed instance)
 - launches with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`
 - shows a red `TEST APP` badge so the dev run is visually distinct
 
-`make app-run` behavior (Windows):
-
-- stops any running `lookapp` process
-- runs `cargo tauri dev` for the linows app (`apps/linows/`) under the VS 2022 `vcvars` environment, with hot reload
-- `make app-run-release` builds the release bundle instead (`cargo tauri build`)
-
-Install a side-by-side test build (`Look Dev`) without replacing the normal install (macOS only):
+Install a side-by-side test build (`Look Dev`) without replacing the normal install:
 
 ```bash
 make app-run-dev
 ```
 
-`make app-run-dev` (macOS) builds a local Debug bundle, installs `/Applications/Look Dev.app` with bundle id `noah-code.Look.Dev`, leaves the Homebrew `/Applications/Look.app` untouched, then launches `Look Dev` with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`. On Windows there is no separate dev install; use `make app-run` (hot reload) or `make app-run-release`.
+`make app-run-dev` builds a local Debug bundle, installs `/Applications/Look Dev.app` with bundle id `noah-code.Look.Dev`, leaves the Homebrew `/Applications/Look.app` untouched, then launches `Look Dev` with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`.
 
 `lookapp` is a symlink to the **installed** app (`scripts/install-look.sh`), so it always runs the release binary no matter what you just built. `make app-install-dev` installs `lookdev` beside it as the same handle for the dev build:
 
@@ -114,27 +89,13 @@ lookdev --list-modes
 
 Install it on its own with `make dev-cli`. It reads `LOOK_DEV_APP` and `LOOK_DEV_CONFIG` if you keep them elsewhere.
 
-On Linux there is no `lookdev`. The debug binary is the handle, and it already points at the dev config and database:
-
-```bash
-cd apps/linows
-nix develop -c cargo build --manifest-path src-tauri/Cargo.toml   # NixOS; elsewhere plain cargo build
-./src-tauri/target/debug/lookapp --list-modes    # prints and exits, no window
-./src-tauri/target/debug/lookapp clipboard       # cold start
-./src-tauri/target/debug/lookapp files report    # run again while it is up: the warm path
-```
-
-Both routes end at the same parked query (`take_launch_query`), but they reach it differently, so a mode is worth trying from cold and from a running instance. Under `cargo tauri dev` the arguments need two separators: `cargo tauri dev -- -- clipboard`.
-
-On Linux and Windows, a debug build separates its config and database (`setup_dev_env`) but shares `identifier` with the release build, and the single-instance plugin keys its lock on that. Debug builds therefore register under `com.look.desktop.dev` so a running release does not swallow a dev build's arguments (`lookapp <mode>`, see the README). That override is Linux-only: Windows derives its mutex from the identifier with no way to change it, so quit the installed app before testing a dev build there.
-
 Override the macOS dev config path:
 
 ```bash
 make app-run-dev DEV_CONFIG_PATH="$HOME/.look.qa.config"
 ```
 
-`make help` lists every target available on the current host (macOS or Windows).
+`make help` lists every target.
 
 ## Benchmarks
 
@@ -179,9 +140,6 @@ Signing/notarization walkthrough: [docs/apple-developer-release-guide.md](docs/a
   ```bash
   cargo test --workspace --manifest-path core/Cargo.toml
   cargo test --manifest-path bridge/ffi/Cargo.toml
-  # if touching linows:
-  cargo clippy --manifest-path apps/linows/src-tauri/Cargo.toml
-  cargo fmt --all --manifest-path apps/linows/src-tauri/Cargo.toml -- --check
   ```
 - update docs when user-visible behavior changes
 - see [CONTRIBUTING.md](CONTRIBUTING.md) and the issue templates under [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/)
@@ -192,4 +150,3 @@ Signing/notarization walkthrough: [docs/apple-developer-release-guide.md](docs/a
 - [docs/backend-guide.md](docs/backend-guide.md) - backend edit targets and verification
 - [docs/user-guide.md](docs/user-guide.md) - user guide
 - [docs/features.md](docs/features.md) - feature status
-- [apps/linows/BUILDING.md](apps/linows/BUILDING.md) - linows build, packaging, and install methods
