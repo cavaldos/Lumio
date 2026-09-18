@@ -7,7 +7,12 @@ struct WindowConfigurator: NSViewRepresentable {
     @ObservedObject var themeStore: ThemeStore
 
     private var cornerRadius: CGFloat {
-        themeStore.panelRadius
+        // TEMP test: WindowConfigurator vẽ lại mask mỗi lần update nên đọc
+        // override do applyTestWindowSize để lại — thu gọn = viên thuốc.
+        if LauncherView.testExpandOnly, let override = LauncherView.testCornerRadiusOverride {
+            return override
+        }
+        return themeStore.panelRadius
     }
 
     func makeNSView(context: Context) -> NSView {

@@ -49,4 +49,4 @@ echo "Release artifact ready:"
 echo "  File: $ZIP_PATH"
 echo "  SHA256: $SHA256"
 echo
-echo "Use this URL+SHA256 in your Homebrew cask."
+echo "Use this zip for the GitHub Release."

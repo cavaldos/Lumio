@@ -226,6 +226,9 @@ extension LauncherView {
             "position: visible=\(NSStringFromRect(screen.visibleFrame), privacy: .public) frame=\(NSStringFromRect(frame), privacy: .public) topGap=\(topGap, privacy: .public)"
         )
         window.setFrame(frame, display: true)
+        // TEMP single-component: show mới mà query trống thì thu window về
+        // cỡ componentA ngay (không animation), gõ chữ mới nở có animation.
+        applyTestWindowSize(collapsed: testWantsCollapsedWindow, animated: false)
     }
 
     func hideLauncherWindow(restorePreviousApp: Bool = true) {

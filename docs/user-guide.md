@@ -23,11 +23,7 @@
 
 ## First run
 
-Install with Homebrew (see [README](../README.md#install) for alternatives):
-
-```bash
-brew install --cask kunkka19xx/tap/look
-```
+Install from the [latest GitHub Release](../README.md#install) (download the zip, move `Look.app` to `/Applications`):
 
 On first launch, Look will index your apps, files, and folders in the background. You can start using it immediately - results appear as indexing completes.
 
@@ -471,15 +467,6 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 - `Settings > Advanced > Create Fresh Config` rewrites `~/.look/config` from the latest defaults (with a confirmation prompt)
 
 ## Uninstall
-
-Homebrew:
-
-```bash
-brew uninstall --cask look
-brew untap kunkka19xx/tap   # optional
-```
-
-Manual install:
 
 ```bash
 rm -rf "/Applications/Look.app"

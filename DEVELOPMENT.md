@@ -62,7 +62,7 @@ make app-run
 `make app-run` behavior:
 
 - builds a local Debug app bundle with Xcode
-- stops any running `Look` process (including a Homebrew-installed instance)
+- stops any running `Look` process (including a release-installed instance)
 - launches with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`
 - shows a red `TEST APP` badge so the dev run is visually distinct
 
@@ -72,7 +72,7 @@ Install a side-by-side test build (`Look Dev`) without replacing the normal inst
 make app-run-dev
 ```
 
-`make app-run-dev` builds a local Debug bundle, installs `/Applications/Look Dev.app` with bundle id `noah-code.Look.Dev`, leaves the Homebrew `/Applications/Look.app` untouched, then launches `Look Dev` with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`.
+`make app-run-dev` builds a local Debug bundle, installs `/Applications/Look Dev.app` with bundle id `noah-code.Look.Dev`, leaves the release `/Applications/Look.app` untouched, then launches `Look Dev` with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`.
 
 `lookapp` is a symlink to the **installed** app (`scripts/install-look.sh`), so it always runs the release binary no matter what you just built. `make app-install-dev` installs `lookdev` beside it as the same handle for the dev build:
 
@@ -112,18 +112,28 @@ Benchmark snapshots land under [docs/bench-notes/](docs/bench-notes/). Add a new
 
 ## Releasing (maintainers)
 
-Build release artifacts and Homebrew cask:
+Every release is 1 command — version comes from the tag name, CI builds
+`Look-<version>-macOS.zip` on the GitHub Release:
 
 ```bash
-./scripts/build-release.sh 1.0.0
-./scripts/generate-homebrew-cask.sh 1.0.0 <sha256> kunkka19xx/look
+./scripts/release.sh v1.0.0
 ```
 
-Signing and notarization:
+Tag rules: format `vX.Y.Z`, never re-tag an old number. No need to touch the
+version in Xcode — CI injects `MARKETING_VERSION` from the tag name.
+`release.sh` refuses a dirty tree — commit first.
+
+Local preflight (same checks `release.sh` runs):
+
+```bash
+./scripts/ci-local.sh v1.0.0   # cargo tests + Release xcodebuild
+./scripts/build-release.sh 1.0.0   # local zip into dist/ (no publish)
+```
+
+Signing and notarization (optional, for Gatekeeper-clean public builds):
 
 - a paid Apple Developer membership is required for Developer ID signing and notarization
-- strict release runs require signing and notary secrets
-- non-strict test runs can still build artifacts when secrets are missing
+- ad-hoc CI builds install fine via the curl installer (quarantine is cleared)
 
 Signing/notarization walkthrough: [docs/apple-developer-release-guide.md](docs/apple-developer-release-guide.md).
 

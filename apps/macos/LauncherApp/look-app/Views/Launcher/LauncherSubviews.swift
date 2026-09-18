@@ -45,7 +45,10 @@ struct SearchInputBar: View {
                 text: $text,
                 // Empty: the placeholder is drawn as the overlay below instead,
                 // since an NSTextField's own placeholder cannot be animated.
-                placeholder: "",
+                // TEMP test: dùng placeholder native của field để metrics khớp
+                // 100% với chữ thật — overlay SwiftUI Text vẽ cùng font nhưng
+                // baseline khác AppKit vài px, nhìn như padding nhảy khi gõ.
+                placeholder: LauncherView.testExpandOnly ? placeholderText : "",
                 isFocused: isQueryFocused,
                 themeStore: themeStore,
                 // Spotlight-sized query text (~21pt at the default theme size).
@@ -58,7 +61,7 @@ struct SearchInputBar: View {
                 .accessibilityLabel(placeholderText)
                 .frame(maxWidth: .infinity)
                 .overlay(alignment: .leading) {
-                    if text.isEmpty {
+                    if text.isEmpty && !LauncherView.testExpandOnly {
                         Text(placeholderText)
                             .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 6)))
                             .foregroundStyle(themeStore.placeholderTextColor())

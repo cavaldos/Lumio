@@ -6,10 +6,10 @@ import OSLog
 /// Checks GitHub Releases for a newer version of Look and, if one exists,
 /// publishes it so the UI can show a non-intrusive "update available" notice.
 ///
-/// This is notify-only: Look is distributed via Homebrew, so we never download
-/// or replace the bundle ourselves. The notice links to the release page and
-/// the user runs `brew upgrade --cask kunkka19xx/tap/look` (or downloads the
-/// asset). Homebrew stays the source of truth for the installed version.
+/// This is notify-only: Look is distributed via GitHub Releases, so we never
+/// download or replace the bundle ourselves. The notice links to the release
+/// page and the user downloads the zip (or re-runs the curl installer).
+/// GitHub Releases stays the source of truth for the installed version.
 final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
 
@@ -81,11 +81,13 @@ final class UpdateChecker: ObservableObject {
         statusMessage = nil
     }
 
-    /// Launch the Homebrew upgrade and hide the notice. Convenience for the
+    /// Open the GitHub Release page and hide the notice. Convenience for the
     /// "Update" buttons so they don't have to coordinate the two calls.
     @MainActor
     func startUpdate() {
-        UpdateChecker.runHomebrewUpgrade()
+        if let url = availableUpdate?.releaseURL {
+            NSWorkspace.shared.open(url)
+        }
         hideNotice()
     }
 
@@ -154,56 +156,10 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
-    /// The Homebrew command users run to upgrade Look.
-    static let homebrewUpgradeCommand = "brew upgrade --cask kunkka19xx/tap/look"
-
-    /// Bundle id of the release app the Homebrew cask installs. The dev build
-    /// uses the ".Dev" suffix, but brew always upgrades the release app - so the
-    /// relaunch targets this id, not the running bundle.
+    /// Bundle id of the release app. The dev build
+    /// uses the ".Dev" suffix, but the GitHub Release zip always carries
+    /// the release app - so a relaunch targets this id, not the running bundle.
     static let productionBundleID = "noah-code.Look"
-
-    /// Launch Terminal running the Homebrew upgrade. The app isn't sandboxed, so
-    /// we drop a temporary executable `.command` file and open it - Terminal runs
-    /// it without needing Automation (Apple Events) permission. The user sees the
-    /// output and can authenticate if Homebrew asks. Returns false if we couldn't
-    /// stage the script. Note: brew may quit/replace Look while upgrading, which
-    /// is expected for a cask.
-    @discardableResult
-    static func runHomebrewUpgrade() -> Bool {
-        // After a cask upgrade the new bundle is on disk, but the running
-        // process is still the old binary - so on success we quit and relaunch
-        // Look for the user instead of asking them to restart it manually.
-        let script = """
-        #!/bin/bash
-        export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-        echo "Updating Look via Homebrew…"
-        echo ""
-        \(homebrewUpgradeCommand)
-        status=$?
-        echo ""
-        if [ $status -eq 0 ]; then
-          echo "Update complete - relaunching Look…"
-          osascript -e 'tell application id "\(productionBundleID)" to quit' >/dev/null 2>&1
-          sleep 1
-          open -b "\(productionBundleID)" 2>/dev/null || open "/Applications/Look.app"
-          echo "Look has been relaunched. You can close this window."
-        else
-          echo "Update failed (exit $status). See the output above, or run:"
-          echo "  \(homebrewUpgradeCommand)"
-        fi
-        """
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("look-update.command")
-        do {
-            try script.write(to: url, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755], ofItemAtPath: url.path)
-            NSWorkspace.shared.open(url)
-            return true
-        } catch {
-            return false
-        }
-    }
 
     /// Strip a leading "v" and surrounding whitespace: "v1.2.0" -> "1.2.0".
     static func normalizedVersion(_ raw: String) -> String {

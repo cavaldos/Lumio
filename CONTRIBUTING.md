@@ -28,7 +28,7 @@ A good bug report must include:
 - environment details:
   - OS + version (macOS 15.x)
   - look app version or commit SHA
-  - install method: Xcode run, zip install, Homebrew tap
+  - install method: Xcode run, zip install
   - architecture (`arm64` / `x86_64`)
 - logs or screenshots if available
 
@@ -64,7 +64,7 @@ cargo test --manifest-path bridge/ffi/Cargo.toml
 
 - `main` is the only long-lived branch; every PR targets it
 - `main` must stay releasable at all times, since there is no staging branch behind it
-- releases are cut by dispatching the release workflows with an explicit version, so nothing needs to be frozen on a branch
+- releases are cut by pushing a `vX.Y.Z` tag (`./scripts/release.sh vX.Y.Z`), so nothing needs to be frozen on a branch
 
 Suggested local flow:
 

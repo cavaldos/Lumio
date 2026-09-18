@@ -18,15 +18,7 @@ if [[ ! -f "$ZIP_PATH" ]]; then
   exit 1
 fi
 
-SHA256="$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')"
-MANIFEST_PATH="$ROOT_DIR/dist/Look-${VERSION}-manifest.txt"
-
-cat > "$MANIFEST_PATH" <<EOF
-version=${VERSION}
-artifact=$(basename "$ZIP_PATH")
-sha256=${SHA256}
-EOF
-
+shasum -a 256 "$ZIP_PATH"
 echo
-echo "Release manifest written: $MANIFEST_PATH"
-echo "Next: ./scripts/generate-homebrew-cask.sh ${VERSION} ${SHA256} kunkka19xx/look"
+echo "Release artifact ready: $ZIP_PATH"
+echo "Publish it to the GitHub Release (CI does this automatically on tag push)."

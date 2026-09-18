@@ -35,29 +35,25 @@ Results land as fast as you can type. A Rust core under a native SwiftUI app, ri
 
 ### macOS
 
-```bash
-brew install --cask kunkka19xx/tap/look
-```
+Download `Look-<version>-macOS.zip` from the [latest release](https://github.com/kunkka19xx/look/releases/latest), unzip, and move `Look.app` to `/Applications`.
 
-Then bind `Cmd+Space` to Look (disable Spotlight's shortcut in `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`). Release builds are signed and notarized - no Gatekeeper bypass needed.
-
-<details>
-<summary>Other install options (curl, pin version, update/uninstall)</summary>
-
-**macOS - Homebrew update / uninstall:**
-
-```bash
-# update
-brew upgrade --cask kunkka19xx/tap/look
-
-# uninstall
-brew uninstall --cask look
-```
-
-**macOS - curl installer:**
+Or via curl:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kunkka19xx/look/main/scripts/install-look.sh | bash
+```
+
+Then bind `Cmd+Space` to Look (disable Spotlight's shortcut in `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`).
+
+<details>
+<summary>Other install options (pin version, update/uninstall)</summary>
+
+Update: download the newer zip from the [latest release](https://github.com/kunkka19xx/look/releases/latest) and replace `Look.app`, or re-run the curl installer.
+
+Uninstall:
+
+```bash
+rm -rf "/Applications/Look.app"
 ```
 
 Pin a specific version or repo fork:

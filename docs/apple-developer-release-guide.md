@@ -6,7 +6,7 @@ Use this guide after joining Apple Developer to ship signed + notarized macOS re
 
 - remove first-run Gatekeeper workaround (`Open Anyway`)
 - ship Developer ID signed + notarized release zip
-- keep Homebrew install flow clean
+- keep the GitHub Release install flow clean
 
 ## 1) Create Developer ID certificate
 
@@ -122,47 +122,32 @@ Quick notes:
 - keep all values in GitHub **Secrets** (not plain env vars in workflow YAML)
 - if one value is wrong, the related step fails clearly (`codesign` for signing vars, `notarytool` for notary vars)
 
-## 5) Run a test release workflow
+## 5) Run a test release
 
-1. Open GitHub Actions -> `Release macOS App`.
-2. Run `workflow_dispatch` with a test version.
-   - include `strict` in the version text (for example `1.0.0-strict`) to require signing + notarization
-   - omit `strict` for best-effort test runs that can continue if Apple notarization queue is delayed
-3. Confirm logs show:
-   - keychain setup success
-   - `codesign --verify` success
-   - notarization accepted
-   - stapling success
+1. Commit your code, then create + push a test tag — CI (`.github/workflows/release.yml`) builds and attaches the zip automatically:
+   ```bash
+   ./scripts/release.sh v1.0.0
+   ```
+2. Confirm the GitHub Release shows `Look-1.0.0-macOS.zip`.
 
-Workflow structure:
-
-- entrypoint: `.github/workflows/release-macos.yml`
-- implementation: `.github/workflows/reusable-release-macos.yml`
-- release workflow triggers only on manual dispatch or `v*` tags (not PR)
+Note: CI signs ad-hoc only. Developer ID signing + notarization below is a
+manual post-step on your Mac until/unless it is wired back into CI.
 
 ## 6) Create production release
 
 Tag and push:
 
 ```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
+./scripts/release.sh vX.Y.Z
 ```
 
-Strict release option:
+The workflow publishes `Look-X.Y.Z-macOS.zip` to the GitHub Release with
+auto-generated notes.
 
-- use tag text that includes `strict` (for example `v1.2.3-strict`) to enforce signing + notarization prerequisites and fail if notarization does not complete
+## 7) (Optional) Sign + notarize the zip after CI
 
-Workflow publishes:
-
-- `Look-X.Y.Z-macOS.zip`
-- `Look-X.Y.Z-manifest.txt`
-
-## 7) Update Homebrew cask
-
-1. Copy SHA256 from manifest.
-2. Update `look` cask in tap repo.
-3. Publish tap update.
+1. Download the CI zip, sign + notarize locally following sections 1-4.
+2. Re-attach the signed zip to the same GitHub Release.
 
 ## 8) Verify on clean machine
 
@@ -196,7 +181,7 @@ Expected: accepted/signed/notarized app launches without bypass flow.
 
 ## Scope reminder
 
-This guide is for direct distribution (GitHub Releases/Homebrew).
+This guide is for direct distribution (GitHub Releases).
 
 - current path: `Developer ID Application` + notarization
 - Mac App Store later uses different cert/profile flow (Mac App Distribution + App Store Connect)

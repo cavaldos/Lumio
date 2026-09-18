@@ -1,0 +1,59 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    # Liquid Glass is gated on the link SDK, not the run-time OS: CI must
+    # build with the Xcode 26+ SDK like local builds do.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26 SDK
+        run: |
+          ls -d /Applications/Xcode*.app
+          PINNED="/Applications/Xcode_26.3.app"
+          if [ -d "$PINNED" ]; then
+            XCODE="$PINNED"
+          else
+            XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          fi
+          if [ -z "${XCODE:-}" ]; then
+            echo "No Xcode 26+ found on runner"
+            exit 1
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          echo "macOS SDK: $(xcrun --show-sdk-version --sdk macosx)"
+      - name: Derive version from tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag '$TAG' must look like vX.Y.Z (e.g. v1.0.0)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Building version $VERSION"
+      - name: Build app
+        run: |
+          ./scripts/release-macos-app.sh "$VERSION"
+          echo "APP_PATH=.build/release-macos/DerivedData/Build/Products/Release/Look.app" >> $GITHUB_ENV
+          echo "ZIP_PATH=dist/Look-${VERSION}-macOS.zip" >> $GITHUB_ENV
+      - name: Zip and publish to GitHub Release
+        run: |
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+          rm -f "$ZIP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+          shasum -a 256 "$ZIP_PATH"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Look-*-macOS.zip
+          generate_release_notes: true
+# Release flow:
+#   ./scripts/release.sh vX.Y.Z   (lints/builds first, then tags + pushes here)
+# ponytail: ad-hoc signing is for internal testing only, public releases need Developer ID + notarization (see docs/apple-developer-release-guide.md)

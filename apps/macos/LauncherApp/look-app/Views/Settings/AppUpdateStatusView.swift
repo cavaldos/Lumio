@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Shared version + update-status UI, used by both Settings → About and the
 /// Help screen header so the two stay in sync (single source of the buttons,
-/// states, and Homebrew hint).
+/// states, and release hint).
 struct AppUpdateStatusView: View {
     let themeStore: ThemeStore
     @ObservedObject private var updateChecker = UpdateChecker.shared
@@ -40,14 +40,14 @@ struct AppUpdateStatusView: View {
                         .foregroundStyle(themeStore.fontColor())
 
                     pill("Update") { updateChecker.startUpdate() }
-                        .help("Runs '\(UpdateChecker.homebrewUpgradeCommand)' in Terminal")
+                        .help("Opens the GitHub Release page")
                     pill("Notes") { NSWorkspace.shared.open(update.releaseURL) }
                     pill("Dismiss") { updateChecker.dismissCurrent() }
 
                     Spacer(minLength: 0)
                 }
 
-                Text("Update with: \(UpdateChecker.homebrewUpgradeCommand)")
+                Text("Download the zip from the GitHub Release and replace Look.app")
                     .font(themeStore.uiFont(size: fontSize - 2, weight: .regular))
                     .foregroundStyle(themeStore.mutedTextColor())
                     .textSelection(.enabled)

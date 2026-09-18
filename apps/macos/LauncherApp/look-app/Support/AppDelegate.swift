@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         makeLauncherWindow()
 
         // Notify-only update check against GitHub Releases (throttled to once
-        // per 12h). Look ships via Homebrew, so this never self-installs - it
+        // per 12h). Look ships via GitHub Releases, so this never self-installs - it
         // just surfaces a notice linking to the release page.
         UpdateChecker.shared.checkForUpdates()
     }
@@ -54,8 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeLauncherWindow() {
         let baseSize = WindowAutoScale.baseSize()
         let (minW, minH) = (baseSize.width, baseSize.height)
+        // TEMP single-component: nới min để window thu được về 600×100.
+        let testMin = LauncherView.testCollapsedWindowSize
         let content = ContentView()
-            .frame(minWidth: minW, minHeight: minH)
+            .frame(
+                minWidth: LauncherView.testExpandOnly ? testMin.width : minW,
+                minHeight: LauncherView.testExpandOnly ? testMin.height : minH
+            )
             .background(WindowConfigurator(themeStore: .shared))
             .environmentObject(AppUIState.shared)
             .environmentObject(ThemeStore.shared)

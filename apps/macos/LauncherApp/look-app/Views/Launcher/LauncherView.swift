@@ -103,6 +103,29 @@ struct LauncherView: View {
     static let restingBleedHorizontal: CGFloat = 14
     static let restingBleedTop: CGFloat = 6
 
+    /// TEMP test: tô màu background để phân biệt 2 trạng thái.
+    /// Ảnh 1 (bar lúc chưa gõ) = ĐỎ, ảnh 2 (panel lúc có result) = XANH.
+    /// Xóa flag này là về lại bình thường.
+    static let testTintBackgrounds = false
+    /// TEMP test: nền đỏ đặc, bỏ blur kính — blur recompute mỗi frame
+    /// khi resize window là nguồn khựng chính. Đúng spec componentA nền đỏ.
+    static let testSolidBackground = false
+    /// TEMP test: override bán kính bo góc của window (WindowConfigurator
+    /// vẽ lại mỗi lần update nên phải đi đường shared state này).
+    /// nil = dùng panelRadius như cũ.
+    static var testCornerRadiusOverride: CGFloat?
+    /// TEMP test: giấu result, chỉ test 1 component to/nhỏ + animation.
+    /// Query trống = window thu về cỡ componentA, có kí tự = window nở
+    /// xuống (giữ mép trên) để chứa result sau này.
+    static let testExpandOnly = false
+    /// Cỡ componentA lúc thu gọn: ngang = kích thước tự nhiên khai báo
+    /// sẵn (baseWidth), dọc fit khít input.
+    static let testCollapsedWindowSize = CGSize(width: WindowAutoScale.baseWidth, height: 68)
+    /// TEMP test: chốt cứng chiều cao hàng input — chữ + icon luôn căn
+    /// giữa trong 56px, padding trên/dưới đối xứng, 2 trạng thái không
+    /// còn gì để xê dịch (6 + 56 + 6 = 68 = window).
+    static let testBarHeight: CGFloat = 56
+
     /// Legibility floor for surfaces that float on the bare desktop while the
     /// material is Liquid Glass. Tune here: too low and light theme text
     /// disappears over a white window, too high and the refraction is lost.
@@ -130,10 +153,10 @@ struct LauncherView: View {
     }
 
     /// Whether the running-apps strip shows.
+    /// ponytail: strip removed from launcher UI — always hidden.
+    /// Service + core untouched, revert by restoring the old gate.
     var shouldShowRunningAppsStrip: Bool {
-        runningAppsPlacement != .none
-            && isLauncherIdle
-            && !runningAppsService.items.isEmpty
+        false
     }
 
     /// Activates the strip icon assigned to Cmd+`key`. The key is mapped
@@ -146,26 +169,8 @@ struct LauncherView: View {
     /// nowhere visible.
     @discardableResult
     func activateRunningApp(forKey key: Int) -> Bool {
-        let log = RunningAppsLog.logger
-        let total = runningAppsService.items.count
-
-        // The same gate as `shouldShowRunningAppsStrip`: a chord must never
-        // activate an icon that is not on screen.
-        if runningAppsPlacement == .none || !isLauncherIdle {
-            log.debug("⌘+\(key, privacy: .public) declined (placement=\(self.runningAppsPlacement.rawValue, privacy: .public) cmd=\(self.isCommandMode, privacy: .public) settings=\(self.appUIState.showsThemeSettings, privacy: .public) help=\(self.showsHelpScreen, privacy: .public))")
-            return false
-        }
-        guard let position = AppConstants.Launcher.RunningAppsStrip.visualPosition(forKey: key, total: total) else {
-            log.debug("⌘+\(key, privacy: .public) declined (no slot for this key, items=\(total, privacy: .public))")
-            return false
-        }
-
-        let target = runningAppsService.items[position]
-        let activated = runningAppsService.activate(index: position)
-        log.debug("⌘+\(key, privacy: .public) -> position \(position, privacy: .public) \(target.name, privacy: .public) (activated=\(activated, privacy: .public))")
-        // If activate failed (process gone, denied, etc.) didResignActive
-        // won't fire and the launcher stays visible for another attempt.
-        return activated
+        // ponytail: strip removed from launcher — Cmd+N switch disabled, service kept.
+        return false
     }
 
     static let postHideActivationDelay: TimeInterval = 0.01
@@ -616,7 +621,7 @@ struct LauncherView: View {
             focusActiveInput()
             refreshClipboardMonitoringMode()
             reloadQueryRetentionPolicy()
-            runningAppsService.refresh()
+            // ponytail: strip removed — skip running-apps refresh, service kept.
             // A cold `lookapp <mode>`: this process launched to serve it.
             if let pending = LaunchModes.pendingQuery {
                 LaunchModes.pendingQuery = nil
@@ -634,6 +639,10 @@ struct LauncherView: View {
         // Bumped on every show, so it stands in for the missing re-onAppear.
         .onChange(of: query) { _, _ in
             handleQueryChange()
+        }
+        // TEMP single-component: co/nở window theo trạng thái thu gọn.
+        .onChange(of: testWantsCollapsedWindow) { _, collapsed in
+            applyTestWindowSize(collapsed: collapsed, animated: true)
         }
         .onChange(of: selectedResultID) { _, _ in
             // Prefetch process detail for the newly selected process row so the
@@ -656,6 +665,55 @@ struct LauncherView: View {
         }
         .background(notificationHandlers)
     }
+
+    /// TEMP single-component: true khi window cần thu về cỡ componentA
+    /// (chưa gõ, màn home classic). Mọi thứ khác (command/help/settings,
+    /// floating tiles) giữ window cao như cũ.
+    var testWantsCollapsedWindow: Bool {        Self.testExpandOnly && isLauncherIdle && !showsFloatingCards && hidesResultsForEmptyQuery
+    }
+
+    /// Co/nở window giữ nguyên mép trên và tâm ngang — gõ chữ thì panel
+    /// nở xuống dưới đúng kiểu Spotlight. Chiều cao lúc nở = cỡ panel chuẩn.
+    /// Chạy qua animator easeOut ngắn để mượt, thay vì animate mặc định.
+    func applyTestWindowSize(collapsed: Bool, animated: Bool) {
+        let rzLog = Logger(subsystem: "noah-code.Look", category: "window-resize")
+        rzLog.debug(
+            "applyTestWindowSize collapsed=\(collapsed, privacy: .public) animated=\(animated, privacy: .public) idle=\(self.isLauncherIdle, privacy: .public) floating=\(self.showsFloatingCards, privacy: .public) empty=\(self.hidesResultsForEmptyQuery, privacy: .public)"
+        )
+        guard Self.testExpandOnly, !showsFloatingCards else { return }
+        guard let window = launcherWindow() else { return }
+        let full = window.frame
+        let size = collapsed
+            ? Self.testCollapsedWindowSize
+            : CGSize(width: Self.testCollapsedWindowSize.width, height: WindowAutoScale.baseSize().height)
+        let rect = NSRect(
+            x: full.midX - size.width / 2, y: full.maxY - size.height, width: size.width, height: size.height)
+        // TEMP test: đồng bộ mask của window (viên thuốc lúc thu gọn).
+        Self.testCornerRadiusOverride = collapsed
+            ? Self.testCollapsedWindowSize.height / 2 : themeStore.panelRadius
+        rzLog.debug(
+            "resize from=\(NSStringFromRect(full), privacy: .public) to=\(NSStringFromRect(rect), privacy: .public)"
+        )
+        guard animated else {
+            window.setFrame(rect, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrame(rect, display: true)
+        }
+    }
+
+    /// Khối dưới bar có đang nở không: command/help, hoặc home có chữ.
+    /// Chỉ là nguồn lật onChange — animation chạy explicit trên Group cha
+    /// (identity ổn định), không animate frame qua chỗ swap view con.
+    private var belowBarSpringExpanded: Bool {
+        isCommandMode || showsHelpScreen || (isLauncherIdle && !hidesResultsForEmptyQuery)
+    }
+    /// 0 = thu, 1 = nở. Group cha scale Y neo mép trên + fade theo mix này;
+    /// mép dưới là thứ duy nhất quét lên/xuống, quá đà rồi settle.
+    @State private var belowBarSpringMix: CGFloat = 0
 
     /// Second half of the root modifier chain (store subscriptions and
     /// notification handlers), attached to a zero-size background view so
@@ -817,6 +875,11 @@ struct LauncherView: View {
 
     @ViewBuilder
     private func borderedPanel(windowCornerRadius: CGFloat, contentSpacing: CGFloat, contentPadding: CGFloat) -> some View {
+        // TEMP test: lúc thu gọn bo 50% chiều cao = viên thuốc như Spotlight,
+        // lúc nở về lại panelRadius. Mọi lớp (nền, clip, mask window) dùng
+        // chung số này để không lớp nào lòi ra ngoài lớp nào.
+        let testRadius = Self.testExpandOnly && testWantsCollapsedWindow
+            ? Self.testCollapsedWindowSize.height / 2 : windowCornerRadius
         ZStack {
             WindowAppearancePin(appearance: themeStore.themeAppearance())
                 .frame(width: 0, height: 0)
@@ -825,8 +888,23 @@ struct LauncherView: View {
             // query) the blur + tint backdrop box is dropped so the tiles sit on
             // the bare desktop. A background image, if set, is cropped into each
             // tile (see tileBackground) rather than filling the gaps.
-            if !barFloatsFree {
-                themedBackground
+            // TEMP single-component: ở classic (gap 0) giữ themedBackground
+            // cả lúc trống lẫn lúc nở — cùng 1 view chỉ đổi size, không swap
+            // 2 nền cho nhau nữa.
+            if !barFloatsFree || (Self.testExpandOnly && isLauncherIdle && !showsFloatingCards) {
+                if Self.testSolidBackground && Self.testExpandOnly {
+                    // Nền đỏ đặc duy nhất, co/nở theo window — không blur,
+                    // không lớp phủ, morph không khựng.
+                    RoundedRectangle(cornerRadius: testRadius, style: .continuous)
+                        .fill(Color.red)
+                } else {
+                    themedBackground
+                    // TEMP test: A = đỏ, hiện cả lúc trống lẫn lúc có result
+                    // nên khi gõ chữ nó mở rộng xuống chứ không bị thay thế.
+                    if Self.testTintBackgrounds && isLauncherIdle {
+                        Color.red.opacity(0.45)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: contentSpacing) {
@@ -834,9 +912,10 @@ struct LauncherView: View {
             }
             // Tighter top inset so the search bar sits closer to the window's
             // top edge; keep the original padding on the other three sides.
+            // TEMP test: bottom = top để A fit đối xứng quanh input.
             .padding(.top, max(4, contentPadding - 8))
             .padding(.horizontal, contentPadding)
-            .padding(.bottom, contentPadding)
+            .padding(.bottom, Self.testExpandOnly ? max(4, contentPadding - 8) : contentPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .font(themeStore.uiFont())
             .foregroundStyle(themeStore.fontColor())
@@ -855,8 +934,8 @@ struct LauncherView: View {
                     .onChange(of: geo.size) { _, newSize in panelSize = newSize }
             }
         )
-        .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
-        .overlay { borderOverlay(cornerRadius: windowCornerRadius) }
+        .clipShape(RoundedRectangle(cornerRadius: testRadius, style: .continuous))
+        .overlay { borderOverlay(cornerRadius: testRadius) }
         .modifier(PanelDecorationsModifier(
             testHint: { testHintOverlay },
             copyright: { copyrightOverlay },
@@ -887,48 +966,42 @@ struct LauncherView: View {
             ThemeSettingsView(settings: $themeStore.settings)
         } else {
             if !isCommandMode && !showsHelpScreen {
-                // The search field and running-apps icons always share one
-                // background so they read as a single unified bar: a frosted
-                // tile when floating, the classic rounded fill otherwise. The
-                // search field drops its own box since the bar supplies it, and
-                // takes the whole bar when the strip is hidden.
-                //
-                // ONE branch on purpose: the strip appearing or hiding must not
-                // restructure
-                // the row around the field. Two branches gave SwiftUI two
-                // different hierarchies, so the text field was torn down and
-                // rebuilt, dropping first-responder status with it.
+                // ponytail: running-apps strip removed — search bar takes full width.
                 topRowBar {
                     HStack(alignment: .center, spacing: 10) {
                         searchInputBar(showsBackground: false)
                             .frame(maxWidth: .infinity)
-                        if shouldShowRunningAppsStrip {
-                            RunningAppsStripView(
-                                service: runningAppsService,
-                                themeStore: themeStore,
-                                onActivate: { key in _ = activateRunningApp(forKey: key) },
-                                revealToken: appearanceRevealToken
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
                     }
+                    .frame(height: Self.testExpandOnly ? Self.testBarHeight : nil)
                 }
             }
 
             // Spotlight's hairline between the search field and the results.
-            if isLauncherIdle && !hidesResultsForEmptyQuery {
+            // TEMP test: ẩn để morph chỉ còn bar + nền, không relayout giữa chừng.
+            if isLauncherIdle && !hidesResultsForEmptyQuery && !Self.testExpandOnly {
                 Rectangle()
                     .fill(themeStore.dividerColor())
                     .frame(height: 0.5)
                     .padding(.horizontal, 4)
                     .padding(.vertical, -4)
+                    .opacity(belowBarSpringMix)
             }
 
             if let bannerMessage {
                 bannerView(message: bannerMessage)
             }
 
-            if isCommandMode {
+            // Mép dưới nảy lò xo: cả khối dưới bar (command/help/result) nở
+            // từ trên xuống, thu lại thì ngược lại — bar đứng yên, chỉ mép
+            // dưới chuyển động. Animation đặt trên Group cha (scale Y neo
+            // mép trên + fade), vì Group không bao giờ đổi identity kể cả
+            // khi view con bên trong swap (Spacer ↔ result).
+            Group {
+            if Self.testExpandOnly && isLauncherIdle {
+                // Chưa hiện result: window tự co/nở nên Spacer lấp đầy
+                // phần còn lại là đủ, không cần khối giữ chỗ.
+                Spacer(minLength: 0)
+            } else if isCommandMode {
                 commandModeView
             } else if showsHelpScreen {
                 LauncherHelpScreenView(
@@ -961,6 +1034,23 @@ struct LauncherView: View {
             } else {
                 resultsRow
             }
+            }
+            // KHÔNG bao giờ scale về đúng 0: AppKit abort (SIGABRT trong
+            // convertSizeFromBacking) khi ScrollView kết quả mount/unmount
+            // dưới transform suy biến — 2 crash 13:59 + 14:08 đều từ đây.
+            // 0.01 + opacity 0 + clipped = vô hình mà transform vẫn khả nghịch.
+            .scaleEffect(x: 1, y: max(belowBarSpringMix, 0.01), anchor: .top)
+            .opacity(belowBarSpringMix)
+            .clipped()
+            .accessibilityHidden(!belowBarSpringExpanded)
+            .onAppear { belowBarSpringMix = belowBarSpringExpanded ? 1 : 0 }
+            .onChange(of: belowBarSpringExpanded) { _, expanded in
+                // Expand ~1s (response 0.55): mép dưới quét xuống, quá đà
+                // rung vài nhịp rồi settle. Collapse chạy ngược lại.
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.6)) {
+                    belowBarSpringMix = expanded ? 1 : 0
+                }
+            }
 
             if isCommandMode {
                 Spacer(minLength: 0)
@@ -968,13 +1058,16 @@ struct LauncherView: View {
 
             // While floating, every card carries its own hint footer; only the
             // classic (no-gap) layout keeps the full-width bar below the panel.
+            // TEMP test: ẩn để morph không relayout giữa chừng.
             if !showsFloatingCards
                 && !hidesResultsForEmptyQuery
+                && !Self.testExpandOnly
                 && !isKillConfirmationVisible
                 && !isDeleteConfirmationVisible
                 && !isHideAppConfirmationVisible
             {
                 HintBar(hint: panelHint, themeStore: themeStore)
+                    .opacity(belowBarSpringMix)
             }
         }
     }
@@ -1012,6 +1105,13 @@ struct LauncherView: View {
     @ViewBuilder
     private var resultsRow: some View {
         resultsContent
+            // TEMP test: B (result) = xanh, nằm BÊN TRONG panel đỏ (A mở rộng).
+            .background {
+                if Self.testTintBackgrounds && isLauncherIdle {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.blue.opacity(0.45))
+                }
+            }
     }
 
 
@@ -1272,6 +1372,14 @@ struct LauncherView: View {
                 .overlay {
                     tileBorder(cornerRadius: themeStore.tileRadius)
                 }
+                // TEMP test: tile result lúc nổi = xanh (ảnh 2).
+                .overlay {
+                    if Self.testTintBackgrounds {
+                        Color.blue.opacity(0.45)
+                            .clipShape(RoundedRectangle(cornerRadius: themeStore.tileRadius, style: .continuous))
+                            .allowsHitTesting(false)
+                    }
+                }
                 // Lift each pane off the backdrop so the three parts read as
                 // separate floating tiles rather than sections of one box.
                 .shadow(color: .black.opacity(0.25), radius: 7, x: 0, y: 3)
@@ -1397,11 +1505,14 @@ struct LauncherView: View {
                     // draws the inner "wrapper" edge around the input. Opacity, not
                     // a branch, so the chain above stays stable and focus survives
                     // the empty <-> results flip.
-                    .opacity(hidesResultsForEmptyQuery ? 1 : 0)
+                    // TEMP single-component: test mode classic thì bar luôn
+                    // trong suốt, panel bg phía sau là nền duy nhất.
+                    .opacity(hidesResultsForEmptyQuery && !Self.testExpandOnly ? 1 : 0)
                 }
             }
             .overlay {
-                if floats {
+                // TEMP test: bỏ ring của bar để input trần trên nền A.
+                if floats && !Self.testExpandOnly {
                     tileBorder(cornerRadius: barRadius)
                         // The ring rides the painted capsule, so it bleeds with it.
                         .padding(.horizontal, isRestingSlice ? -Self.restingBleedHorizontal : 0)
@@ -1410,6 +1521,8 @@ struct LauncherView: View {
             }
             .shadow(color: floats ? .black.opacity(0.25) : .clear,
                     radius: floats ? 7 : 0, x: 0, y: floats ? 3 : 0)
+            // TEMP test: bỏ overlay đỏ ở bar vì panel đã phủ đỏ toàn bộ —
+            // giữ lại sẽ thành 2 lớp chồng nhau, vùng bar đỏ rực bất thường.
     }
 
     /// Wraps a single-panel home state (translation, recent empty) in
@@ -1491,7 +1604,8 @@ struct LauncherView: View {
         // While floating the copyright moves into a card footer; on the empty-rest
         // screen it's hidden entirely; otherwise it stays in the panel's
         // bottom-right corner.
-        if !showsFloatingCards && !hidesResultsForEmptyQuery && !isHideAppConfirmationVisible {
+        // TEMP test: ẩn để morph không relayout giữa chừng.
+        if !showsFloatingCards && !hidesResultsForEmptyQuery && !isHideAppConfirmationVisible && !Self.testExpandOnly {
             copyrightLink
                 .padding(.trailing, 10)
                 .padding(.bottom, 8)

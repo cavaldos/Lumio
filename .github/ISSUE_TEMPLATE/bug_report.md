@@ -32,7 +32,7 @@ assignees: ""
 
 - macOS version:
 - look version or commit SHA:
-- install method: (Xcode run / zip install / Homebrew tap)
+- install method: (Xcode run / zip install)
 - architecture: (arm64 / x86_64)
 
 ## Logs / screenshots
