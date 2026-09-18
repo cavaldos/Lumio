@@ -8,40 +8,16 @@ extension LauncherView {
         let dictionaryDefinition: LookupPresentation?
     }
 
-    struct NetworkTranslationResult {
-        let translated: String?
-        let errorMessage: String?
-    }
-
-    func extractTranslationQuery(from input: String) -> TranslationCommand? {
-        let translate = AppConstants.Launcher.QueryPrefix.translate
+    /// Dictionary lookup query (`tw"text`). Returns the lookup text, or nil.
+    func extractTranslationQuery(from input: String) -> String? {
         let translateWord = AppConstants.Launcher.QueryPrefix.translateWord
-        if input.hasPrefix(translate) {
-            let text = String(input.dropFirst(translate.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : .network(text)
+        guard input.count >= translateWord.count,
+            input.prefix(translateWord.count).lowercased() == translateWord
+        else {
+            return nil
         }
-
-        if input.count >= translateWord.count,
-            input.prefix(translateWord.count).lowercased() == translateWord {
-            let text = String(input.dropFirst(translateWord.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : .lookup(text)
-        }
-
-        if input.lowercased().hasPrefix("tr ") {
-            let text = String(input.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : .network(text)
-        }
-
-        return nil
-    }
-
-    func handleTranslation(command: TranslationCommand) {
-        switch command {
-        case .network(let text):
-            handleNetworkTranslation(text: text)
-        case .lookup(let text):
-            handleLookupTranslation(text: text)
-        }
+        let text = String(input.dropFirst(translateWord.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 
     func handleLookupTranslation(text: String) {
@@ -71,7 +47,7 @@ extension LauncherView {
         lookupPreviewTask?.cancel()
 
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard case .lookup(let text) = extractTranslationQuery(from: trimmed) else {
+        guard let text = extractTranslationQuery(from: trimmed) else {
             lookupDefinition = nil
             return
         }
@@ -154,101 +130,5 @@ extension LauncherView {
         let raw = (unmanaged.takeRetainedValue() as String)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return raw.isEmpty ? nil : raw
-    }
-
-    func handleNetworkTranslation(text: String) {
-        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
-            showBanner("Type text after t\" to translate", style: .error, duration: 3.2)
-            return
-        }
-
-        lookupDefinition = LookupDefinition(
-            query: normalized,
-            sourceLabel: "Web",
-            sections: [
-                LookupTranslationSection(label: "Tiếng Việt", translated: nil, dictionaryDefinition: nil, failed: false),
-                LookupTranslationSection(label: "English", translated: nil, dictionaryDefinition: nil, failed: false),
-                LookupTranslationSection(label: "日本語", translated: nil, dictionaryDefinition: nil, failed: false),
-            ]
-        )
-
-        Task {
-            let results = await fetchNetworkTranslations(for: normalized)
-            await MainActor.run {
-                let hasAnyResult = results.en.translated != nil
-                    || results.vi.translated != nil
-                    || results.ja.translated != nil
-
-                lookupDefinition = LookupDefinition(
-                    query: normalized,
-                    sourceLabel: "Web",
-                    sections: [
-                        LookupTranslationSection(label: "Tiếng Việt", translated: results.vi.translated, dictionaryDefinition: nil, failed: results.vi.translated == nil),
-                        LookupTranslationSection(label: "English", translated: results.en.translated, dictionaryDefinition: nil, failed: results.en.translated == nil),
-                        LookupTranslationSection(label: "日本語", translated: results.ja.translated, dictionaryDefinition: nil, failed: results.ja.translated == nil),
-                    ]
-                )
-
-                if !hasAnyResult {
-                    let message = results.en.errorMessage
-                        ?? results.vi.errorMessage
-                        ?? results.ja.errorMessage
-                        ?? "Translation failed"
-                    showBanner(message, style: .error, duration: 3.2)
-                }
-            }
-        }
-    }
-
-    func fetchNetworkTranslations(for text: String) async -> (en: NetworkTranslationResult, vi: NetworkTranslationResult, ja: NetworkTranslationResult) {
-        await withTaskGroup(of: (String, NetworkTranslationResult).self) { group in
-            group.addTask {
-                let result = self.bridge.translate(text: text, targetLang: "en")
-                let translated = result?.translated.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (
-                    "en",
-                    NetworkTranslationResult(
-                        translated: (translated?.isEmpty == false) ? translated : nil,
-                        errorMessage: result?.error?.userFacingMessage
-                    )
-                )
-            }
-            group.addTask {
-                let result = self.bridge.translate(text: text, targetLang: "vi")
-                let translated = result?.translated.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (
-                    "vi",
-                    NetworkTranslationResult(
-                        translated: (translated?.isEmpty == false) ? translated : nil,
-                        errorMessage: result?.error?.userFacingMessage
-                    )
-                )
-            }
-            group.addTask {
-                let result = self.bridge.translate(text: text, targetLang: "ja")
-                let translated = result?.translated.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (
-                    "ja",
-                    NetworkTranslationResult(
-                        translated: (translated?.isEmpty == false) ? translated : nil,
-                        errorMessage: result?.error?.userFacingMessage
-                    )
-                )
-            }
-
-            var en = NetworkTranslationResult(translated: nil, errorMessage: nil)
-            var vi = NetworkTranslationResult(translated: nil, errorMessage: nil)
-            var ja = NetworkTranslationResult(translated: nil, errorMessage: nil)
-            for await (lang, result) in group {
-                switch lang {
-                case "en": en = result
-                case "vi": vi = result
-                case "ja": ja = result
-                default: break
-                }
-            }
-            return (en, vi, ja)
-        }
     }
 }

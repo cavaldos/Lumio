@@ -1,18 +1,13 @@
 [workspace]
 members = [
-  "ai",
-  "qactions",
   "answers",
-  "calc",
   "engine",
   "indexing",
   "lunar",
   "matching",
   "netspeed",
   "ranking",
-  "sources",
   "storage",
-  "todo",
   "tools",
 ]
 resolver = "2"

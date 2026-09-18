@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
-/// A tick source for launchpad tiles that runs only while Look is active.
+/// A tick source that runs only while Look is active.
 ///
 /// The launcher window is ordered out on hide but its SwiftUI tree stays
 /// mounted, so a plain `Timer.publish` keeps waking the main thread while

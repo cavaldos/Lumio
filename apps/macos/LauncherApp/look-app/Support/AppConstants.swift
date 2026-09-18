@@ -9,18 +9,8 @@ struct AppCommand: Identifiable {
 
     var symbolName: String {
         switch id {
-        case AppConstants.Launcher.Command.shell:
-            return "terminal"
-        case AppConstants.Launcher.Command.calc:
-            return "function"
         case AppConstants.Launcher.Command.kill:
             return "xmark.circle"
-        case AppConstants.Launcher.Command.sys:
-            return "info.circle"
-        case AppConstants.Launcher.Command.pomo:
-            return "timer"
-        case AppConstants.Launcher.Command.todo:
-            return "checklist"
         case AppConstants.Launcher.Command.speed:
             return "speedometer"
         default:
@@ -75,60 +65,12 @@ enum AppConstants {
         /// Search field placeholder shown in command mode when no command is active.
         static let commandModePlaceholder = "Choose a command with Tab"
 
-        /// Width of the web-suggestion column shown to the right of the AI answer
-        /// card in the two-column knowledge-lookup layout.
-        static let aiAnswerSuggestionColumnWidth: CGFloat = 320
-
         enum Command {
-            static let shell = "shell"
-            static let calc = "calc"
             static let kill = "kill"
-            static let sys = "sys"
-            static let pomo = "pomo"
-            static let todo = "todo"
             static let speed = "speed"
         }
 
-        enum AIAction {
-            /// Synthetic id prefix of the main-bar action row (planner-
-            /// proposed; Enter performs it directly, the visible row is the
-            /// confirm). The suffix is the tool id, so the row and preview
-            /// can style per tool.
-            static let resultIDPrefix = "aiaction:"
 
-            static func resultID(toolID: String) -> String {
-                resultIDPrefix + toolID
-            }
-
-            static func toolID(fromResultID id: String) -> String? {
-                guard id.hasPrefix(resultIDPrefix) else { return nil }
-                return String(id.dropFirst(resultIDPrefix.count))
-            }
-        }
-
-        /// The ⌘-digit chips on the AI sessions list. A ⌘ chord is ONE
-        /// keypress, so there is no ⌘10 and ten rows is the hard ceiling:
-        /// ⌘1…⌘9 then ⌘0 for the tenth. Older sessions are reached by typing
-        /// (the list filters on title and content), Tab/↑↓, then Enter.
-        enum AISessions {
-            /// Rows carrying a chip, and therefore how many the list shows.
-            static let jumpKeyLimit = 10
-            /// The tenth row wraps onto `0`, the key sitting next to `9`.
-            private static let lastRowDigit = 0
-
-            /// The digit shown on row `index`, or nil past the mapped rows.
-            static func jumpDigit(forRow index: Int) -> Int? {
-                guard index >= 0, index < jumpKeyLimit else { return nil }
-                return index == jumpKeyLimit - 1 ? lastRowDigit : index + 1
-            }
-
-            /// The row ⌘`digit` addresses, or nil when the digit maps to none.
-            static func row(forJumpDigit digit: Int) -> Int? {
-                if digit == lastRowDigit { return jumpKeyLimit - 1 }
-                guard digit > 0, digit < jumpKeyLimit else { return nil }
-                return digit - 1
-            }
-        }
 
         enum QueryPrefix {
             static let apps = "a\""
@@ -142,8 +84,7 @@ enum AppConstants {
             // (needs last_used/fs_modified timestamps); the app just sends it
             // through search and suppresses pinned injection (see LauncherSearchLogic).
             static let recent = "rc\""
-            // Translation prefixes (handled in LauncherView+Translation).
-            static let translate = "t\""
+            // Dictionary prefix (handled in LauncherView+Translation).
             static let translateWord = "tw\""
             // Live process finder (handled in LauncherView+Process): fuzzy over
             // running processes, kill / copy-PID / measure-CPU from the results.
@@ -211,7 +152,6 @@ enum AppConstants {
                 Entry(
                     prefix: QueryPrefix.clipboardImage, argHint: "word",
                     description: "Copied images, newest first"),
-                Entry(prefix: QueryPrefix.translate, argHint: "word", description: "Web translate (VI/EN/JA)"),
                 Entry(
                     prefix: QueryPrefix.translateWord, argHint: "word",
                     description: "Lookup panel with definitions"),
@@ -228,68 +168,6 @@ enum AppConstants {
             }
         }
 
-        // Google autocomplete rows appended after the engine results. Like
-        // PrefixSuggestion, these are Swift-synthesized rows told apart by id.
-        enum WebSuggestion {
-            static let resultIDPrefix = "websuggest:"
-            static let limit = 6
-
-            /// Recovers the suggestion text encoded in a result id, or nil.
-            static func text(fromResultID resultID: String) -> String? {
-                guard resultID.hasPrefix(resultIDPrefix) else { return nil }
-                return String(resultID.dropFirst(resultIDPrefix.count))
-            }
-        }
-
-        // Synthesized calculator row, pinned above everything else while the
-        // query is arithmetic (shared `core/calc` intent gate via EngineBridge).
-        // Like WebSuggestion/WebURL, told apart from real candidates by id.
-        /// The synthesized "Join <meeting>" row. Told apart from real
-        /// candidates by id; the join URL rides in it, so pressing Enter never
-        /// has to re-read the calendar.
-        enum Meeting {
-            static let resultIDPrefix = "meeting:"
-
-            static func resultID(url: String) -> String {
-                resultIDPrefix + url
-            }
-
-            /// Recovers the join URL encoded in a result id, or nil.
-            static func url(fromResultID resultID: String) -> String? {
-                guard resultID.hasPrefix(resultIDPrefix) else { return nil }
-                return String(resultID.dropFirst(resultIDPrefix.count))
-            }
-        }
-
-        /// The synthesized "Call <name>" rows. Like `Meeting`, the URL rides
-        /// in the id, so pressing Enter never re-reads Contacts and can never
-        /// dial someone other than the row the user read.
-        enum Call {
-            static let resultIDPrefix = "call:"
-
-            static func resultID(url: String) -> String {
-                resultIDPrefix + url
-            }
-
-            static func url(fromResultID resultID: String) -> String? {
-                guard resultID.hasPrefix(resultIDPrefix) else { return nil }
-                return String(resultID.dropFirst(resultIDPrefix.count))
-            }
-        }
-
-        enum Calc {
-            static let resultIDPrefix = "calc:"
-            static let enterToCopyHint = "Enter to copy"
-            // SF Symbols has no calculator glyph; borrow the real app's icon
-            // instead of an abstract stand-in.
-            static let appIconPath = "/System/Applications/Calculator.app"
-
-            /// Recovers the raw (paste-safe) value encoded in a result id, or nil.
-            static func rawValue(fromResultID resultID: String) -> String? {
-                guard resultID.hasPrefix(resultIDPrefix) else { return nil }
-                return String(resultID.dropFirst(resultIDPrefix.count))
-            }
-        }
 
         // Synthesized "Open <url>" row for a URL-like query (issue #232). Told
         // apart from real candidates by id; the resolved URL is encoded in it.
@@ -363,14 +241,6 @@ enum AppConstants {
             /// A terminal that was not running yet has to start first.
             static let activationPollNanoseconds: UInt64 = 200_000_000
             static let activationPollAttempts = 8
-        }
-
-        /// Rows from a user-declared block in `~/.look/sources`.
-        enum SourceBlock {
-            static let idPrefix = "src:"
-            /// Recorded like an open, so a routine run every morning ranks like
-            /// one. The engine's usage table only needs the verb to be stable.
-            static let usageAction = "execute"
         }
 
         enum QuickFolder {
@@ -502,7 +372,6 @@ enum AppConstants {
         static let minSuggestionQueryLength = 2
         static let commandListMaxHeight: CGFloat = 180
         static let commandResultFontSize: CGFloat = 18
-        static let calcMaxMagnitude = 1_000_000_000_000.0
 
         enum Panel {
             static let width: CGFloat = 860
@@ -560,77 +429,13 @@ enum AppConstants {
             }
         }
 
-        /// Empty-state launchpad: a 6-column bento of L/M/S tiles shown below the
-        /// search bar when the query is empty. Sizing/timing only; the tile order,
-        /// labels, and mnemonics come from the shared `look_qactions` catalog.
-        enum Launchpad {
-            /// No `columns` here any more: the drawing in ~/.look/super-actions.toml
-            /// decides how many there are, and the core sends that shape beside
-            /// the tiles. A constant 6 would be a second answer.
-            static let rowHeight: CGFloat = 76
-            static let gap: CGFloat = 8
-            static let outerTopPadding: CGFloat = 8
-
-            /// The Todo tile cycles its next-task name at this cadence.
-            static let todoTaskRotateSeconds: TimeInterval = 2.6
-            /// The Clock tile only needs minute resolution; refresh coarsely.
-            static let clockTickSeconds: TimeInterval = 20
-            /// Crossfade duration when the L slot's active source changes.
-            static let rotateFadeSeconds: TimeInterval = 0.45
-
-            static let titleFontSize: CGFloat = 12.5
-            static let valueFontSize: CGFloat = 22
-            static let captionFontSize: CGFloat = 10.5
-            static let smallLabelFontSize: CGFloat = 10.5
-
-            /// Shown in a read-only info tile (e.g. Battery) before its adapter
-            /// resolves a value, or when the value is unavailable.
-            static let infoPlaceholderValue = "--"
-            /// Drawn on a user tile that named no `icon`.
-            static let customTileFallbackIcon = "bolt"
-            /// Now Playing caption when nothing is playing on the system.
-            static let nowPlayingIdleTitle = "Nothing playing"
-            /// How often to re-read system now-playing while the launcher is open,
-            /// so external changes (pausing in a browser) are reflected.
-            static let nowPlayingPollSeconds: TimeInterval = 1.5
-            /// Placeholder shown in the Weather tile until the live source lands.
-            static let weatherPlaceholderValue = "--°"
-
-            /// Vertical gap between the time / date / lunar lines in the Todo or
-            /// Pomo header clock, so the three lines don't read as one block.
-            static let headerClockLineSpacing: CGFloat = 3
-            /// Time line (top, brightest) of the Todo / Pomo header clock.
-            static let headerClockTimeFontSize: CGFloat = 15.5
-            /// Gregorian-date and lunar-date lines below it.
-            static let headerClockDateFontSize: CGFloat = 12.5
-
-            /// Caption under today's lunar day/month in the clock tile.
-            static let lunarLabel = "Lunar"
-            /// Caption when today falls in the intercalary (leap) lunar month.
-            static let lunarLeapLabel = "Lunar leap"
-
-            /// SF Symbol for the Battery info tile, and its label when a battery
-            /// is present.
-            static let batteryIconName = "battery.100"
-            /// SF Symbol shown in place of `batteryIconName` while charging.
-            static let batteryChargingIconName = "battery.100.bolt"
-            /// On a machine with no battery (e.g. a Mac mini), the Battery tile
-            /// shows system uptime instead, with this label and icon.
-            static let uptimeLabel = "Uptime"
-            static let uptimeIconName = "clock.arrow.circlepath"
-        }
 
         /// Catalog order is the whole shortcut mapping: ⌘N selects the Nth entry
         /// (see `onSelectCommandByIndex`), so the number in each title is
         /// derived rather than written, and reordering this list is enough.
         private static let commandDefinitions: [(id: String, detail: String, placeholder: String)] = [
-            (Command.calc, "Evaluate math expression", "Type math expression"),
-            (Command.pomo, "Pomodoro focus timer", "Manage focus sessions"),
-            (Command.todo, "Daily tasks & progress", "Search tasks & dates"),
             (Command.speed, "Measure internet download, upload, and latency", "Measures on open"),
             (Command.kill, "Force kill app or process by name, PID, or port", "Type a name, PID, or port"),
-            (Command.shell, "Run a shell command", "Type shell command"),
-            (Command.sys, "Show system information", "View system info"),
         ]
 
         static let commandCatalog: [AppCommand] = commandDefinitions.enumerated().map { index, definition in
@@ -671,8 +476,7 @@ enum AppConstants {
         static let normalHint = HintText.Launcher.normal
         static let commandHint = HintText.Launcher.command
         static let killHint = HintText.Launcher.kill
-        static let sysHint = HintText.Launcher.sys
-        static let commandEmptyMessage = "Type expression and press Enter"
+        static let commandEmptyMessage = "Type and press Enter"
     }
 
     enum ThemeUI {

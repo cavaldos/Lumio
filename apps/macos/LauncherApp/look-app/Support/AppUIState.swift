@@ -11,8 +11,8 @@ final class AppUIState: ObservableObject {
 
     // Remembered command id of the last command-mode panel the user
     // visited *during this launch*. Re-entering command mode (Cmd+/)
-    // resumes there instead of jumping back to /calc. Intentionally
-    // not persisted - each fresh launch should start at /calc.
+    // resumes there instead of jumping back to /kill. Intentionally
+    // not persisted - each fresh launch should start at /kill.
     @Published var lastCommandID: String?
 }
 

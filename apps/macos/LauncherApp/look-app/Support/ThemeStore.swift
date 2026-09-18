@@ -53,6 +53,20 @@ final class ThemeStore: ObservableObject {
     private let cachedFontFamilies: [String] = NSFontManager.shared.availableFontFamilies.sorted {
         $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
     }
+
+    /// Full font list for the user-friendly Settings picker.
+    var availableFontFamilies: [String] { cachedFontFamilies }
+
+    /// Picker options: every installed family, plus `current` when it names a
+    /// font this machine no longer has (same pattern as blur-material options).
+    /// Keeps the Picker selection non-blank instead of silently dropping it.
+    func fontFamilyOptions(including current: String) -> [String] {
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !cachedFontFamilies.contains(trimmed) else {
+            return cachedFontFamilies
+        }
+        return [trimmed] + cachedFontFamilies
+    }
     private var scopedBackgroundURL: URL?
 
     init() {
@@ -61,6 +75,7 @@ final class ThemeStore: ObservableObject {
         settings = Self.loadThemeSettings(from: UserDefaults.standard.data(forKey: defaultsKey))
 
         applyThemeOverridesFromConfigFile()
+        migrateLegacyInnerGapDefault()
         _ = applyLaunchAtLoginSetting()
 
         refreshBackgroundImageURL()
@@ -253,18 +268,6 @@ final class ThemeStore: ObservableObject {
             value: String(format: "%.2f", settings.surfaceRadius)
         )
 
-        // Apple Intelligence / AI features
-        ConfigFileLines.upsert(&lines, key: "ai_enabled", value: settings.aiEnabled ? "true" : "false")
-        ConfigFileLines.upsert(&lines, key: "ai_provider", value: settings.aiProvider.rawValue)
-        ConfigFileLines.upsert(&lines, key: "ollama_host", value: settings.ollamaHost)
-        ConfigFileLines.upsert(&lines, key: "ollama_model", value: settings.ollamaModel)
-        ConfigFileLines.upsert(
-            &lines, key: "ai_allow_remote_context",
-            value: settings.aiAllowRemoteContext ? "true" : "false")
-
-        // Empty-state super actions launchpad
-        ConfigFileLines.upsert(&lines, key: "super_actions_enabled", value: settings.superActionsEnabled ? "true" : "false")
-
         do {
             try ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)
             _ = applyLaunchAtLoginSetting()
@@ -332,20 +335,6 @@ final class ThemeStore: ObservableObject {
         }
 
         return .systemFont(ofSize: resolvedSize, weight: weight)
-    }
-
-    func fontNameSuggestions(for input: String, limit: Int = 8) -> [String] {
-        let allFonts = cachedFontFamilies
-        let query = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            return Array(allFonts.prefix(limit))
-        }
-
-        let lowered = query.lowercased()
-        var startsWithMatches = allFonts.filter { $0.lowercased().hasPrefix(lowered) }
-        let containsMatches = allFonts.filter { !$0.lowercased().hasPrefix(lowered) && $0.lowercased().contains(lowered) }
-        startsWithMatches.append(contentsOf: containsMatches)
-        return Array(startsWithMatches.prefix(limit))
     }
 
     func setBackgroundImage(url: URL?) {
@@ -578,30 +567,6 @@ final class ThemeStore: ObservableObject {
                 if let parsed = parseBool(value) {
                     settings.launchAtLogin = parsed
                 }
-            case "ai_enabled":
-                if let parsed = parseBool(value) {
-                    settings.aiEnabled = parsed
-                }
-            case "ai_provider":
-                if let parsed = AIProviderKind(rawValue: value) {
-                    settings.aiProvider = parsed
-                }
-            case "ollama_host":
-                if !value.isEmpty {
-                    settings.ollamaHost = value
-                }
-            case "ollama_model":
-                if !value.isEmpty {
-                    settings.ollamaModel = value
-                }
-            case "ai_allow_remote_context":
-                if let parsed = parseBool(value) {
-                    settings.aiAllowRemoteContext = parsed
-                }
-            case "super_actions_enabled":
-                if let parsed = parseBool(value) {
-                    settings.superActionsEnabled = parsed
-                }
             case "ui_background_image":
                 if !value.isEmpty {
                     settings.backgroundImagePath = value
@@ -667,6 +632,33 @@ final class ThemeStore: ObservableObject {
         }
 
         try? repaired.write(to: path, atomically: true, encoding: .utf8)
+    }
+
+    /// One-time carry from the old `inner_gap=7` default (floating tiles) to the
+    /// macOS-style `0` (one continuous panel). Changing the default only fixed
+    /// fresh installs: every existing config still pins 7, and the file wins on
+    /// each launch, so those stayed split. An untouched 7 means "never chose",
+    /// so move it to 0 once — in memory and in the active file. Re-setting 7
+    /// afterwards sticks (flagged, never re-runs).
+    private func migrateLegacyInnerGapDefault() {
+        let flagKey = "look.migratedInnerGap7To0.v1"
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return }
+        guard settings.innerGap == 7 else {
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+        settings.innerGap = 0
+        let path = Self.configPath()
+        guard let raw = try? String(contentsOf: path, encoding: .utf8) else { return }
+        guard ConfigFileLines.keyValues(raw)["inner_gap"] != nil else {
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+        var lines = ConfigFileLines.parse(raw)
+        ConfigFileLines.upsert(&lines, key: "inner_gap", value: "0")
+        if (try? ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)) != nil {
+            UserDefaults.standard.set(true, forKey: flagKey)
+        }
     }
 
     private func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
@@ -912,25 +904,8 @@ ui_border_opacity=0.12
 running_apps_placement=right
 
 # Inner gap (points, 0-24) between the three home panes; 0 = classic flat layout
-inner_gap=7
+inner_gap=0
 ui_surface_radius=1.50
-
-# Apple Intelligence / AI features. ai_provider: appleIntelligence | ollama
-ai_enabled=true
-ai_provider=appleIntelligence
-# Ollama (local) settings, used when ai_provider=ollama.
-ollama_host=http://localhost:11434
-ollama_model=qwen3.5:4b
-
-# Whether the calendar, clipboard, and remembered facts may be attached to
-# prompts when the AI provider is NOT on this machine (a remote ollama_host, or
-# a future cloud provider). Off means those answers are computed without that
-# context and say so.
-ai_allow_remote_context=false
-
-# Super actions: empty-state launchpad of quick toggles / actions.
-# false hides the strip and disables its keyboard accelerators.
-super_actions_enabled=true
 
 # Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3
 alias_note=Notion|Obsidian|Notes|Apple Notes|Bear|Logseq
@@ -966,20 +941,8 @@ alias_brow=Safari|Arc|Google Chrome|Chrome|Firefox|Brave
         if object["runningAppsPlacement"] == nil {
             object["runningAppsPlacement"] = ThemeSettings.default.runningAppsPlacement.rawValue
         }
-        if object["aiEnabled"] == nil {
-            object["aiEnabled"] = ThemeSettings.default.aiEnabled
-        }
-        if object["aiProvider"] == nil {
-            object["aiProvider"] = ThemeSettings.default.aiProvider.rawValue
-        }
-        if object["ollamaHost"] == nil {
-            object["ollamaHost"] = ThemeSettings.default.ollamaHost
-        }
-        if object["ollamaModel"] == nil {
-            object["ollamaModel"] = ThemeSettings.default.ollamaModel
-        }
-        if object["superActionsEnabled"] == nil {
-            object["superActionsEnabled"] = ThemeSettings.default.superActionsEnabled
+        if object["innerGap"] == nil {
+            object["innerGap"] = ThemeSettings.default.innerGap
         }
         if object["surfaceRadius"] == nil {
             object["surfaceRadius"] = ThemeSettings.default.surfaceRadius

@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn a_mode_this_platform_lacks_crosses_as_its_own_kind() {
-        let parsed = parse(&["ai"]);
+        let parsed = parse(&["dictionary"]);
         let expected = if cfg!(target_os = "macos") {
             "query"
         } else {

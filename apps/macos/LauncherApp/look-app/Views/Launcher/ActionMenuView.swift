@@ -1,19 +1,11 @@
 import SwiftUI
 
-/// Everything you can do to the selected row, in one popup.
-///
-/// It floats under the preview's header rather than sitting in the layout, so a
-/// row with actions costs the preview no space until the user asks for them
-/// with Cmd+K. Information (a file preview, a folder listing, Bluetooth's paired
-/// devices) stays in the panel; only the verbs live here.
+/// Everything you can do to the selected row, in one popup (Cmd+K).
 struct ActionMenuView: View {
-    let descriptors: [QuickActionDescriptor]
-    let states: [String: ActionState]
+    let descriptors: [LauncherView.RowActionDescriptor]
     let focusedIndex: Int
     let themeStore: ThemeStore
-    /// Activate one row. The menu never runs anything itself: confirmation and
-    /// closing live with the coordinator that owns the pending question.
-    let onActivate: (QuickActionDescriptor) -> Void
+    let onActivate: (LauncherView.RowActionDescriptor) -> Void
 
     private typealias Layout = AppConstants.Launcher.ActionMenu
 
@@ -65,24 +57,21 @@ struct ActionMenuView: View {
             .strokeBorder(themeStore.dividerColor(), lineWidth: 1)
     }
 
-    private func row(_ descriptor: QuickActionDescriptor, isFocused: Bool) -> some View {
-        let titleSize = CGFloat(themeStore.settings.fontSize - 1)
-        let hintSize = CGFloat(themeStore.settings.fontSize - 2)
-
-        return HStack(spacing: 8) {
-            Text(title(for: descriptor))
-                .font(themeStore.uiFont(size: titleSize, weight: .medium))
+    private func row(_ descriptor: LauncherView.RowActionDescriptor, isFocused: Bool) -> some View {
+        HStack {
+            Text(descriptor.title)
+                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .medium))
                 .foregroundStyle(themeStore.fontColor())
                 .lineLimit(1)
             Spacer(minLength: 8)
             if let shortcut = descriptor.shortcut {
                 Text(shortcut)
-                    .font(themeStore.uiFont(size: hintSize, weight: .regular))
+                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .regular))
                     .foregroundStyle(themeStore.mutedTextColor())
             }
             if isFocused {
                 Text(Layout.runHint)
-                    .font(themeStore.uiFont(size: hintSize, weight: .semibold))
+                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .semibold))
                     .foregroundStyle(themeStore.secondaryTextColor())
             }
         }
@@ -97,20 +86,5 @@ struct ActionMenuView: View {
     private func rowBackground(isFocused: Bool) -> some View {
         RoundedRectangle(cornerRadius: themeStore.chipRadius, style: .continuous)
             .fill(isFocused ? themeStore.selectionFillColor() : Color.clear)
-    }
-
-    /// A toggle names the change it would make, not the setting: in a list of
-    /// verbs "Turn on Bluetooth" reads as something to do, where a bare
-    /// "Bluetooth" reads as a place to go.
-    private func title(for descriptor: QuickActionDescriptor) -> String {
-        guard descriptor.control == .toggle else { return descriptor.title }
-        switch states[descriptor.actionId] {
-        case .on:
-            return descriptor.offLabel ?? descriptor.title
-        case .off:
-            return descriptor.onLabel ?? descriptor.title
-        default:
-            return descriptor.title
-        }
     }
 }

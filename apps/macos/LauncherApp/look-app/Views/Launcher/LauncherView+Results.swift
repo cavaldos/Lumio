@@ -19,11 +19,6 @@ extension LauncherView {
             query = prefix
             isQueryFocused = true
             return
-        case .webSuggestion(let suggestion):
-            // Google autocomplete row: run the web search for that suggestion.
-            performWebSearch(for: suggestion)
-            hideLauncherWindow(restorePreviousApp: false)
-            return
         case .webURL(let urlString):
             // URL-like query row (live or from history): open the resolved
             // address in the default browser and remember it for faster re-open later.
@@ -34,25 +29,6 @@ extension LauncherView {
         case .commandSuggestion(let commandID):
             // Command-discovery row: enter that command's panel (empty input).
             enterCommandMode(commandID: commandID, prefilledInput: "")
-            return
-        case .calc(let raw):
-            // Calculator row: copy the raw value, launcher out of the way.
-            // History keeps the labeled working (`2+2 = 4`); the paste is the number.
-            clipboardStore.recordLabeled(display: "\(selected.calcExpression ?? "") = \(selected.title)", payload: raw)
-            hideLauncherWindow(restorePreviousApp: false)
-            return
-        case .aiAction:
-            // Planner-proposed action row: the row the user just read IS the
-            // confirmation - one Enter performs it, the banner offers ⌘Z.
-            guard let planned = mainBarAction else { return }
-            runQuickAction(planned)
-            return
-        case .meeting(let url), .call(let url):
-            // Join and call rows: the link travelled in the row id, so pressing
-            // Enter never re-reads the calendar or Contacts, and can never open
-            // something other than what the row named.
-            openURLScheme(url)
-            hideLauncherWindow(restorePreviousApp: false)
             return
         case nil:
             break
@@ -66,23 +42,11 @@ extension LauncherView {
             hideLauncherWindow(restorePreviousApp: false)
         case .file:
             guard ensureTargetExists(selected) else { return }
-            // A row a block produced answers to its block first: what Enter does
-            // is what the block says, whatever kind the row ended up with. The
-            // staleness check stays above it, since a row pointing at a deleted
-            // file is worth reporting either way.
-            if selected.isSourceRow {
-                performSourceBlock(selected)
-                return
-            }
             openTargetAsync(selected.path)
             recordOpen(selected, action: "open_file")
             hideLauncherWindow(restorePreviousApp: false)
         case .folder:
             guard ensureTargetExists(selected) else { return }
-            if selected.isSourceRow {
-                performSourceBlock(selected)
-                return
-            }
             openTargetAsync(selected.path)
             // Quick-folder entries are ephemeral filesystem suggestions, not
             // ranked candidates - they aren't in the usage index.
@@ -91,17 +55,14 @@ extension LauncherView {
             }
             hideLauncherWindow(restorePreviousApp: false)
         case .action:
-            // A declared block: there is nothing to open, so Enter performs its
-            // steps. The window goes away first, since the steps usually launch
-            // something that wants the focus.
-            performSourceBlock(selected)
+            // Generic action row: nothing to open.
+            showBanner("Nothing to do here", style: .info, duration: 1.2)
         case .clipboard:
             if selected.isClipboardImage {
                 copyClipboardImage(resultID: selected.id)
                 return
             }
-            // Labeled entries (e.g. calculator results) paste their value, not
-            // the label shown in the list.
+            // Labeled entries paste their value, not the label shown in the list.
             guard let content = selected.clipboardPayload ?? selected.clipboardContent, !content.isEmpty else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(content, forType: .string)
@@ -183,69 +144,6 @@ extension LauncherView {
         DeleteTargetLogic.isURLScheme(target)
     }
 
-    /// Reveals the `.toml` (or script) a block was declared in. Reading the
-    /// sources directory touches disk, so it happens off the main thread.
-    private func revealDeclaringFile(for selected: LauncherResult) {
-        let candidateID = selected.id
-        // Only `file` is read here, which no placeholder touches, but the row
-        // travels anyway: a call that can omit it is how the panel came to show
-        // `shortcuts run ''`.
-        let row = RowRef(selected)
-        Task {
-            let block = await Task.detached(priority: .userInitiated) {
-                EngineBridge.shared.sourceBlock(candidateID: candidateID, row: row)
-            }.value
-            await MainActor.run {
-                guard let file = block?.file, FileManager.default.fileExists(atPath: file) else {
-                    showBanner("Couldn't find the file that declares this", style: .info, duration: 1.6)
-                    return
-                }
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file)])
-            }
-        }
-    }
-
-    /// Performs a declared block's steps. Usage is recorded on intent, like an
-    /// open, so a routine you run every morning ranks like one.
-    ///
-    /// One rule for Enter: the block's `open` when it declares one, else the
-    /// row's own path. Which producer made the row does not enter into it, and
-    /// the core is what answers, so both shells get the same behaviour.
-    private func performSourceBlock(_ selected: LauncherResult) {
-        // Resolve BEFORE recording usage or hiding: an unparseable id would
-        // otherwise rank the row up, close the window, and do nothing, with no
-        // way for the user to tell that it failed.
-        guard let blockID = SourceBlockCatalog.blockID(fromCandidateID: selected.id) else {
-            showBanner("Couldn't tell which block this row belongs to", style: .error, duration: 2.0)
-            return
-        }
-        recordOpen(selected, action: AppConstants.Launcher.SourceBlock.usageAction)
-        hideLauncherWindow(restorePreviousApp: false)
-
-        let name = selected.title
-        let row = RowRef(selected)
-        let typed = query
-        // Inside a level the row's ancestors are what `{parent.*}` names, and
-        // without them a command would act on nothing.
-        let ancestors = selectedRowAncestorsJSON
-        Task {
-            let outcome = await Task.detached(priority: .userInitiated) {
-                EngineBridge.shared.performBlock(
-                    blockID: blockID, row: row, query: typed, ancestorsJSON: ancestors)
-            }.value
-            await MainActor.run {
-                if outcome.opensPath {
-                    openTargetAsync(row.path)
-                    return
-                }
-                guard let failure = outcome.errors.first else { return }
-                // Steps are detached, so this only fires when one could not be
-                // started at all. A step's own exit code is its business.
-                showBanner("\(name): \(failure)", style: .error, duration: 4.0)
-            }
-        }
-    }
-
     private func recordOpen(_ selected: LauncherResult, action: String) {
         if let error = bridge.recordUsage(candidateID: selected.id, action: action) {
             showBanner(error.userFacingMessage, style: .info, duration: 1.4)
@@ -305,14 +203,7 @@ extension LauncherView {
         case .process:
             showBanner("Processes can't be revealed in Finder", style: .info, duration: 1.2)
         case .action:
-            // A block's row may name a path of its own (`format = "json"`), and
-            // then it is an ordinary filesystem object that reveals like one.
-            // Only a row without one falls back to the declaration that made it.
-            if selected.path.isEmpty {
-                revealDeclaringFile(for: selected)
-            } else {
-                revealPathInFinder(selected.path)
-            }
+            revealPathInFinder(selected.path)
         }
     }
 

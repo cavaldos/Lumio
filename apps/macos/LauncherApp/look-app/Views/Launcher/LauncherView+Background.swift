@@ -9,9 +9,8 @@ extension LauncherView {
         // isCommandMode. It needs the full themed bg, so prefer the
         // settings condition over the command-mode one.
         if isCommandMode && !appUIState.showsThemeSettings {
-            // Command mode renders dynamic content (pomo timer, sys
-            // refresh) with brightly-colored controls (Pause = warning
-            // yellow, Reset = danger red, etc.). NSVisualEffectView with
+            // Command mode renders dynamic content (speed test
+            // refresh) with brightly-colored controls. NSVisualEffectView with
             // .withinWindow blending was producing a soft halo of those
             // button colors behind/around the buttons - visible as a
             // yellow/red "eclipse blur" - because macOS samples the
@@ -85,4 +84,23 @@ extension LauncherView {
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
+}
+
+/// Frosted surface for floating tiles: backdrop + control-fill stack.
+func frostedTile(
+    themeStore: ThemeStore,
+    cornerRadius: CGFloat? = nil,
+    blendingMode: NSVisualEffectView.BlendingMode = .behindWindow,
+    tint: Color? = nil,
+    tintOpacity: Double = 0
+) -> some View {
+    let radius = cornerRadius ?? themeStore.tileRadius
+    return ZStack {
+        ThemedBackdrop(themeStore: themeStore, blendingMode: blendingMode, cornerRadius: radius)
+        themeStore.controlFillColor()
+        if let tint {
+            tint.opacity(tintOpacity)
+        }
+    }
+    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
 }

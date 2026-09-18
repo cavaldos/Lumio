@@ -10,19 +10,14 @@ Guide for building Look locally and contributing to the project.
 │   └── macos/
 │       └── LauncherApp/          # Swift macOS app (Xcode project)
 ├── core/                         # Shared Rust, consumed by the app shell
-│   ├── ai/                       # Routing, planning, lexicon
-│   ├── answers/                  # Platform-agnostic "web answer" features
-│   ├── calc/                     # Calculator expression evaluation
+│   ├── answers/                  # URL classification + translation helpers
 │   ├── engine/                   # Query engine, search pipeline, config
-│   ├── indexing/                 # Candidate model, source traits
+│   ├── indexing/                 # Candidate model
 │   ├── lunar/                    # Solar-to-lunar date conversion
 │   ├── matching/                 # Fuzzy matching
 │   ├── netspeed/                 # Bandwidth measurement
-│   ├── qactions/                 # Quick Actions catalog (declarative half)
 │   ├── ranking/                  # Ranking heuristics
-│   ├── sources/                  # User-declared source blocks
 │   ├── storage/                  # SQLite-backed storage
-│   ├── todo/                     # Todo backend
 │   └── tools/                    # Preferred tools: catalog + command composition
 ├── bridge/
 │   └── ffi/                      # Rust FFI bridge (consumed by the macOS app)

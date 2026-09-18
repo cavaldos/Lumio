@@ -53,15 +53,12 @@ extension LauncherView {
         return (toolActionRow(for: selected), pathIsDirectory(selected))
     }
 
-    /// A row as the core needs it for a tool action: its id so a block can
-    /// override the chord, its title and ancestors so that override expands
-    /// like any other command the block declares.
+    /// A row as the core needs it for a tool action.
     func toolActionRow(for result: LauncherResult) -> ToolActionRow {
         ToolActionRow(
             candidateID: result.id,
             title: result.title,
-            path: result.path,
-            ancestorsJSON: selectedRowAncestorsJSON
+            path: result.path
         )
     }
 

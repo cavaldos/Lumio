@@ -6,6 +6,14 @@ import Foundation
 /// Suppressed for a row whose block declared `then` targets: the author already
 /// chose that row's vocabulary, and every entry here keeps its chord anyway.
 extension LauncherView {
+    /// One Cmd+K menu entry.
+    struct RowActionDescriptor: Identifiable {
+        let actionId: String
+        let title: String
+        var shortcut: String?
+        var id: String { actionId }
+    }
+
     enum RowAction {
         static let prefix = "rowaction:"
 
@@ -63,7 +71,7 @@ extension LauncherView {
         ]
     }
 
-    func rowActionDescriptors(for result: LauncherResult) -> [QuickActionDescriptor] {
+    func rowActionDescriptors(for result: LauncherResult) -> [RowActionDescriptor] {
         guard !result.path.isEmpty, result.kind != .clipboard, result.kind != .process else {
             return []
         }
@@ -75,13 +83,9 @@ extension LauncherView {
         let tools = resolvedTools(for: result, entries: offered)
 
         return offered.map { entry in
-            QuickActionDescriptor(
+            RowActionDescriptor(
                 actionId: entry.id,
                 title: Self.label(for: entry, tools: tools),
-                control: .button,
-                onLabel: nil,
-                offLabel: nil,
-                info: [],
                 shortcut: entry.chord
             )
         }

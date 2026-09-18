@@ -19,8 +19,12 @@ struct ThemedBackdrop: View {
     /// clip. Ignored by the fallback path.
     var cornerRadius: CGFloat = 0
 
-    /// The heaviest darkness a full slider adds over the base frost.
-    private static let maxFrostScrim = 0.7
+    /// The heaviest darkness a full slider adds over the base frost. Kept low
+    /// on purpose: the panel is one continuous Liquid Glass sheet, and past
+    /// ~1/4 black the tint stops refracting and sheets the droplet into an
+    /// opaque card floating over the desktop. Full-dark stays reachable by
+    /// pushing the Tint slider itself (see `tintOpacityScale`).
+    private static let maxFrostScrim = 0.25
     /// Below this no frost is drawn: the fallback material cannot fade (it
     /// loses its blur below full alpha), so 0 means off on both paths.
     private static let frostCutoff = 0.01

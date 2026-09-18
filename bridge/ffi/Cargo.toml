@@ -11,19 +11,14 @@ version = "0.1.0"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-look-ai = { path = "../../core/ai" }
 look-answers = { path = "../../core/answers" }
-look-calc = { path = "../../core/calc" }
 look-engine = { path = "../../core/engine" }
 look-indexing = { path = "../../core/indexing" }
-look-sources = { path = "../../core/sources" }
 look-lunar = { path = "../../core/lunar" }
 look-matching = { path = "../../core/matching" }
 look-netspeed = { path = "../../core/netspeed" }
-look-qactions = { path = "../../core/qactions" }
 look-ranking = { path = "../../core/ranking" }
 look-storage = { path = "../../core/storage" }
-look-todo = { path = "../../core/todo" }
 look-tools = { path = "../../core/tools" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

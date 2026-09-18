@@ -15,19 +15,20 @@ struct LauncherRowView: View {
     let onOpen: () -> Void
 
     private enum Layout {
-        /// A title-only row would otherwise sit at the icon's height, well
-        /// under the two-line rows around it. Matches the Linux `--row-height`.
-        static let minHeight: CGFloat = 48
+        /// Spotlight rows are ~58-60pt with a ~36pt icon: a title-only row
+        /// would otherwise sit well under the two-line rows around it.
+        static let minHeight: CGFloat = 58
         static let borderWidth: CGFloat = 1
         static let dividerHeight: CGFloat = 1
         static let dividerInset: CGFloat = 6
         static let dividerOpacity: Double = 0.8
     }
 
-    /// Hidden under the selection pill and after the final row. The row keeps
-    /// the divider's height either way, so selection never reflows the list.
+    /// Spotlight shows no dividers between rows — the selection wash alone
+    /// separates them. The row keeps the divider's height either way, so
+    /// selection never reflows the list.
     private var showsDivider: Bool {
-        !isLast && !isSelected
+        false
     }
 
     private var syntheticRow: SyntheticRow? {
@@ -56,33 +57,15 @@ struct LauncherRowView: View {
                 NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
                     ?? NSWorkspace.shared.icon(for: .plainText)
             }
-        case .calc:
-            return RowIconCache.image(key: "feature:calc") { LauncherCalcFeature.icon() }
         case .webURL:
             return RowIconCache.image(key: "symbol:globe") {
                 NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
                     ?? NSWorkspace.shared.icon(for: .plainText)
             }
-        case .meeting:
-            return RowIconCache.image(key: "symbol:video") {
-                NSImage(systemSymbolName: "video.fill", accessibilityDescription: nil)
-                    ?? NSWorkspace.shared.icon(for: .plainText)
-            }
-        case .call(let url):
-            let symbol = LinkRowAppearance.symbol(forURL: url)
-            return RowIconCache.image(key: "symbol:\(symbol)") {
-                NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-                    ?? NSWorkspace.shared.icon(for: .plainText)
-            }
-        case .prefixSuggestion, .webSuggestion:
+        case .prefixSuggestion:
             return RowIconCache.image(key: "symbol:magnifyingglass") {
                 NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
                     ?? NSWorkspace.shared.icon(for: .plainText)
-            }
-        case .aiAction(let toolID):
-            // Keyed per tool: each one has its own symbol.
-            return RowIconCache.image(key: "aiaction:\(toolID)") {
-                AIActionAppearance.icon(forToolID: toolID)
             }
         case nil:
             break
@@ -103,15 +86,10 @@ struct LauncherRowView: View {
             }
         }
 
-        // What the block declared wins: the author chose it for these rows.
-        // Then the file, when the row names one - a row with a path IS that
-        // file (`format = "json"`), and a list of them should not be a column
-        // of identical bolts. The bolt is left for rows with nothing on disk,
-        // where it says the honest thing: Enter performs steps.
+        // A row with a path IS that file, and a list of them should not be a
+        // column of identical bolts. The bolt is left for rows with nothing on
+        // disk, where it says the honest thing: Enter performs steps.
         if result.kind == .action {
-            if let declared = SourceBlockIcons.declaredIcon(for: result) {
-                return declared
-            }
             if rowIsItsPath {
                 return RowIconCache.icon(forFile: result.path)
             }
@@ -157,50 +135,25 @@ struct LauncherRowView: View {
         themeStore.uiFont(size: CGFloat(max(10, themeStore.settings.fontSize - 3)), weight: .regular)
     }
 
-    private var kindLabel: String {
-        switch result.kind {
-        case .app:
-            return "App"
-        case .file:
-            return "File"
-        case .folder:
-            return "Folder"
-        case .clipboard:
-            return result.isClipboardImage ? "Image" : "Clipboard"
-        case .process:
-            return "Process"
-        case .action:
-            return "Action"
-        }
-    }
-
-    /// The row's two meta slots: what it is ABOUT, and what KIND it is.
-    ///
-    /// Split because they want different alignment. `context` shares the
-    /// title's left edge, since eleven `main.go` rows only read as different if
-    /// their paths line up; `kind` is one word, so it makes a right column with
-    /// an edge. Joined, the kind word shifted every path by a different amount.
-    private var meta: (context: String, kind: String) {
+    /// The row's second line: what it is ABOUT (parent path / metadata).
+    /// Spotlight has no right-hand "kind" column — an app row is just its
+    /// title, a file row is title + path/metadata below it.
+    private var contextText: String {
         if syntheticRow != nil {
-            return (result.subtitle ?? "", "")
+            return result.subtitle ?? ""
         }
-        if result.kind == .clipboard {
-            return (result.subtitle ?? "", kindLabel)
-        }
-        if result.kind == .process {
-            // "PID 1234 · :3000" - carries the pid and any listening ports.
-            return (result.subtitle ?? "", kindLabel)
+        if result.kind == .clipboard || result.kind == .process {
+            return result.subtitle ?? ""
         }
         if result.kind == .app {
-            return ("", kindLabel)
+            return ""
         }
         // A row a user's block produced says WHICH block: the kind is already
         // on the icon, and its origin is what the list cannot otherwise say.
         if result.isSourceRow {
-            let context = result.path.isEmpty ? (result.subtitle ?? "") : pathInfo
-            return (context, result.subtitle ?? kindLabel)
+            return result.path.isEmpty ? (result.subtitle ?? "") : pathInfo
         }
-        return (result.path.isEmpty ? "" : pathInfo, kindLabel)
+        return result.path.isEmpty ? "" : pathInfo
     }
 
     var body: some View {
@@ -218,38 +171,22 @@ struct LauncherRowView: View {
                         isDeclared: result.isSourceRow,
                         themeStore: themeStore)
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(result.title)
-                                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize), weight: .medium))
-                                .foregroundStyle(themeStore.fontColor())
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            // Never truncated: that is what gives the column
-                            // its edge. A source row's is user text, so it
-                            // yields to the title instead.
-                            if !meta.kind.isEmpty {
-                                Text(meta.kind)
-                                    .font(metaFont)
-                                    .foregroundStyle(themeStore.mutedTextColor())
-                                    .lineLimit(1)
-                                    .layoutPriority(result.isSourceRow ? 0 : 1)
-                            }
-                        }
-                        if !meta.context.isEmpty {
-                            Text(meta.context)
+                        Text(result.title)
+                            .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 2), weight: .medium))
+                            .foregroundStyle(themeStore.fontColor())
+                            .lineLimit(1)
+                        if !contextText.isEmpty {
+                            Text(contextText)
                                 .font(metaFont)
                                 .foregroundStyle(themeStore.mutedTextColor())
                                 .lineLimit(1)
                         }
                     }
-                    // Explicit: the Spacer that used to do this now sits in
-                    // the title row, pushing the kind right.
+                    // Spotlight rows: title over an optional second line, no
+                    // right-hand column and no shift on selection.
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    // Keyed on `isSelected` so it rides nav's glide transaction.
-                    // Offset, not padding: the text must not reflow.
-                    .offset(x: isSelected ? Motion.Selection.titleShift : 0)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(minHeight: Layout.minHeight)
             }
@@ -285,7 +222,9 @@ private struct RowIcon: View {
     let themeStore: ThemeStore
 
     private enum Tile {
-        static let size: CGFloat = 22
+        /// Spotlight-sized icon (~36pt). At 22pt a few-percent selection zoom
+        /// is one point; at this size the same zoom reads as intended.
+        static let size: CGFloat = 36
         static let fill: Double = 0.16
         static let ring: Double = 0.32
         static let ringWidth: CGFloat = 1

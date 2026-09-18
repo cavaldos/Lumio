@@ -3,76 +3,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ResultPreviewView: View {
-    private enum Layout {
-        /// How much of a block's steps the panel shows before scrolling. Two,
-        /// because the steps are context for the row, not the subject of the
-        /// panel, and one long command should not push the preview off screen.
-        static let visibleStepLines = 2
-
-        /// The cap when the steps are the only thing in the panel. Nothing is
-        /// competing for the space, so a long command is worth reading in full;
-        /// past this it scrolls, without bars (see AICodeBlockView).
-        static let expandedStepLines = 14
-
-        /// How long a row must stay selected before its `preview` command runs.
-        ///
-        /// The command is a process, and a cancelled task only stops the panel
-        /// from being filled - the shell it already spawned runs to completion.
-        /// Without this, holding a arrow key through a source forks one process
-        /// per row it passes, each free to burn its whole timeout after the user
-        /// has moved on. Short enough that a row the user actually stops on
-        /// still fills immediately.
-        static let previewDebounceNanoseconds: UInt64 = 150_000_000
-    }
-
     @EnvironmentObject private var themeStore: ThemeStore
     let result: LauncherResult
-    /// The levels this row was reached through, for a `preview` that names
-    /// `{parent.*}`. Empty for every row that is not inside a drill-down.
-    var rowAncestorsJSON: String = "[]"
-    /// Quick Actions for this result, rendered beneath the header (info + actions
-    /// panel). Empty for results with no actions.
-    var quickActions: [QuickActionDescriptor] = []
-    var quickActionStates: [String: ActionState] = [:]
-    var quickActionInfo: [String: [String: InfoValue]] = [:]
-    var pendingQuickActionItems: Set<String> = []
-    /// Actions with something applying: their controls render inert (see
-    /// `LauncherView.busyQuickActionIds`).
-    var busyQuickActionIds: Set<String> = []
-    /// Changes each time the launcher opens, replaying the quick-action cascade.
-    var quickActionsRevealToken: UInt64 = 0
-    var onRunQuickAction: (QuickActionDescriptor, ActionIntent) -> Void = { _, _ in }
-    var onActivateQuickActionItem: (QuickActionDescriptor, QuickActionListItem) -> Void = { _, _ in }
     var onDeleteClipboard: (() -> Void)? = nil
     /// Process-finder preview inputs (only set for `.process` results).
     var processDetail: ProcessDetail? = nil
     var processCPU: Double? = nil
     var isMeasuringProcessCPU: Bool = false
-    /// The Cmd+K action menu, floated under the header rather than laid out, so
-    /// a row's verbs cost the preview nothing until they are asked for.
+    /// The Cmd+K action menu, floated under the header rather than laid out.
     var isActionMenuOpen: Bool = false
     var actionMenuIndex: Int = 0
-    /// What the menu lists. Not always `quickActions`: with an empty query the
-    /// launchpad's own controls take its place.
-    var actionMenuDescriptors: [QuickActionDescriptor] = []
-    /// Activating a row of the Cmd+K menu, which is not the same as running it:
-    /// a target with a `confirm` asks first.
-    var onActivateActionMenuRow: (QuickActionDescriptor) -> Void = { _ in }
+    var actionMenuDescriptors: [LauncherView.RowActionDescriptor] = []
+    var onActivateActionMenuRow: (LauncherView.RowActionDescriptor) -> Void = { _ in }
 
     @State private var folderListing: FolderListing?
     @State private var trashItemCount: Int?
-    /// Steps of the declared block behind an `.action` row, read on selection,
-    /// with the file that declared it.
-    @State private var blockSteps: [String] = []
-    @State private var blockFile: String?
-    /// Whether this row's block declares a `preview`, known before it runs, so
-    /// the steps can claim the space when nothing is coming below them.
-    @State private var blockHasPreview = false
-    /// Output of the block's declared `preview`, for rows that have one.
-    @State private var blockPreview: SourcePreview?
 
-    /// The menu for a preview that has no content area to pin it into. Padded
-    /// clear of the header so it still reads as attached to the row above it.
+    /// The menu for a preview that has no content area to pin it into.
     @ViewBuilder
     private var floatingActionMenu: some View {
         if isActionMenuOpen {
@@ -82,24 +29,15 @@ struct ResultPreviewView: View {
         }
     }
 
-    /// The Cmd+K popup, pinned to the top of the content area so it opens flush
-    /// under the header and floats over whatever the preview is showing.
     private var actionMenu: some View {
         ActionMenuView(
             descriptors: actionMenuDescriptors,
-            states: quickActionStates,
             focusedIndex: actionMenuIndex,
             themeStore: themeStore,
             onActivate: onActivateActionMenuRow
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
         .zIndex(1)
-    }
-
-    /// Actions with live details worth reading (Bluetooth's paired devices).
-    /// Their verbs live in the Cmd+K menu; only what they know stays here.
-    private var infoOnlyQuickActions: [QuickActionDescriptor] {
-        quickActions.filter { !$0.info.isEmpty }
     }
 
     /// A System Settings pane result (its "path" is a URL scheme, not a file).
@@ -142,189 +80,6 @@ struct ResultPreviewView: View {
         NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
             ?? NSWorkspace.shared.icon(for: .plainText)
-    }
-
-    /// The synthesized calculator row - no file/bundle behind it, so it gets
-    /// its own branch like clipboard rows do.
-    private var isCalcResult: Bool {
-        if case .calc = SyntheticRow.classify(resultID: result.id) { return true }
-        return false
-    }
-
-    private var calcIcon: NSImage { LauncherCalcFeature.icon() }
-
-    /// The planner-proposed action row: no file behind it, so it gets its own
-    /// hero panel - icon, the plan (the point of the row), a type badge, and
-    /// the key hints - all styled from `AIActionAppearance` so new tools reuse
-    /// this panel unchanged.
-    private var aiActionToolID: String? {
-        if case .aiAction(let toolID) = SyntheticRow.classify(resultID: result.id) {
-            return toolID
-        }
-        return nil
-    }
-
-    private func aiActionPreview(_ toolID: String) -> some View {
-        let look = AIActionAppearance.look(forToolID: toolID)
-        return VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
-            Image(nsImage: AIActionAppearance.icon(forToolID: toolID))
-                .resizable()
-                .scaledToFit()
-                .frame(width: 52, height: 52)
-                .foregroundStyle(themeStore.accentColor())
-
-            Text(result.title)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 5), weight: .bold))
-                .foregroundStyle(themeStore.fontColor())
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.6)
-
-            KindBadge(kind: look.typeName.lowercased())
-
-            VStack(alignment: .leading, spacing: 8) {
-                hintRow(key: "↵", text: look.verb)
-                hintRow(key: "⌘Z", text: "Undo after it runs")
-                hintRow(key: "Esc", text: "Dismiss")
-            }
-            .padding(.top, 6)
-
-            Spacer(minLength: 0)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The synthesized rows that open a URL - a meeting to join, a way to
-    /// reach someone. No file behind either, so they take the same centered
-    /// hero shape as the action and calc rows.
-    private var linkURL: String? {
-        switch SyntheticRow.classify(resultID: result.id) {
-        case .meeting(let url), .call(let url): return url
-        default: return nil
-        }
-    }
-
-    private func linkIcon(_ url: String) -> NSImage {
-        NSImage(
-            systemSymbolName: LinkRowAppearance.symbol(forURL: url), accessibilityDescription: nil)
-            ?? NSWorkspace.shared.icon(for: .plainText)
-    }
-
-    /// "Teams  ·  14:30  ·  in 4 min", or "FaceTime audio  ·  mobile  ·  +1 …",
-    /// dropping whichever half is missing.
-    private var linkDetailLine: String? {
-        let parts = [result.linkKindLabel, result.linkDetail].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
-    }
-
-    private func linkPreview(_ url: String) -> some View {
-        VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
-            Image(nsImage: linkIcon(url))
-                .resizable()
-                .scaledToFit()
-                .frame(width: 52, height: 52)
-                .foregroundStyle(themeStore.accentColor())
-
-            Text(result.title)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 5), weight: .bold))
-                .foregroundStyle(themeStore.fontColor())
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.6)
-
-            // Not a `KindBadge`: it renders `kind.capitalized`, which would turn
-            // "GoToMeeting" into "Gotomeeting". Provider names are the one label
-            // here whose casing is the brand.
-            if let detail = linkDetailLine {
-                Text(detail)
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize), weight: .medium))
-                    .foregroundStyle(themeStore.mutedTextColor())
-                    .multilineTextAlignment(.center)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                hintRow(key: "↵", text: openHint(url))
-                hintRow(key: "Esc", text: "Dismiss")
-            }
-            .padding(.top, 6)
-
-            // Where Enter actually goes. An invite is written by whoever sent
-            // it, so naming the host is the one thing that lets a reader catch
-            // a link that is not the meeting it claims to be.
-            if let host = URL(string: url)?.host {
-                Text(host)
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 3), weight: .regular))
-                    .foregroundStyle(themeStore.secondaryTextColor())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// What Enter will actually do, in the words of the destination.
-    private func openHint(_ url: String) -> String {
-        let lower = url.lowercased()
-        if lower.hasPrefix("sms:") || lower.hasPrefix("imessage:") { return "Open Messages" }
-        if lower.hasPrefix("tel:") { return "Call through your iPhone" }
-        if lower.hasPrefix("facetime") { return "Start the FaceTime call" }
-        return "Join the meeting"
-    }
-
-    private func hintRow(key: String, text: String) -> some View {
-        HStack(spacing: 10) {
-            Text(key)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .semibold))
-                .foregroundStyle(themeStore.accentColor())
-                .frame(minWidth: 36)
-                .padding(.vertical, 4)
-                .background(themeStore.controlFillColor(), in: RoundedRectangle(cornerRadius: themeStore.chipRadius, style: .continuous))
-            Text(text)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .medium))
-                .foregroundStyle(themeStore.secondaryTextColor())
-        }
-        .frame(width: 230, alignment: .leading)
-    }
-
-    /// No file/bundle behind this row, so - like a web-search suggestion -
-    /// it gets a centered hero layout instead of the header+detail one above:
-    /// icon, the answer (the point of the row), the expression it came from,
-    /// then the hint.
-    private var calcPreview: some View {
-        VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
-            Image(nsImage: calcIcon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 56, height: 56)
-
-            Text(result.title)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 14), weight: .bold))
-                .foregroundStyle(themeStore.fontColor())
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-
-            Text(result.calcExpression ?? "")
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize), weight: .regular))
-                .foregroundStyle(themeStore.mutedTextColor())
-
-            Text("Press \(AppConstants.Launcher.Calc.enterToCopyHint)")
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            Spacer(minLength: 0)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var largeIcon: NSImage {
@@ -385,19 +140,13 @@ struct ResultPreviewView: View {
 
     var body: some View {
         if result.kind == .action {
-            actionPreview.overlay(alignment: .top) { floatingActionMenu }
+            genericActionPreview.overlay(alignment: .top) { floatingActionMenu }
         } else if result.kind == .process {
             processPreview
         } else if result.isClipboardImage {
             clipboardImagePreview
         } else if result.kind == .clipboard {
             clipboardPreview
-        } else if isCalcResult {
-            calcPreview
-        } else if let toolID = aiActionToolID {
-            aiActionPreview(toolID)
-        } else if let linkURL {
-            linkPreview(linkURL)
         } else {
         let info = bundleInfo
 
@@ -441,23 +190,6 @@ struct ResultPreviewView: View {
 
                 ZStack(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 12) {
-                // Info only: an action's live details (Bluetooth's paired
-                // devices) are what the panel is for. Its verbs are in Cmd+K.
-                if !infoOnlyQuickActions.isEmpty {
-                    QuickActionsSection(
-                        descriptors: infoOnlyQuickActions,
-                        states: quickActionStates,
-                        info: quickActionInfo,
-                        pendingItems: pendingQuickActionItems,
-                        busyActionIds: busyQuickActionIds,
-                        themeStore: themeStore,
-                        revealToken: quickActionsRevealToken,
-                        onRun: { _, _ in },
-                        onActivateItem: onActivateQuickActionItem,
-                        controlHidden: true
-                    )
-                }
-
                 if result.kind == .file {
                     FilePreview(path: result.path)
                 }
@@ -474,11 +206,7 @@ struct ResultPreviewView: View {
                     InfoRow(label: "Version", value: version)
                 }
 
-                // Settings panes have a URL-scheme "path" and a meaningless file
-                // date; hide both for them (only the actions matter there).
                 if !isSetting {
-                    // Middle truncation, so the one line keeps both the root it
-                    // starts from and the name it ends at.
                     InfoRow(label: "Path", value: result.path, truncation: .middle)
 
                     if let modified = info.modified {
@@ -505,8 +233,6 @@ struct ResultPreviewView: View {
                     return
                 }
                 if isTrash {
-                    // Don't list ~/.Trash (TCC) and don't prompt for Automation
-                    // just by previewing - only show a count if already granted.
                     folderListing = nil
                     trashItemCount = EmptyTrashCommand.itemCount(promptIfNeeded: false)
                     return
@@ -514,32 +240,20 @@ struct ResultPreviewView: View {
                 folderListing = nil
                 let path = result.path
                 let listing = await FolderListingService.list(path: path)
-                // .task(id:) cancels this closure when the result changes,
-                // but the detached worker keeps running - guard against
-                // stale assignment when the user moved on to another folder.
                 if Task.isCancelled { return }
                 folderListing = listing
             }
         }
     }
 
-    /// A declared block has no file to describe, so the panel answers the only
-    /// question that matters before Enter: exactly what is about to run.
-    private var actionPreview: some View {
+    /// Generic action row panel (no declared steps anymore).
+    private var genericActionPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                // The same icon the row is drawn with, else the bolt.
-                if let declared = SourceBlockIcons.declaredIcon(for: result) {
-                    Image(nsImage: declared)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 48, height: 48)
-                } else {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(themeStore.accentColor())
-                        .frame(width: 48, height: 48)
-                }
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(themeStore.accentColor())
+                    .frame(width: 48, height: 48)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(result.title)
@@ -552,134 +266,29 @@ struct ResultPreviewView: View {
                 }
                 Spacer()
             }
-
-            let appIcons = SourceBlockIcons.appIcons(forSteps: blockSteps, limit: 8)
-            if !appIcons.isEmpty {
-                // What the steps will actually bring up. Only steps that name an
-                // app contribute, so the strip never implies more than the block
-                // does.
-                HStack(spacing: 6) {
-                    ForEach(Array(appIcons.enumerated()), id: \.offset) { _, icon in
-                        Image(nsImage: icon)
-                            .resizable()
-                            .frame(width: 24, height: 24)
-                    }
-                }
-            }
-
-            if !blockSteps.isEmpty {
-                Text("Enter runs")
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .medium))
-                    .foregroundStyle(themeStore.secondaryTextColor())
-            }
-
-            // The steps ARE shell, so they get the same block an AI answer's
-            // code gets: highlighted, selectable, and copyable in one press.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if !blockSteps.isEmpty {
-                        AICodeBlockView(
-                            code: blockSteps.joined(separator: "\n"),
-                            language: "sh",
-                            themeStore: themeStore,
-                            // Two lines when output is coming below, since the
-                            // steps are context for the row rather than its
-                            // subject. With nothing below them they are the
-                            // subject, so they take the room.
-                            maxVisibleLines: blockHasPreview
-                                ? Layout.visibleStepLines : Layout.expandedStepLines
-                        )
-                    }
-                    if let preview = blockPreview {
-                        blockPreviewBody(preview)
-                    } else if blockHasPreview {
-                        // Blank space reads as broken, and the command is
-                        // allowed to take seconds.
-                        Text("Running…")
-                            .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                    }
-                }
-            }
-
             Spacer(minLength: 0)
-
-            if let file = blockFile {
-                Divider().overlay(themeStore.secondaryTextColor().opacity(0.2))
-                InfoRow(
-                    label: "Declared in",
-                    value: (file as NSString).abbreviatingWithTildeInPath,
-                    truncation: .middle)
-                // A row that names its own path reveals that, like every other
-                // row with one, so the chord belongs to the declaration only
-                // when the row has nothing of its own to point at.
-                if result.path.isEmpty {
-                    hintRow(key: "⌘F", text: "Reveal that file")
-                }
-            }
+            hintRow(key: "↵", text: "Run")
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: result.id) {
-            let candidateID = result.id
-            let ancestors = rowAncestorsJSON
-            let row = RowRef(result)
-            let block = await Task.detached(priority: .userInitiated) {
-                EngineBridge.shared.sourceBlock(
-                    candidateID: candidateID, row: row, ancestorsJSON: ancestors)
-            }.value
-            // The detached read outlives a cancelled task, so a late answer must
-            // not populate the panel of a row the user has already left.
-            if Task.isCancelled { return }
-            blockSteps = block?.steps ?? []
-            blockFile = block?.file
-            blockHasPreview = block?.hasPreview ?? false
-
-            // The declared `preview` runs a command, so it is read separately
-            // and only after the cheap details are on screen - and only once the
-            // selection settles. `Task.sleep` throws on cancellation, so a row
-            // arrowed past never reaches the spawn at all.
-            blockPreview = nil
-            do {
-                try await Task.sleep(nanoseconds: Layout.previewDebounceNanoseconds)
-            } catch {
-                return
-            }
-            let preview = await Task.detached(priority: .userInitiated) {
-                EngineBridge.shared.sourcePreview(
-                    candidateID: candidateID, row: row, ancestorsJSON: ancestors)
-            }.value
-            if Task.isCancelled { return }
-            blockPreview = preview
-        }
     }
 
-    /// A block's `preview` output, or the reason it could not run. A failure is
-    /// shown rather than swallowed: a preview that silently does nothing reads
-    /// as the feature being broken.
-    @ViewBuilder
-    private func blockPreviewBody(_ preview: SourcePreview) -> some View {
-        if let error = preview.error {
-            Text(error)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .regular))
-                .foregroundStyle(themeStore.mutedTextColor())
-        } else if !preview.text.isEmpty {
-            let shown = PreviewText.visible(preview.text)
-            Text(shown.text)
-                .font(.system(size: CGFloat(themeStore.settings.fontSize - 2), design: .monospaced))
+    private func hintRow(key: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Text(key)
+                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .semibold))
+                .foregroundStyle(themeStore.accentColor())
+                .frame(minWidth: 36)
+                .padding(.vertical, 4)
+                .background(themeStore.controlFillColor(), in: RoundedRectangle(cornerRadius: themeStore.chipRadius, style: .continuous))
+            Text(text)
+                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .medium))
                 .foregroundStyle(themeStore.secondaryTextColor())
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if shown.dropped > 0 {
-                Text("… \(shown.dropped) more lines")
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 3), weight: .regular))
-                    .foregroundStyle(themeStore.mutedTextColor())
-            }
         }
+        .frame(width: 230, alignment: .leading)
     }
 
-    /// Shared by the text and image panels: the two differ below this line, not
-    /// at it. The capture time lives in the InfoRow at the foot and only there.
+    /// Shared by the text and image panels.
     private func clipboardPreviewHeader(icon: NSImage, title: String) -> some View {
         HStack(spacing: 10) {
             Image(nsImage: icon)
@@ -694,8 +303,6 @@ struct ResultPreviewView: View {
                 .truncationMode(.middle)
             Spacer()
 
-            // Solid, as the kill and delete confirmations are: tinted text on
-            // a tinted fill was one hue twice and read as disabled.
             if let onDeleteClipboard {
                 Button {
                     onDeleteClipboard()
@@ -739,8 +346,6 @@ struct ResultPreviewView: View {
                 .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2), weight: .medium))
                 .foregroundStyle(themeStore.mutedTextColor())
 
-            // TextKit, not SwiftUI Text: Text lays out the whole clip
-            // synchronously and drops frames on long content.
             HighlightedTextView(
                 attributed: NSAttributedString(string: content),
                 font: previewFont,
@@ -756,9 +361,6 @@ struct ResultPreviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - Copied image preview
-
-    /// The picture gets the space the text panel gives the clip's characters.
     private var clipboardImagePreview: some View {
         let capturedAt =
             result.clipboardCapturedAt.map { Self.clipboardDateFormatter.string(from: $0) }
@@ -809,8 +411,6 @@ struct ResultPreviewView: View {
             ?? clipboardIcon
     }
 
-    // MARK: - Process preview
-
     private var processIcon: NSImage {
         result.processPID.map(LauncherProcessFeature.icon) ?? NSWorkspace.shared.icon(for: .unixExecutable)
     }
@@ -855,7 +455,6 @@ struct ResultPreviewView: View {
                 Spacer()
             }
 
-            // Command line (argv).
             if let detail = processDetail, !detail.cmdline.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Command")
@@ -929,8 +528,6 @@ struct InfoRow: View {
     @EnvironmentObject private var themeStore: ThemeStore
     let label: String
     let value: String
-    /// Which end a value too long for the row gives up. A path says `.middle`,
-    /// because both of its ends carry meaning.
     var truncation: Text.TruncationMode = .tail
 
     var body: some View {

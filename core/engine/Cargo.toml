@@ -9,9 +9,7 @@ version = "0.1.0"
 [dependencies]
 look-indexing = { path = "../indexing" }
 look-matching = { path = "../matching" }
-look-qactions = { path = "../qactions" }
 look-ranking = { path = "../ranking" }
-look-sources = { path = "../sources" }
 look-storage = { path = "../storage" }
 look-tools = { path = "../tools" }
 ignore = "0.4"

@@ -20,12 +20,11 @@ final class ShortcutCatalogTests: XCTestCase {
         }
     }
 
-    /// `/speed` sits fourth, which is exactly the position the stale table got
-    /// wrong. Naming it explicitly keeps the regression legible.
-    func testSpeedIsListedFourth() {
+    /// `/speed` sits first; only `/speed` and `/kill` remain. Naming the
+    /// order explicitly keeps the regression legible.
+    func testCommandCatalogHoldsOnlySpeedAndKill() {
         let ids = AppConstants.Launcher.commandCatalog.map(\.id)
-        XCTAssertEqual(ids.count, 7)
-        XCTAssertEqual(ids[3], AppConstants.Launcher.Command.speed)
+        XCTAssertEqual(ids, [AppConstants.Launcher.Command.speed, AppConstants.Launcher.Command.kill])
     }
 
     func testIDsAreUnique() {
@@ -64,14 +63,6 @@ final class ShortcutCatalogTests: XCTestCase {
     func testPrefixesComeFromTheCanonicalList() {
         let group = ShortcutCatalog.groups.first { $0.topic == .prefixes }
         XCTAssertEqual(group?.entries.count, AppConstants.Launcher.PrefixSuggestion.all.count)
-    }
-
-    /// The AI keys existed only on the help screen before this; Settings had a
-    /// section for zoom but none for the assistant.
-    func testAIShortcutsAreInTheCatalog() {
-        let ai = ShortcutCatalog.groups(for: .ai).flatMap(\.entries)
-        XCTAssertFalse(ai.isEmpty)
-        XCTAssertTrue(ai.contains { $0.keys.contains("Option+Up") })
     }
 
     /// A typed prefix or a positional ⌘N has no chord to reassign, so a remap UI

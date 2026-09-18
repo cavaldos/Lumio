@@ -1,7 +1,7 @@
 //! C-ABI wrappers over `look_storage`'s URL history, so the macOS Swift shell
 //! records launcher-opened URLs and queries them back through the same look.db
-//! linows uses. Direct-store access (own connection, own table), mirroring
-//! `todo_api`; both endpoints are best-effort and panic-safe at `lib.rs`.
+//! linows uses. Direct-store access (own connection, own table); both
+//! endpoints are best-effort and panic-safe at `lib.rs`.
 //! Frecency ranking lives in `look_engine::url_history`, shared with linows.
 
 use crate::state::{cstr_to_string, default_db_path, store_json_allocation};

@@ -15,11 +15,11 @@ struct SmoothCaretTextField: NSViewRepresentable {
     var placeholder: String
     var isFocused: FocusState<Bool>.Binding
     var themeStore: ThemeStore
-    /// Overrides the base theme font size when set (the Todo search bar runs a
-    /// touch larger). Colors and family always follow the theme.
+    /// Overrides the base theme font size when set. Colors and family
+    /// always follow the theme.
     var fontSize: CGFloat? = nil
     /// Lets Shift+Return insert a line break and the field wrap and grow. Only
-    /// AI mode asks for it: the search bar is a single line by design, and a
+    /// Multiline support: the search bar is a single line by design, and a
     /// query with a newline in it means nothing to the matcher.
     var allowsMultiline: Bool = false
     var onSubmit: () -> Void
@@ -272,7 +272,7 @@ final class CaretTextField: NSTextField {
     }
 
     /// Restores the field editor's caret color on end-editing, so other native
-    /// text fields in the window (Pomo name, Todo drafts) keep a visible caret.
+    /// text fields in the window keep a visible caret.
     private func restoreNativeCaret() {
         suppressedEditor?.insertionPointColor = savedInsertionPointColor ?? .textColor
         suppressedEditor = nil

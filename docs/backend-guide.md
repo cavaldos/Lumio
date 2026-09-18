@@ -30,10 +30,10 @@ Use this guide when you are changing:
 
 ### `core/answers`
 
-- `core/answers/src/lib.rs`: public entry points (`instant_answer`, `has_match`, suggestions, `translate`).
-- `core/answers/src/sources/`: per-provider lookups (`currency.rs`, `weather.rs`, `crypto.rs`, `knowledge.rs`, `suggest.rs`).
+- `core/answers/src/lib.rs`: public entry points (`translate`, `classify_url`).
 - `core/answers/src/http.rs`: blocking `curl` subprocess transport (no async runtime).
-- `core/answers/src/translate.rs`: translation logic behind the FFI/Tauri translate endpoints.
+- `core/answers/src/translate.rs`: translation logic behind the FFI translate endpoint.
+- `core/answers/src/url.rs`: URL classification for launcher input.
 - Keep entry points best-effort and panic-free: return "no answer" on any failure.
 
 ### `core/storage`

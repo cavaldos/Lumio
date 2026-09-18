@@ -1,12 +1,10 @@
 import AppKit
 import Darwin
 import SwiftUI
-import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeyManager = GlobalHotKeyManager()
-    private let pomoMenuBarItem = PomoMenuBarItem()
 
     // The launcher window is owned by AppKit (created here), NOT by a SwiftUI
     // WindowGroup. SwiftUI refuses to create a WindowGroup window on a
@@ -36,20 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hotKeyManager.registerToggleHotKey()
         NSApp.setActivationPolicy(.accessory)
-        pomoMenuBarItem.install()
 
         // Create the launcher window ourselves (hidden) so LauncherView mounts
         // at launch - even on a cold background-login launch, where SwiftUI
         // would never create a WindowGroup window. With the view mounted, its
         // .lookToggleWindowRequested observer is live and Cmd+Space toggles it.
         makeLauncherWindow()
-
-        // Notifications: ask for permission early (so the prompt isn't
-        // tied to the user being mid-pomodoro) and forward foreground
-        // deliveries through a delegate so banners aren't suppressed
-        // when the launcher window is the active app.
-        UNUserNotificationCenter.current().delegate = PomoNotifications.foregroundDelegate
-        PomoNotifications.requestPermissionEarly()
 
         // Notify-only update check against GitHub Releases (throttled to once
         // per 12h). Look ships via Homebrew, so this never self-installs - it

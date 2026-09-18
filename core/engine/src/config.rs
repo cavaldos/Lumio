@@ -34,11 +34,9 @@ pub const SCORE_REGEX_SUBTITLE_ONLY: i64 = 1000;
 pub const BIAS_APP: i64 = 220;
 pub const BIAS_FOLDER: i64 = 0;
 pub const BIAS_FILE: i64 = -20;
-/// A user declared this row by hand and named it, so a match on that name is
-/// deliberate in a way a file path match is not. Sits with apps, not below them.
+/// Bias for action rows.
 pub const BIAS_ACTION: i64 = 200;
-/// On an empty query the launchpad already covers routines, so bundles sit
-/// between apps and folders rather than leading the browse list.
+/// Browse boost for action rows on empty query.
 pub const BROWSE_BOOST_ACTION: i64 = 300;
 
 pub const BIAS_SETTINGS_MATCH: i64 = 420;
@@ -153,12 +151,6 @@ impl RuntimeConfig {
             config.apply_from_file(&path);
             config.ensure_default_file_scan_roots_present();
         }
-        // The launchpad layout is its own file and no part of RuntimeConfig,
-        // but this is the first-run hook. Seeding it here means a fresh install
-        // has a commented super-actions.toml sitting beside the config before the
-        // launcher is ever opened, which is what makes the layout editable
-        // without a docs page to find first.
-        crate::launchpad::ensure_default_file();
         config
     }
 

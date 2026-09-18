@@ -6,12 +6,7 @@ It intentionally merges architecture explanation and diagrams into one place, so
 
 ## 1) System overview and design intent
 
-`look` is a keyboard-first launcher (shipping on macOS, Windows, and Linux) designed for low-latency local search. The architecture separates UI concerns from search/index/ranking concerns (Rust), joined through a small FFI/command boundary. The UI layer is platform-specific:
-
-- **macOS:** Swift / AppKit / SwiftUI under `apps/macos/LauncherApp/` (Xcode project), talking to the Rust core via the C ABI (`bridge/ffi`).
-- **Windows + Linux:** Tauri 2 shell with a vanilla HTML/CSS/JS frontend under `apps/linows/` (`lookapp`), talking to the Rust core via Tauri commands. The macOS SwiftUI app is the design source of truth.
-
-Every shell talks to the same Rust core, so search, indexing, ranking, and storage behave identically across platforms.
+`look` is a keyboard-first launcher for macOS designed for low-latency local search. The architecture separates UI concerns (Swift) from search/index/ranking concerns (Rust), joined through a small FFI boundary. The SwiftUI app under `apps/macos/LauncherApp/` (Xcode project) talks to the Rust core via the C ABI (`bridge/ffi`).
 
 Key design goals:
 
@@ -36,11 +31,8 @@ flowchart LR
     Engine --> Storage[core/storage\nSqliteStore]
     Storage --> DB[(SQLite look.db)]
 
-    Engine --> Indexers[Index discovery\napps + files + settings + user sources]
+    Engine --> Indexers[Index discovery\napps + files + settings]
     Indexers --> DB
-
-    Engine --> Sources[core/sources\n~/.look/sources blocks]
-    Sources --> Shell[Login shell\nrun producers, do steps, verbs]
 
     App --> OS[macOS APIs\nAppKit / NSWorkspace / Carbon]
     OS --> User
@@ -60,15 +52,13 @@ flowchart LR
 - `Themes/`: builtin theme presets (Catppuccin, Tokyo Night, Rose Pine, Gruvbox, Dracula, Kanagawa, Kindle, Liquid) and semantic color tokens
 - `Support/UI/`: shared UI primitives - `Motion` (all animation constants and the reveal modifiers), `ToggleSwitch`, `HoverTooltip`, `HoverBubble`
 - `bridge/ffi`: narrow C ABI surface for search, usage recording, config reload, translation, todo load/save, speed test, and error payloads.
-- `core/answers`: platform-agnostic, network-backed "web answer" lookups shared by every shell (macOS via `bridge/ffi`, Windows/Linux via Tauri commands). Instant answers (currency/weather/crypto), search suggestions, knowledge sources, and translation. Best-effort and panic-free: every entry point returns "no answer" on failure, with cheap network-free pattern-gating (`has_match`) so callers can fire speculatively while typing. No async runtime - HTTP is a blocking `curl` subprocess.
-- `core/ai`: the AI brain - one place for prompts, parsers, and precedence so they cannot drift as tiers are added. The routing ladder (`route.rs`), the planner prompt/aliases/mapping (`planner.rs`, `plan.rs`), tool resolution with the ambiguity gate, dates, previews, and undo recipes (`resolve.rs`), the `@` grammar (`explicit.rs`), the date/word lexicon and window grammar (`lexicon.rs`, `window.rs`), natural-language file recall (`files.rs`), clipboard text-ops, conversations and long-term memory (crash-safe JSON stores), markdown segmentation, and the streamed chat transport (`chat.rs`: a curl child plus a reader thread, polled by the shell - chosen because polling crosses a C ABI without an async runtime). Data-only across the boundary: JSON in, JSON out, no closures. **The AI surface is macOS-only and no linows AI is being built** (wanted on Linux/Windows? open an issue - but local inference needs hardware those machines may not have, and Linux has no unified system calendar); the crate is Rust so the logic is testable without a UI and prompts/parsers live in one place, not because a port is scheduled. See `docs/ai-architecture.md`.
-- `core/sources`: user-declared source blocks. Parsing (`def.rs`), reading the sources directory (`load.rs`), turning a block into rows (`collect.rs`, `rows.rs`), performing steps through the user's login shell with shell-escaped placeholder substitution (`run.rs`), and the block-verb-before-preferred-tool rule (`tools.rs`). Parsing and collection are pure; process execution is the shell's seam, so a `run` block's command is spawned by the shell and its rows handed back through `core/engine`'s row cache. `example.toml` is the annotated format reference, asserted against the parser by a test. See `docs/user-sources.md`.
+- `core/answers`: shared URL classification + translation helpers used by the macOS shell via `bridge/ffi`. Best-effort and panic-free. No async runtime - HTTP is a blocking `curl` subprocess.
 - `core/indexing`: candidate model and indexing helpers used by engine/storage flows.
 - `core/matching`: exact/prefix/fuzzy matching primitives.
 - `core/ranking`: ranking helpers (usage/recency-aware adjustments and score composition).
 - `core/storage`: SQLite integration, schema/migrations, candidate/usage persistence.
-- `core/todo`: shared store for the `/todo` command. Owns the `todo_tasks` table inside the app's existing `look.db` (full-set load/save, one-year retention). macOS reaches it via `bridge/ffi`, linows via its Tauri command layer. `examples/seed.rs` fills a dev database with demo history, including near-today extension-window cases for `/todo` UI testing.
-- `core/netspeed`: the `/speed` measurement, shared by every shell. A latency probe (the best of several TCP handshakes against a pre-resolved address, rather than a subtraction of two of curl's cumulative timers, whose order is not portable across curl builds), download and upload phases (four parallel `curl` streams each), and the plain-language verdicts and display strings both shells print, so a reading reads identically everywhere. Cloudflare's keyless endpoints are the primary source; when they rate-limit a connection the download phase falls back to the nearest of several public test mirrors, ranked by a round-trip probe. No async runtime, and every phase is timeout-bounded. macOS reaches it via `bridge/ffi`, linows via its Tauri command layer.
+- `core/todo`: shared store for the `/todo` command. Owns the `todo_tasks` table inside the app's existing `look.db` (full-set load/save, one-year retention), reached via `bridge/ffi`. `examples/seed.rs` fills a dev database with demo history, including near-today extension-window cases for `/todo` UI testing.
+- `core/netspeed`: the `/speed` measurement. A latency probe (the best of several TCP handshakes against a pre-resolved address), download and upload phases (four parallel `curl` streams each), and plain-language verdicts. Cloudflare's keyless endpoints are the primary source; when they rate-limit a connection the download phase falls back to the nearest of several public test mirrors, ranked by a round-trip probe. No async runtime, and every phase is timeout-bounded. Reached via `bridge/ffi`.
 - `core/engine`: query parsing, indexing orchestration, scoring, top-k retrieval, in-memory cache management.
 
 ```mermaid
@@ -79,7 +69,7 @@ flowchart TB
       RNK[look-ranking]
       STG[look-storage]
       ENG[look-engine]
-      ANS[look-answers\nweb answers + translation]
+      ANS[look-answers\nurl + translation]
       NET[look-netspeed\nspeed test]
     end
 
@@ -165,7 +155,7 @@ Runtime refresh triggers:
   - `true`: run only when dirty,
   - `false`: run on every launcher open request.
 
-Watcher policy (linows, see `apps/linows/src-tauri/src/state.rs`):
+Watcher policy:
 
 - **apps roots** (`/usr/share/applications`, `~/.local/share/applications`, `XDG_DATA_DIRS/applications`) - watched **recursively** (small directories, cheap),
 - **file roots** (`~/Documents`, `~/Downloads`, `~/Desktop`, `file_scan_extra_roots`) - watched **non-recursively** to bound inotify watch count on large trees; deep-tree changes reconciled on next launcher-open refresh,
@@ -469,14 +459,14 @@ Blur Style and Blur Opacity controls act on real frost when there is any.
 ### Motion
 
 Every animated surface reads its physics from `Support/UI/Motion.swift`, so the
-feel is tuned in one place: `Spawn` (the launchpad cascade), `Selection` (the
+feel is tuned in one place: `Spawn` (the open cascade), `Selection` (the
 gliding pill and the one-shot zoom), `Slide` (horizontal entrances), `Surface`
 (the panel arriving), `Press`, `Value` (digit rolls) and `Caret`.
 
 Entrances key off `appearanceRevealToken`, a counter `LauncherView` bumps on
 every show. The window is only ordered out and back in, so `onAppear` fires once
 per process and cannot drive them. The modifiers are `rootReveal` (whole panel),
-`spawnReveal` (launchpad tiles, quick actions, the search bar), `slideReveal`
+`spawnReveal` (the search bar), `slideReveal`
 via `placeholderReveal` / `stripReveal`, plus `symbolEffect(.bounce, value:)` on
 SF Symbols.
 
@@ -504,9 +494,8 @@ On linows the same pass lives in `src/css/motion.css`: one `:root` block of
 tokens (durations, offsets, stagger, the house curve) and the keyframes that
 read them, driven by classes rather than a token counter. `js/motion.js` toggles
 `is-entering` on `.launcher-window` on every summon, which cascades the panel
-arrival, the top bar, the placeholder overlay and the running-apps strip; the
-launchpad keeps its own replay (`components/superactions.js`) because it is
-built lazily. `window-shown` and `visibilitychange` both replay, and a short
+arrival, the top bar, the placeholder overlay and the running-apps strip;
+`window-shown` and `visibilitychange` both replay, and a short
 guard drops whichever lands second. The same stale-buffer problem macOS does not
 have is handled by arming the first frame on hide, so the frame the compositor
 presents on the next summon matches frame 0 instead of flashing and rewinding.

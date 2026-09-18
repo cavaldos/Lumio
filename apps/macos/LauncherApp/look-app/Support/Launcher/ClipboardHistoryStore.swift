@@ -346,9 +346,9 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     /// Copies `payload` to the pasteboard but files it in history under
-    /// `display` (e.g. the calculator row's `2+2 = 4`); re-copying the entry
-    /// still pastes `payload`. Marks the pasteboard change as already seen so
-    /// the passive poller doesn't also insert an unlabeled duplicate.
+    /// `display`; re-copying the entry still pastes `payload`. Marks the
+    /// pasteboard change as already seen so the passive poller doesn't also
+    /// insert an unlabeled duplicate.
     func recordLabeled(display: String, payload: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

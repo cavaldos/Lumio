@@ -2,16 +2,7 @@ use crate::BootstrapScope;
 use crate::config::RuntimeConfig;
 mod apps;
 mod files;
-mod run_cache;
-pub(crate) use run_cache::cache_dir_named;
 mod settings;
-mod sources;
-
-pub use run_cache::{
-    CACHE_DIR_ENV as ROWS_CACHE_DIR_ENV, clear as clear_run_rows, sweep as sweep_run_cache,
-    write as store_run_rows,
-};
-pub use sources::declared_blocks;
 
 use look_indexing::{Candidate, CandidateIdKind};
 use std::collections::HashSet;
@@ -59,9 +50,6 @@ pub fn discover_candidates_stream_scoped(
         }
         if scope.settings {
             settings::discover_system_settings_entries(config.localized_app_names, tx.clone());
-        }
-        if scope.sources {
-            sources::discover_user_sources(tx.clone());
         }
         drop(tx);
 

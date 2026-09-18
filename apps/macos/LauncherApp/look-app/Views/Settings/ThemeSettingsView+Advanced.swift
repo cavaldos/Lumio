@@ -3,20 +3,32 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension ThemeSettingsView {
+    // MARK: - Preset values (one tap instead of a slider / number field)
+
+    /// Opacity 0...1, blur 0...30. Soft matches the app defaults.
+    private var backgroundEffectPresets: [(title: String, opacity: Double, blur: Double)] {
+        [
+            (title: "Clear", opacity: 0.5, blur: 0),
+            (title: "Soft", opacity: 0.35, blur: 8),
+            (title: "Faded", opacity: 0.25, blur: 18),
+        ]
+    }
+
+    /// Depth 1...12, limit 500...50_000. Balanced matches the app defaults.
+    private var indexingScopePresets: [(title: String, depth: Int, limit: Int)] {
+        [
+            (title: "Fast", depth: 2, limit: 1000),
+            (title: "Balanced", depth: 4, limit: 4000),
+            (title: "Thorough", depth: 8, limit: 15000),
+        ]
+    }
+
     var backgroundTab: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 10) {
-                    AISettingsSection(settings: $settings)
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    Text("Background")
-                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
-                        .foregroundStyle(themeStore.secondaryTextColor())
+                    sectionHeader("Background")
 
                     HStack {
                         Button("Choose Background Image") {
@@ -36,107 +48,77 @@ extension ThemeSettingsView {
                         .foregroundStyle(themeStore.secondaryTextColor())
                         .lineLimit(1)
 
-                    HStack(spacing: 10) {
-                        Text("Image Layout")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        Picker("Image Layout", selection: $settings.backgroundImageMode) {
-                            ForEach(BackgroundImageMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+                    presetRow(
+                        title: "Image Style",
+                        options: backgroundEffectPresets.map { $0.title },
+                        selected: backgroundEffectPresets.firstIndex(where: {
+                            abs($0.opacity - settings.backgroundImageOpacity) < 0.01
+                                && abs($0.blur - settings.backgroundImageBlur) < 0.01
+                        }),
+                        onPick: {
+                            settings.backgroundImageOpacity = backgroundEffectPresets[$0].opacity
+                            settings.backgroundImageBlur = backgroundEffectPresets[$0].blur
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(width: AppConstants.ThemeUI.pickerWidth)
+                    )
+                    .help("How strongly the background image shows through.")
 
-                        Text(settings.backgroundImageMode.detail)
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    imageLayoutGrid
+
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                Text("Image Layout")
+                                    .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
+                                    .foregroundStyle(themeStore.secondaryTextColor())
+
+                                Picker("Image Layout", selection: $settings.backgroundImageMode) {
+                                    ForEach(BackgroundImageMode.allCases) { mode in
+                                        Text(mode.title).tag(mode)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .frame(width: AppConstants.ThemeUI.pickerWidth)
+
+                                Text(settings.backgroundImageMode.detail)
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
+                                    .foregroundStyle(themeStore.mutedTextColor())
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            LabeledSlider(title: "Image Opacity", value: $settings.backgroundImageOpacity, range: 0...1)
+                            LabeledSlider(title: "Image Blur", value: $settings.backgroundImageBlur, range: 0...30)
+                        }
+                        .padding(.top, 6)
+                    } label: {
+                        Text("Background details")
+                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
+                            .foregroundStyle(themeStore.secondaryTextColor())
                     }
-
-                    LabeledSlider(title: "Image Opacity", value: $settings.backgroundImageOpacity, range: 0...1)
-                    LabeledSlider(title: "Image Blur", value: $settings.backgroundImageBlur, range: 0...30)
 
                     Divider()
                         .overlay(themeStore.dividerColor())
                         .padding(.vertical, 4)
 
-                    Text("Indexing")
-                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
-                        .foregroundStyle(themeStore.secondaryTextColor())
+                    sectionHeader("Indexing")
 
-                    HStack(spacing: 10) {
-                        Text("File Scan Depth")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        TextField("4", text: $fileScanDepthInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80, alignment: .leading)
-                            .onChange(of: fileScanDepthInput) { _, value in
-                                fileScanDepthInput = sanitizedNumericInput(value)
-                                if let parsed = Int(fileScanDepthInput) {
-                                    if parsed >= AppConstants.FileScan.minDepth && parsed <= AppConstants.FileScan.maxDepth {
-                                        settings.fileScanDepth = parsed
-                                        fileScanDepthError = nil
-                                    } else {
-                                        fileScanDepthError = "Must be \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)"
-                                    }
-                                }
-                            }
-                            .help("Valid: \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)")
-
-                        if let error = fileScanDepthError {
-                            Text(error)
-                                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.dangerColor())
+                    presetRow(
+                        title: "Scan Scope",
+                        options: indexingScopePresets.map { $0.title },
+                        selected: indexingScopePresets.firstIndex(where: {
+                            $0.depth == settings.fileScanDepth && $0.limit == settings.fileScanLimit
+                        }),
+                        onPick: {
+                            settings.fileScanDepth = indexingScopePresets[$0].depth
+                            settings.fileScanLimit = indexingScopePresets[$0].limit
+                            fileScanDepthError = nil
+                            fileScanLimitError = nil
+                            syncIndexingInputsFromSettings()
                         }
-
-                        Text("How many directory levels to index")
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    HStack(spacing: 10) {
-                        Text("File Scan Limit")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        TextField("4000", text: $fileScanLimitInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 100, alignment: .leading)
-                            .onChange(of: fileScanLimitInput) { _, value in
-                                fileScanLimitInput = sanitizedNumericInput(value)
-                                if let parsed = Int(fileScanLimitInput) {
-                                    if parsed >= AppConstants.FileScan.minLimit && parsed <= AppConstants.FileScan.maxLimit {
-                                        settings.fileScanLimit = parsed
-                                        fileScanLimitError = nil
-                                    } else {
-                                        fileScanLimitError = "Must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit)"
-                                    }
-                                }
-                            }
-
-                        if let error = fileScanLimitError {
-                            Text(error)
-                                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.dangerColor())
-                        }
-
-                        Text("Max files indexed per refresh")
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    )
+                    .help("Fast scans less, Thorough scans deeper. Exact numbers live under Indexing details.")
 
                     Toggle(isOn: $settings.lazyIndexingEnabled) {
                         HStack(spacing: 10) {
@@ -149,6 +131,84 @@ extension ThemeSettingsView {
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                    }
+
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                Text("File Scan Depth")
+                                    .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
+                                    .foregroundStyle(themeStore.secondaryTextColor())
+
+                                TextField("4", text: $fileScanDepthInput)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 80, alignment: .leading)
+                                    .onChange(of: fileScanDepthInput) { _, value in
+                                        fileScanDepthInput = sanitizedNumericInput(value)
+                                        if let parsed = Int(fileScanDepthInput) {
+                                            if parsed >= AppConstants.FileScan.minDepth && parsed <= AppConstants.FileScan.maxDepth {
+                                                settings.fileScanDepth = parsed
+                                                fileScanDepthError = nil
+                                            } else {
+                                                fileScanDepthError = "Must be \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)"
+                                            }
+                                        }
+                                    }
+                                    .help("Valid: \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)")
+
+                                if let error = fileScanDepthError {
+                                    Text(error)
+                                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
+                                        .foregroundStyle(themeStore.dangerColor())
+                                }
+
+                                Text("How many directory levels to index")
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
+                                    .foregroundStyle(themeStore.mutedTextColor())
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            HStack(spacing: 10) {
+                                Text("File Scan Limit")
+                                    .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
+                                    .foregroundStyle(themeStore.secondaryTextColor())
+
+                                TextField("4000", text: $fileScanLimitInput)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 100, alignment: .leading)
+                                    .onChange(of: fileScanLimitInput) { _, value in
+                                        fileScanLimitInput = sanitizedNumericInput(value)
+                                        if let parsed = Int(fileScanLimitInput) {
+                                            if parsed >= AppConstants.FileScan.minLimit && parsed <= AppConstants.FileScan.maxLimit {
+                                                settings.fileScanLimit = parsed
+                                                fileScanLimitError = nil
+                                            } else {
+                                                fileScanLimitError = "Must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit)"
+                                            }
+                                        }
+                                    }
+
+                                if let error = fileScanLimitError {
+                                    Text(error)
+                                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
+                                        .foregroundStyle(themeStore.dangerColor())
+                                }
+
+                                Text("Max files indexed per refresh")
+                                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
+                                    .foregroundStyle(themeStore.mutedTextColor())
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.top, 6)
+                    } label: {
+                        Text("Indexing details")
+                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
+                            .foregroundStyle(themeStore.secondaryTextColor())
                     }
 
                     HStack(alignment: .top, spacing: 10) {
@@ -258,31 +318,15 @@ extension ThemeSettingsView {
                         .overlay(themeStore.dividerColor())
                         .padding(.vertical, 4)
 
-                    Text("Privacy & Logs")
-                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
-                        .foregroundStyle(themeStore.secondaryTextColor())
+                    sectionHeader("Privacy & Logs")
 
-                    HStack(spacing: 10) {
-                        Text("Backend Log Level")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        Picker("Backend Log Level", selection: $settings.backendLogLevel) {
-                            ForEach(BackendLogLevel.allCases) { level in
-                                Text(level.title).tag(level)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(width: AppConstants.ThemeUI.pickerWidth)
-
-                        Text("Error only by default; use Info/Debug for troubleshooting")
-                            .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    presetRow(
+                        title: "Log Level",
+                        options: BackendLogLevel.allCases.map { $0.title },
+                        selected: BackendLogLevel.allCases.firstIndex(of: settings.backendLogLevel),
+                        onPick: { settings.backendLogLevel = BackendLogLevel.allCases[$0] }
+                    )
+                    .help("Error only by default; use Info/Debug for troubleshooting.")
 
                     Divider()
                         .overlay(themeStore.dividerColor())
@@ -362,6 +406,17 @@ extension ThemeSettingsView {
             Text(HintText.Settings.advancedApply)
                 .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 2), weight: .regular))
                 .foregroundStyle(themeStore.mutedTextColor())
+        }
+    }
+
+    private var imageLayoutGrid: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 2)
+        return LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(BackgroundImageMode.allCases) { mode in
+                presetCard(title: mode.title, detail: mode.detail, isActive: settings.backgroundImageMode == mode) {
+                    settings.backgroundImageMode = mode
+                }
+            }
         }
     }
 
@@ -454,7 +509,6 @@ extension ThemeSettingsView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             freshConfigMessage = nil
         }
-        NotificationCenter.default.post(name: .lookFocusSettingsInputRequested, object: nil)
     }
 
     var hasIndexingError: Bool {

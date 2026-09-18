@@ -70,8 +70,8 @@ extension LauncherView {
     }
 
     func launcherWindow() -> NSWindow? {
-        // The app has multiple NSWindows now (the launcher itself, the
-        // menu-bar status item button window, the pomo popover anchor).
+        // The app has multiple NSWindows now (the launcher itself and
+        // the menu-bar status item button window).
         // The status item / popover windows are tiny (≈16x24); the
         // launcher's minimum frame is 620x600 (set on ContentView). Use
         // a size threshold to filter them out.
@@ -136,16 +136,10 @@ extension LauncherView {
         hotkeyLog.notice("toggle: -> SHOW branch")
         // Before the window is ordered front, so a dropped query is never painted.
         clearQueryIfRetentionExpired()
-        // Re-arm the spawn cascade so the launchpad tiles and quick actions
-        // settle in fresh on every open, not just the first per process.
+        // Re-arm the spawn cascade so it settles fresh on every open, not just the first per process.
         appearanceRevealToken &+= 1
         captureFrontmostAppForRestoreIfNeeded()
         _ = bridge.requestIndexRefresh()
-        // Warm the on-device model the instant the launcher opens so the first
-        // AI answer doesn't pay the cold-load cost while the user types.
-        if themeStore.settings.aiEnabled {
-            AIQueryRouter.shared.prewarm(themeStore.settings.aiProvider)
-        }
         NSApplication.shared.unhide(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
 
@@ -244,12 +238,6 @@ extension LauncherView {
         // Don't leave a stale Empty Trash confirmation to reappear on next show.
         pendingEmptyTrashCount = nil
         pendingHideAppResult = nil
-        // Levels do not survive a hide (§2.10). Their rows were produced live
-        // from a row that may not even exist by the next open, and coming back
-        // to a list with no visible way in would be worse than starting fresh.
-        clearLevels()
-        // The AI session intentionally survives hide/recall (Cmd+Space away and
-        // back must not lose the conversation). Only Esc ends and archives it.
         let wasVisible = window.isVisible
         // Only a real visible-to-hidden transition winds the clock: a repeat
         // hide would otherwise restart it and defer the clear that was due.
@@ -293,16 +281,10 @@ extension LauncherView {
             hiddenAt: lastHiddenAt, seconds: queryRetentionSeconds)
         lastHiddenAt = nil
         guard expired else { return }
-        // Levels are already gone. Command mode carries its own input, which
-        // clearing `query` alone would strand.
+        // Command mode carries its own input, which clearing `query` alone
+        // would strand.
         exitCommandMode()
-        if isAIMode {
-            // The conversation survives hide/recall by design; only the stale
-            // draft goes. Silently, or the compose handler cancels the chat's work.
-            clearQuerySilently()
-        } else {
-            query = ""
-        }
+        query = ""
     }
 
     func captureFrontmostAppForRestoreIfNeeded() {

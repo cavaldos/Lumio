@@ -94,16 +94,13 @@ open "/Applications/Look.app"
 | Open a terminal there                                                  | `Cmd+T`          |
 | Action menu for the selected row                                       | `Cmd+K`          |
 | Move to Trash (or empty the Trash folder)                              | `Cmd+D`          |
-| Command mode (`calc`, `pomo`, `todo`, `speed`, `kill`, `shell`, `sys`) | `Cmd+/`          |
+| Command mode (`speed`, `kill`) | `Cmd+/` |
 | Settings                                                               | `Cmd+Shift+,`    |
 | Back / hide                                                            | `Escape`         |
 | Switch to running app N (home screen)                                  | `Cmd+1`..`Cmd+9` |
 | Hide selected app from Look                                            | `Cmd+Shift+H`    |
-| Fire a super action (empty home screen)                                | `Cmd+<letter>`   |
 
 `Cmd+E` and `Cmd+T` need a tool named in `~/.look/config` (`text_editor`, `code_editor`, `terminal`), and `file_manager` retargets `Cmd+F`. Declare nothing and each falls back to the system default: see [Preferred tools](docs/user-guide.md#preferred-tools).
-
-Which super actions are on the strip, where they sit, and any tiles of your own is a drawing in `~/.look/super-actions.toml`, seeded on first run: see [Super actions](docs/user-guide.md#super-actions).
 
 Full reference: [docs/user-guide.md](docs/user-guide.md).
 
@@ -121,9 +118,6 @@ Switch in `Settings > Appearance`.
 - [Architecture](docs/architecture.md) - how the Swift app + Rust core fit together
 - [Features](docs/features.md) - what's shipped, what's planned
 - [Contributing](CONTRIBUTING.md) - how to contribute
-- [Your own sources](docs/user-sources.md) - declare custom rows from directories, files, and commands
-- [lookbook](https://github.com/kunkka19xx/lookbook) - ready-made sources to copy: git, ssh, docker, projects
-- [Writing a control](docs/writing-controls.md) - add a Quick Action toggle/button to the panel
 - [Development](DEVELOPMENT.md) - building locally, repo layout, release process
 
 ## License

@@ -67,8 +67,8 @@ enum Motion {
     /// Icon and value changes: a toggle flipping, a counter ticking.
     enum Value {
         /// Digit roll for a readout that ticks (battery, temperature, timers).
-        /// Kept under the one-second tick of the fastest caller (the pomo
-        /// countdown) so a roll always settles before the next value lands.
+        /// Kept under the one-second tick of the fastest caller so a roll
+        /// always settles before the next value lands.
         static let rollSeconds: Double = 0.28
 
         static var rollDigits: Animation {
@@ -93,7 +93,7 @@ enum Motion {
         }
     }
 
-    /// Content changing in place rather than moving: the pomo panel dimming to
+    /// Content changing in place rather than moving: a panel dimming to
     /// its idle state, a chosen path replacing the empty-state line.
     enum Fade {
         static let seconds: Double = 0.4

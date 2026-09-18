@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A macOS-style toggle switch: a capsule track with a sliding knob, green when
 /// on. `isOn == nil` renders a dimmed, disabled switch (e.g. while state loads).
-/// Reusable across the app; the Quick Actions panel uses it for toggle controls.
+/// Reusable toggle switch.
 struct ToggleSwitch: View {
     let isOn: Bool?
     var themeStore: ThemeStore

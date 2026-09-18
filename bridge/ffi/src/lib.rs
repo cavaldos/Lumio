@@ -1,22 +1,20 @@
 #![allow(unsafe_code)]
 
-mod ai_api;
+
 mod answers_api;
-mod calc_api;
-mod calling_api;
+
 mod clipboard_api;
 mod lunar_api;
 mod matching_api;
-mod meeting_api;
+
 mod modes_api;
 mod netspeed_api;
-mod qactions_api;
+
 mod runtime_config;
 mod search_api;
 mod seed_api;
-mod sources_api;
+
 mod state;
-mod todo_api;
 mod tools_api;
 mod translate_api;
 mod url_history_api;
@@ -53,32 +51,10 @@ pub extern "C" fn look_search_json_compact(query: *const c_char, limit: u32) -> 
 /// Natural-language file recall over Look's own index. Returns the same JSON as
 /// `look_search_json`, or null when the query is not a file-recall query. Free
 /// with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_search_files_json(
-    query: *const c_char,
-    now_epoch: i64,
-    limit: u32,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::look_search_files_json_impl(query, now_epoch, limit)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// File recall from structured params JSON `{terms?, types?, when?, location?}`
 /// (the model's `recall` step). Same payload shape as `look_search_files_json`;
 /// null when the params are unusable. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_search_files_params_json(
-    params_json: *const c_char,
-    now_epoch: i64,
-    limit: u32,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::look_search_files_params_json_impl(params_json, now_epoch, limit)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn look_record_usage(candidate_id: *const c_char, action: *const c_char) -> bool {
@@ -135,25 +111,6 @@ pub extern "C" fn look_request_index_refresh() -> bool {
     .unwrap_or(false)
 }
 
-/// Returns the full /todo task set as a JSON array. Free with
-/// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_todo_list_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        todo_api::look_todo_list_json_impl()
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Replaces the /todo task set from a JSON array. Returns true on success.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_todo_save_json(json: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        todo_api::look_todo_save_json_impl(json)
-    }))
-    .unwrap_or(false)
-}
-
 /// The launch-mode table as `--list-modes` prints it. Free with
 /// `look_free_cstring`.
 #[unsafe(no_mangle)]
@@ -185,46 +142,18 @@ pub extern "C" fn look_lunar_date_json(year: i64, month: i64, day: i64, tz: f64)
 /// The call request in `query` (`{"name":"mom","modality":null}`), or the
 /// literal `null` for an ordinary search. Tier-1 grammar, cheap enough to call
 /// on every keystroke. Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_call_query_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        calling_api::look_call_query_json_impl(query)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// The modality a bare "call" means (a `Modality` id). Free with
 /// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_call_default_modality() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        calling_api::look_call_default_modality_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// The URL that dials `handle` with `modality` (a `Modality` id such as
 /// `face_time_audio`). Null when the modality is unknown. Free the result with
 /// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_call_url(modality: *const c_char, handle: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        calling_api::look_call_url_impl(modality, handle)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// The join request in `query` (`{}` for a bare "join", `{"name": "..."}` when
 /// it names a meeting), or the literal `null` for an ordinary search. Tier-1
 /// grammar, cheap enough to call on every keystroke. Free the result with
 /// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_meeting_join_query_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        meeting_api::look_meeting_join_query_json_impl(query)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// What a `join` found in the events the shell fetched.
 ///
@@ -233,17 +162,6 @@ pub extern "C" fn look_meeting_join_query_json(query: *const c_char) -> *mut c_c
 /// words; pass an empty string for "whatever is next". Returns
 /// `{"meetings":[...],"withoutLink":[...]}`, the second list naming events that
 /// matched but carry no join link. Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_meeting_outcome_json(
-    events_json: *const c_char,
-    now_epoch: i64,
-    name: *const c_char,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        meeting_api::look_meeting_outcome_json_impl(events_json, now_epoch, name)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// A full speed test as JSON (`{"ok":true,"reading":{...}}` or
 /// `{"ok":false,"error":"..."}`). Blocks for 15 seconds and up, so call it off
@@ -277,36 +195,10 @@ pub extern "C" fn look_translate_json(
 /// Resolves a shared instant answer (currency/weather/crypto) for `query`,
 /// returning an owned JSON C string - an `Answer` object on a hit, or the JSON
 /// literal `null` otherwise. Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_instant_answer_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_instant_answer_json_impl(query)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// `{id, name, steps}` for the user-declared block a candidate id belongs to,
 /// so the panel can show what Enter will perform. `null` when the row is not a
 /// block row.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_source_block_json(
-    candidate_id: *const c_char,
-    row_id: *const c_char,
-    row_title: *const c_char,
-    row_path: *const c_char,
-    ancestors_json: *const c_char,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sources_api::look_source_block_json_impl(
-            candidate_id,
-            row_id,
-            row_title,
-            row_path,
-            ancestors_json,
-        )
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// The rows of `block_id` produced against the selected row, for descending
 /// into a `then` target that lists rather than performs. Returns
@@ -314,36 +206,8 @@ pub extern "C" fn look_source_block_json(
 /// came through, so two parents never share a row.
 ///
 /// Runs the block live on every call. An error means do not descend.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_source_rows_json(
-    block_id: *const c_char,
-    parent_candidate_id: *const c_char,
-    parent_title: *const c_char,
-    parent_path: *const c_char,
-    query: *const c_char,
-    ancestors_json: *const c_char,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sources_api::look_source_rows_json_impl(
-            block_id,
-            parent_candidate_id,
-            parent_title,
-            parent_path,
-            query,
-            ancestors_json,
-        )
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// Every declared block as `{id, name, icon}`, for the shell's row-icon cache.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_source_blocks_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        sources_api::look_source_blocks_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// What `action` ("edit", "terminal", "reveal") does to the row at `path`, as
 /// `{kind, tool, command, path, reason, key}` where `kind` is "shell",
@@ -418,90 +282,18 @@ pub extern "C" fn look_tool_actions_json() -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn look_config_path(dev: bool) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sources_api::look_config_path_impl(dev)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Re-runs every enabled `run` block and stores its rows for the next index
-/// pass. Blocks while commands run - call off the main thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_refresh_run_blocks_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        sources_api::look_refresh_run_blocks_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// A block's declared `preview`, run against the selected row. `null` when the
-/// block declares none.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_source_preview_json(
-    candidate_id: *const c_char,
-    row_id: *const c_char,
-    row_title: *const c_char,
-    row_path: *const c_char,
-    ancestors_json: *const c_char,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sources_api::look_source_preview_json_impl(
-            candidate_id,
-            row_id,
-            row_title,
-            row_path,
-            ancestors_json,
-        )
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Performs every step of that block, detached, through the user's login shell.
-/// Returns `{performed, errors}`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_perform_block_json(
-    block_id: *const c_char,
-    row_id: *const c_char,
-    row_title: *const c_char,
-    row_path: *const c_char,
-    query: *const c_char,
-    ancestors_json: *const c_char,
-    as_target: bool,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sources_api::look_perform_block_json_impl(
-            block_id,
-            row_id,
-            row_title,
-            row_path,
-            query,
-            ancestors_json,
-            as_target,
-        )
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Evaluates `expr` as arithmetic - the dedicated `/calc` panel, where aliases
-/// (`x`, `:`, glued `1920x1080`) are honoured wherever they land. Returns an
-/// owned JSON C string shaped `{"calculation": Calculation | null, "error":
-/// string | null}`, so a specific failure (division by zero, unbalanced
-/// parens, ...) can still be shown. Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_calc_eval_json(expr: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        calc_api::look_calc_eval_json_impl(expr)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// The main search field: resolves `query` only when it was clearly meant as
-/// arithmetic. Returns an owned JSON C string - a `Calculation` object on a
-/// hit, or the JSON literal `null` otherwise. Cheap enough to call on every
-/// keystroke. Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_calc_inline_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        calc_api::look_calc_inline_json_impl(query)
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .map(std::path::PathBuf::from);
+        let Some(home) = home else {
+            return crate::state::json_cstring_or_null(None);
+        };
+        let resolved = look_engine::config_path::resolve_home_variant(&home, dev);
+        crate::state::json_cstring_or_null(Some(
+            resolved.path.to_string_lossy().into_owned(),
+        ))
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -515,306 +307,6 @@ pub extern "C" fn look_fuzzy_score(query: *const c_char, title: *const c_char) -
         matching_api::look_fuzzy_score_impl(query, title)
     }))
     .unwrap_or(matching_api::NO_MATCH)
-}
-
-/// Whether a mutate-tool `match` phrase refers to something from the AI
-/// session ("it", "this event") rather than naming it. Pure, no allocation.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_is_referent(phrase: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_is_referent_impl(phrase)
-    }))
-    .unwrap_or(false)
-}
-
-/// Timeframe extraction for AI schedule questions ("next week", "tomorrow",
-/// "in august"): JSON `{start, end, label}` with local-midnight epoch bounds
-/// (ISO Monday weeks), or null when no frame is named. Free with
-/// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_query_window(query: *const c_char, now_epoch: i64) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_query_window_impl(query, now_epoch)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Starts a cancellable planning call to the local Ollama model. Returns a
-/// session id for `look_ai_plan_poll`/`look_ai_plan_cancel`, or 0 on failure.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_plan_start(
-    host: *const c_char,
-    model: *const c_char,
-    query: *const c_char,
-) -> u64 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_plan_start_impl(host, model, query)
-    }))
-    .unwrap_or(0)
-}
-
-/// Snapshot of a planning session: `{"done":false}` in flight, then
-/// `{"done":true,"calls":[{tool,params}, ...]}`; null pointer for unknown ids.
-/// The poll that observes done removes the session. Free with
-/// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_plan_poll(id: u64) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_plan_poll_impl(id)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Kills the planning request (Ollama aborts generation on disconnect).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_plan_cancel(id: u64) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_plan_cancel_impl(id)
-    }));
-}
-
-/// Primes the model and Ollama's prompt-prefix cache with the planner prompt
-/// (BLOCKING network; call off-thread).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_warm_planner(host: *const c_char, model: *const c_char) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_warm_planner_impl(host, model)
-    }));
-}
-
-/// All stored AI conversations as JSON (newest first). The shell supplies the
-/// file path. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_conversations_json(path: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_conversations_json_impl(path)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Insert-or-replace one conversation (capped store, incremental/quit-safe).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_conversation_upsert(
-    path: *const c_char,
-    conversation_json: *const c_char,
-) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_conversation_upsert_impl(path, conversation_json)
-    }))
-    .unwrap_or(false)
-}
-
-/// Delete one conversation by id. Returns whether it existed.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_conversation_delete(path: *const c_char, id: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_conversation_delete_impl(path, id)
-    }))
-    .unwrap_or(false)
-}
-
-/// Tool resolution (P4 contract): candidates + params in, a data-only outcome
-/// out (planned/choice/invalid) that the shell executes and undoes. Pure CPU.
-/// Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_resolve(request_json: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_resolve_impl(request_json)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Load the AI mutate targets once (events + reminders JSON arrays) so
-/// subsequent `look_ai_resolve` calls can omit the lists. Nothing to free.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_load_targets(events_json: *const c_char, reminders_json: *const c_char) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_load_targets_impl(events_json, reminders_json)
-    }));
-}
-
-/// Whether `query` is a natural-language file-recall query (cheap parse only).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_is_file_query(query: *const c_char, now_epoch: i64) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_is_file_query_impl(query, now_epoch)
-    }))
-    .unwrap_or(false)
-}
-
-/// Parse a bare text-op verb into `{label, instruction}` JSON, or null. Free
-/// with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_textop_json(input: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_textop_json_impl(input)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// How many recent item texts (JSON string array) fit the token budget
-/// (0 = default). Returns the tail count to keep as chat history.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_context_window(texts_json: *const c_char, budget: u32) -> u32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_context_window_impl(texts_json, budget)
-    }))
-    .unwrap_or(0)
-}
-
-/// Handle input as a memory command ("remember …"), returning feedback or null.
-/// Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_memory_command(path: *const c_char, input: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_memory_command_impl(path, input)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// The stored facts as a model context block (empty when none). Free with
-/// `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_memory_context(path: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_memory_context_impl(path)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// The specific DAY a phrase names (weekday incl. abbreviations, relative-day
-/// words), as local-midnight epoch seconds; 0 when it names none. The
-/// shared-lexicon fallback behind the shell's natural-date parser.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_day_phrase(phrase: *const c_char, now_epoch: i64) -> i64 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_day_phrase_impl(phrase, now_epoch)
-    }))
-    .unwrap_or(0)
-}
-
-/// ONE routing ladder for submitted AI-mode input (memory -> textop -> files
-/// -> explicit -> plan -> chat), shared by every shell so precedence can never
-/// drift. Returns the decision JSON (see core/ai/src/route.rs); the memory
-/// tier executes the command. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_route(
-    memory_path: *const c_char,
-    input: *const c_char,
-    model_available: bool,
-    now_epoch: i64,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_route_impl(memory_path, input, model_available, now_epoch)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// The explicit `>verb title @ when` parser: JSON `{tool, params}` or null for
-/// natural language (deferred to the model). Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_parse_explicit(
-    input: *const c_char,
-    model_available: bool,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_parse_explicit_impl(input, model_available)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Start a streamed AI chat session (curl child in core). Returns a session
-/// id, or 0 on failure. Poll for snapshots; cancel to abort generation.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_chat_start(
-    host: *const c_char,
-    model: *const c_char,
-    messages_json: *const c_char,
-    options_json: *const c_char,
-) -> u64 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_chat_start_impl(host, model, messages_json, options_json)
-    }))
-    .unwrap_or(0)
-}
-
-/// Snapshot of a chat session: `{"text", "done", "error"?}`, or null for an
-/// unknown id. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_chat_poll(id: u64) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_chat_poll_impl(id)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Abort a chat session (kills the curl child; Ollama stops generating).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_chat_cancel(id: u64) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_chat_cancel_impl(id)
-    }));
-}
-
-/// Nudges a shell-resolved time to the future when only a clock time was given
-/// and it already passed today. Respects phrases that name a day/month.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_future_leaning(
-    phrase: *const c_char,
-    resolved_epoch: i64,
-    now_epoch: i64,
-) -> i64 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_future_leaning_impl(phrase, resolved_epoch, now_epoch)
-    }))
-    .unwrap_or(resolved_epoch)
-}
-
-/// Markdown segmentation for AI chat answers: JSON array of
-/// `{kind: "text"|"code", text, language?}`. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_ai_markdown_segments_json(text: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ai_api::look_ai_markdown_segments_json_impl(text)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Network-free check of whether `query` matches an instant-answer provider.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_instant_has_match(query: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_instant_has_match_impl(query)
-    }))
-    .unwrap_or(false)
-}
-
-/// JSON array of autocomplete suggestions for `query` (up to `limit`). Free the
-/// result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_web_suggestions_json(query: *const c_char, limit: u32) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_web_suggestions_json_impl(query, limit)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// DuckDuckGo instant-answer JSON for `query` (an `Answer` object or `null`).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_duckduckgo_answer_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_duckduckgo_answer_json_impl(query)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Wikipedia summary JSON for `search_term` (an `Answer` object or `null`).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_wikipedia_answer_json(search_term: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_wikipedia_answer_json_impl(search_term)
-    }))
-    .unwrap_or(std::ptr::null_mut())
 }
 
 /// URL classification JSON for `query` (a `UrlMatch` object or `null`).
@@ -912,70 +404,21 @@ pub extern "C" fn look_clipboard_clear() -> u32 {
 }
 
 /// Quick Action descriptors JSON for the result `(result_id, kind)` (or `[]`).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_qactions_json(result_id: *const c_char, kind: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        qactions_api::look_qactions_json_impl(result_id, kind)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// The empty-state launchpad layout as `{columns, rows, tiles}` (or `[]`).
 /// The layout is fixed and input-free, so this takes no arguments. Free the
 /// result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_quick_actions_launchpad_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        qactions_api::look_quick_actions_launchpad_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// JSON array of strings describing anything wrong with `~/.look/super-actions.toml`
 /// (or `[]`). Free the result with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_launchpad_warnings_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        qactions_api::look_launchpad_warnings_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_launchpad_tile_values_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        qactions_api::look_launchpad_tile_values_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// Spawns and blocks: call off the UI thread. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_launchpad_refresh_tiles_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        qactions_api::look_launchpad_refresh_tiles_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// Returns `{"error": ...}`. Free with `look_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn look_launchpad_press_tile_json(name: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        qactions_api::look_launchpad_press_tile_json_impl(name)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 /// Definitional entity JSON for `query` (a JSON string or `null`).
-#[unsafe(no_mangle)]
-pub extern "C" fn look_definitional_entity_json(query: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_definitional_entity_json_impl(query)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
 
 #[cfg(test)]
 mod tests {
@@ -1214,37 +657,6 @@ mod tests {
     }
 
     #[test]
-    fn ai_load_targets_then_resolve_from_store() {
-        let _guard = test_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        let events =
-            CString::new(r#"[{"id":"e1","title":"Dentist","start":0,"end":3600,"all_day":false}]"#)
-                .expect("events cstring");
-        let reminders = CString::new("[]").expect("reminders cstring");
-        look_ai_load_targets(events.as_ptr(), reminders.as_ptr());
-
-        // Request omits its lists -> the resolver reads the loaded store.
-        let req = CString::new(
-            r#"{"tool":"calendar.cancel_event","params":{"match":"dentist"},"now":0}"#,
-        )
-        .expect("request cstring");
-        let ptr = look_ai_resolve(req.as_ptr());
-        assert!(!ptr.is_null());
-        let raw = unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned();
-        look_free_cstring(ptr);
-
-        assert!(
-            raw.contains(r#""outcome":"planned""#),
-            "expected planned: {raw}"
-        );
-        assert!(raw.contains("e1"), "should target the loaded event: {raw}");
-    }
-
-    #[test]
     fn ffi_reload_refresh_and_translate_error_smoke() {
         let _guard = test_lock()
             .lock()
@@ -1324,59 +736,6 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         env::temp_dir().join(format!("look-ffi-smoke-{nanos}.db"))
-    }
-
-    #[test]
-    fn ffi_todo_save_and_list_round_trip() {
-        let _guard = test_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        // The todo store resolves LOOK_DB_PATH on every call, so pointing
-        // it at a scratch database keeps the test off the real look.db.
-        let db_path = unique_test_db_path();
-        let _ = fs::remove_file(&db_path);
-        state::set_db_path_for_test(&db_path);
-
-        // Far-future due_date so the retention prune never removes it.
-        let tasks = CString::new(
-            r#"[{"id":"t1","name":"Ship the todo backend","done":true,"due_date":"2999-01-01","created_at_unix_s":1000}]"#,
-        )
-        .expect("tasks cstring");
-        assert!(
-            look_todo_save_json(tasks.as_ptr()),
-            "save should succeed (db: {})",
-            db_path.display()
-        );
-
-        let ptr = look_todo_list_json();
-        assert!(!ptr.is_null());
-        let raw = unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned();
-        look_free_cstring(ptr);
-        assert!(
-            raw.contains("Ship the todo backend"),
-            "list should return the saved task, got: {raw}"
-        );
-        assert!(raw.contains(r#""due_date":"2999-01-01""#));
-
-        // Save is a full replace: an empty set clears the table.
-        let empty = CString::new("[]").expect("empty cstring");
-        assert!(look_todo_save_json(empty.as_ptr()));
-        let ptr = look_todo_list_json();
-        assert!(!ptr.is_null());
-        let raw = unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned();
-        look_free_cstring(ptr);
-        assert_eq!(raw, "[]");
-
-        // Malformed JSON is rejected without touching the store.
-        let bad = CString::new("not json").expect("bad cstring");
-        assert!(!look_todo_save_json(bad.as_ptr()));
-
-        let _ = fs::remove_file(&db_path);
     }
 
     #[test]

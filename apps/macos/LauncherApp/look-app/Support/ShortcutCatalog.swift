@@ -28,7 +28,6 @@ struct ShortcutEntry: Identifiable {
 /// order, so "all shortcuts" and "the Shortcuts tab" are the same list.
 enum ShortcutTopic: String, CaseIterable, Identifiable {
     case main
-    case ai
     case prefixes
     case command
 
@@ -37,7 +36,6 @@ enum ShortcutTopic: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .main: return "Main"
-        case .ai: return "AI"
         case .prefixes: return "Prefixes"
         case .command: return "Command"
         }
@@ -76,23 +74,13 @@ enum ShortcutCatalog {
             ShortcutEntry("main.terminal", "Cmd+T", "Open a terminal there (set terminal); switches theme when no row is selected"),
             ShortcutEntry("main.webSearch", "Cmd+Enter", "Search current query on Google"),
             ShortcutEntry("main.commandMode", "Cmd+/", "Enter command mode"),
-            ShortcutEntry("main.commandJump", ":cmd", "Jump to a command from home (e.g. :calc 2+2, :kill chrome)", remappable: false),
+            ShortcutEntry("main.commandJump", ":cmd", "Jump to a command from home (e.g. :kill chrome, :speed)", remappable: false),
             ShortcutEntry("main.hideApp", "Cmd+Shift+H", "Hide the selected app from Look"),
             ShortcutEntry("main.help", "Cmd+H", "Toggle this help screen"),
             ShortcutEntry("main.back", "Esc", "Back / close (context dependent)"),
             ShortcutEntry("main.hideLauncher", "Shift+Esc", "Hide launcher"),
         ]),
 
-        // The strip on the empty home screen. Keys are the tile mnemonics from
-        // the shared catalog (core/qactions), fired with Cmd.
-        ShortcutGroup(title: "Super actions", topic: .main, entries: [
-            ShortcutEntry("super.bluetoothWifi", "Cmd+B / Cmd+W", "Toggle Bluetooth / Wi-Fi"),
-            ShortcutEntry("super.themeAwake", "Cmd+T / Cmd+K", "Switch theme / toggle Keep Awake (empty query only; Cmd+T opens a terminal once a row is selected)"),
-            ShortcutEntry("super.screensaverMic", "Cmd+S / Cmd+M", "Start screensaver / mute mic"),
-            ShortcutEntry("super.playPause", "Cmd+P", "Play/pause the current track"),
-            ShortcutEntry("super.power", "Cmd+R / Cmd+D", "Restart / Shut Down (press twice, Esc cancels)"),
-            ShortcutEntry("super.toggleStrip", "Settings > Appearance", "Show or hide the super actions strip", remappable: false),
-        ]),
 
         ShortcutGroup(title: "Clipboard history", topic: .main, entries: [
             ShortcutEntry("clipboard.copyBack", "Enter", "Copy selected history item back to clipboard"),
@@ -106,27 +94,6 @@ enum ShortcutCatalog {
             ShortcutEntry("view.zoomReset", "Cmd+0", "Reset UI scale (opens the tenth session while the AI list is up)"),
         ]),
 
-        // The `>` assistant: the sessions list, a live conversation, and the keys
-        // that only exist there (the running-apps strip is hidden in this mode,
-        // so Cmd+digit addresses conversations instead of apps).
-        ShortcutGroup(title: "AI mode (>)", topic: .ai, entries: [
-            ShortcutEntry("ai.enter", ">", "Enter AI mode (a dead-end Enter on the home screen goes here too)", remappable: false),
-            ShortcutEntry("ai.send", "Enter", "Send the message, or open the highlighted conversation"),
-            ShortcutEntry("ai.newline", "Shift+Enter", "New line in the message (the box grows to 6 lines)"),
-            ShortcutEntry("ai.history", "Option+Up / Option+Down", "Walk your recent prompts, like a shell history"),
-            ShortcutEntry("ai.selectText", "Shift+Up / Shift+Down", "Select text in the message you are composing"),
-            ShortcutEntry("ai.openSession", "Cmd+1..Cmd+9, Cmd+0", "Open the conversation carrying that chip (Cmd+0 is the tenth)"),
-            ShortcutEntry("ai.moveList", "Tab / Up / Down", "Move over the conversation list"),
-            ShortcutEntry("ai.deleteSession", "Cmd+D", "Delete the highlighted conversation"),
-            ShortcutEntry("ai.undo", "Cmd+Z", "Undo the last action, or restore a just-deleted conversation"),
-            ShortcutEntry("ai.stop", "Cmd+.", "Stop a streaming answer"),
-            ShortcutEntry("ai.mention", "@name", "Attach a file to the message (Enter picks the highlighted one)", remappable: false),
-            ShortcutEntry("ai.exactTime", "@ 5pm", "Set an exact time on an event or reminder", remappable: false),
-            ShortcutEntry("ai.chooseNumbered", "1, 2, 3 + Enter", "Answer a \u{201C}which one?\u{201D} list", remappable: false),
-            ShortcutEntry("ai.help", "Cmd+H", "Open this help without leaving the conversation"),
-            ShortcutEntry("ai.escape", "Esc", "Close the file popup, then leave the conversation"),
-            ShortcutEntry("ai.leave", "Shift+Esc", "Leave AI mode straight to the home screen"),
-        ]),
 
         ShortcutGroup(title: "Query prefixes", topic: .prefixes, entries: prefixEntries),
 
@@ -138,19 +105,7 @@ enum ShortcutCatalog {
             ShortcutEntry("command.back", "Esc", "Back to the app list"),
         ]),
 
-        ShortcutGroup(title: "Pomodoro (/pomo)", topic: .command, entries: [
-            ShortcutEntry("pomo.startPause", "Space", "Start / pause the active session"),
-            ShortcutEntry("pomo.reset", "R", "Reset the timer back to idle"),
-            ShortcutEntry("pomo.music", "P", "Toggle music play / pause"),
-            ShortcutEntry("pomo.standby", "Mouse / key idle", "After 5s, panel fades to clock-only standby; any input restores", remappable: false),
-            ShortcutEntry("pomo.menuBar", "Menu bar item", "Click the timer icon in the menu bar to jump back into /pomo", remappable: false),
-        ]),
-
-        ShortcutGroup(title: "Todo & Speed panels", topic: .command, entries: [
-            ShortcutEntry("todo.togglePage", "Cmd+N", "Switch the Tasks / Stats page inside /todo"),
-            ShortcutEntry("todo.save", "Cmd+S", "Save changes inside /todo"),
-            ShortcutEntry("todo.undo", "Cmd+Z", "Undo the last task change inside /todo"),
-            ShortcutEntry("todo.redo", "Cmd+Shift+Z", "Redo an undone task change inside /todo"),
+        ShortcutGroup(title: "Speed panel", topic: .command, entries: [
             ShortcutEntry("speed.rerun", "R", "Run the test again inside /speed"),
             ShortcutEntry("speed.revealAddress", "E", "Show or hide the public address inside /speed"),
         ]),

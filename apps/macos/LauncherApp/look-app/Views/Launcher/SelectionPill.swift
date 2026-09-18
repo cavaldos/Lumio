@@ -26,12 +26,10 @@ struct SelectionPill: View {
     }
 
     var body: some View {
+        // Spotlight-style: a plain wash with no outline. The fill alone
+        // separates the selected row; a border reads as a second control.
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(themeStore.selectionFillColor())
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(themeStore.dividerColor(), lineWidth: Metrics.borderWidth)
-            }
             .matchedGeometryEffect(id: geometryID, in: namespace)
             .scaleEffect(zoomed ? Motion.Selection.pillZoomScale : 1)
     }

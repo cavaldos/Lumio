@@ -35,7 +35,7 @@ struct LauncherResult: Identifiable {
     var clipboardCharacterCount: Int? = nil
     var clipboardLineCount: Int? = nil
     /// What re-copying a clipboard row actually pastes, when it differs from
-    /// `clipboardContent` (a labeled entry like `2+2 = 4` pastes `4`).
+    /// `clipboardContent` (a labeled entry pastes its payload, not the label).
     var clipboardPayload: String? = nil
     /// Set only on `ci"` rows. A clipboard row with a path here IS an image row
     /// (see `isClipboardImage`).
@@ -46,11 +46,6 @@ struct LauncherResult: Identifiable {
     /// Set only for `.process` rows: the process id and its listening TCP ports.
     var processPID: Int32? = nil
     var processPorts: [Int]? = nil
-    /// Set only for the synthetic calculator row: the expression it was parsed
-    /// from and the raw value pressing Enter copies. `title` carries the
-    /// grouped display value.
-    var calcExpression: String? = nil
-    var calcRawValue: String? = nil
     /// Set on the synthetic rows that open a URL (a meeting to join, a way to
     /// reach a person): what the preview shows without re-parsing the subtitle
     /// it was written into. The URL itself rides in the result id.
@@ -62,11 +57,8 @@ struct LauncherResult: Identifiable {
 }
 
 extension LauncherResult {
-    /// A row a user-declared block produced. One definition: the prefix was
-    /// spelled out in three views, which is how a namespace check drifts.
-    var isSourceRow: Bool {
-        id.hasPrefix(AppConstants.Launcher.SourceBlock.idPrefix)
-    }
+    /// User sources removed: no row is a source row anymore.
+    var isSourceRow: Bool { false }
 
     /// One definition for the row icon, the preview and the open handler, so
     /// the three cannot disagree about what they are looking at.

@@ -38,9 +38,6 @@ final class KeyboardSelectionMonitor {
         onExitCommandMode: @escaping @MainActor () -> Void,
         onHideLauncher: @escaping @MainActor () -> Void,
         inCommandMode: @escaping @MainActor () -> Bool,
-        /// AI mode owns some chords the main bar spends elsewhere (Shift+Enter
-        /// is a line break there, not "open all picked").
-        inAIMode: @escaping @MainActor () -> Bool = { false },
         onWebSearch: @escaping @MainActor () -> Void,
         /// The Cmd+K action menu. While it is open it owns the arrows, Enter,
         /// and Escape, so those never reach the results list underneath.
@@ -50,9 +47,7 @@ final class KeyboardSelectionMonitor {
         onActionMenuRun: @escaping @MainActor () -> Void = {},
         onActionMenuClose: @escaping @MainActor () -> Void = {},
         onRevealInFinder: @escaping @MainActor () -> Void,
-        /// Cmd+E / Cmd+T act through the user's declared tools. They sit with
-        /// the other result chords, below the launchpad mnemonics, so the strip
-        /// keeps Cmd+T for the theme while a row is not selected.
+        /// Cmd+E / Cmd+T act through the user's declared tools.
         onEditSelection: @escaping @MainActor () -> Void = {},
         onOpenTerminalForSelection: @escaping @MainActor () -> Void = {},
         onCopySelection: @escaping @MainActor () -> Bool,
@@ -64,7 +59,6 @@ final class KeyboardSelectionMonitor {
         onDismissHelpIfVisible: @escaping @MainActor () -> Bool,
         onSelectCommandByIndex: @escaping @MainActor (Int) -> Void,
         onActivateRunningApp: @escaping @MainActor (Int) -> Bool = { _ in false },
-        onActivateSession: @escaping @MainActor (Int) -> Bool = { _ in false },
         /// Escape inside a drill-down goes back one level. True means it did.
         onPopLevel: (@MainActor () -> Bool)? = nil,
         onEscapeHome: (@MainActor () -> Bool)? = nil,
@@ -82,11 +76,6 @@ final class KeyboardSelectionMonitor {
         actionConfirmationActive: @escaping @MainActor () -> Bool = { false },
         onUndoAction: (@MainActor () -> Bool)? = nil,
         onStopGeneration: (@MainActor () -> Bool)? = nil,
-        onToggleQuickAction: (@MainActor () -> Void)? = nil,
-        hasToggleQuickAction: @escaping @MainActor () -> Bool = { false },
-        isLaunchpadActive: @escaping @MainActor () -> Bool = { false },
-        onLaunchpadMnemonic: (@MainActor (Character) -> Bool)? = nil,
-        onLaunchpadEscape: (@MainActor () -> Bool)? = nil,
         onHideSelectedApp: (@MainActor () -> Bool)? = nil
     ) {
         guard monitor == nil else { return }
@@ -153,13 +142,7 @@ final class KeyboardSelectionMonitor {
 
             // ⌘K opens it, and ⌘J opens it too and starts on the first row, so
             // either half of the pair gets you in. ⌃J/⌃K do the same.
-            //
-            // Never on the launchpad: its tiles ARE the actions, each with its
-            // own mnemonic, and ⌘K is already Keep Awake there. Opening a menu
-            // of the same tiles would both duplicate what is on screen and
-            // shadow the key the user meant.
             if Self.isActionMenuChord(flags),
-                !isLaunchpadActive(),
                 event.keyCode == KeyCode.k || event.keyCode == KeyCode.j
                     || event.charactersIgnoringModifiers?.lowercased() == "k"
                     || event.charactersIgnoringModifiers?.lowercased() == "j"
@@ -181,19 +164,6 @@ final class KeyboardSelectionMonitor {
                 return nil
             }
 
-            // Empty-state launchpad mnemonics (⌘B/⌘W/⌘T/...). Only fires when the
-            // launchpad is on screen, so it never shadows the result-oriented
-            // chords below (Cmd+F reveal, Cmd+P pick, etc.) once the user types.
-            // Match on the typed character, not a keyCode, so it holds on
-            // non-QWERTY layouts (same rationale as the Cmd+O handler).
-            if flags == [.command],
-                isLaunchpadActive(),
-                let handler = onLaunchpadMnemonic,
-                let character = event.charactersIgnoringModifiers?.first,
-                handler(character)
-            {
-                return nil
-            }
 
             if (event.keyCode == KeyCode.returnKey || event.keyCode == KeyCode.keypadEnter) && flags == [.command] {
                 onWebSearch()
@@ -294,11 +264,9 @@ final class KeyboardSelectionMonitor {
 
             // Shift+Enter opens every picked file/folder at once. Only when
             // there are picks; otherwise fall through so plain submit still
-            // opens the selected result. In AI mode it always falls through:
-            // the chord is a line break in the composer, and a pick left over
-            // from the main bar must not steal it.
+            // opens the selected result.
             if (event.keyCode == KeyCode.returnKey || event.keyCode == KeyCode.keypadEnter) && flags == [.shift] {
-                if !inCommandMode() && !inAIMode() && hasPickedItems() {
+                if !inCommandMode() && hasPickedItems() {
                     onOpenAllPicked()
                     return nil
                 }
@@ -316,20 +284,6 @@ final class KeyboardSelectionMonitor {
                 return nil
             }
 
-            // Cmd+O toggles the selected result's toggle Quick Action (Bluetooth,
-            // etc.). Multi-choice controls will use Cmd+J/K in a later pass.
-            // Match on the typed character only, not a hardware keyCode: 31 is
-            // the physical ANSI-O position, which types another letter on
-            // Dvorak/Colemak and would hijack that chord. Only swallow the
-            // event when the selection actually has a toggle to act on.
-            if event.charactersIgnoringModifiers?.lowercased() == "o"
-                && flags == [.command]
-                && !inCommandMode()
-                && hasToggleQuickAction()
-            {
-                onToggleQuickAction?()
-                return nil
-            }
 
             if event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.control)
                 && !event.modifierFlags.contains(.option)
@@ -346,9 +300,8 @@ final class KeyboardSelectionMonitor {
                 case 26: cmdNumberKey = 7
                 case 28: cmdNumberKey = 8
                 case 25: cmdNumberKey = 9
-                // Only the sessions list claims 0; everything below is 1-based
-                // and declines it, so ⌘0 keeps its "Actual Size" meaning
-                // everywhere else.
+                // Everything below is 1-based and declines 0, so ⌘0 keeps
+                // its "Actual Size" meaning everywhere.
                 case 29: cmdNumberKey = 0
                 default: cmdNumberKey = nil
                 }
@@ -364,16 +317,6 @@ final class KeyboardSelectionMonitor {
                         Self.logger.debug(
                             "⌘+\(key, privacy: .public) ignored (command mode maps 1-\(AppConstants.Launcher.commandCatalog.count, privacy: .public))")
                     } else {
-                        // AI mode hides the running-apps strip, so the digits
-                        // jump to the Nth listed conversation there (⌘0 being
-                        // the tenth). Sessions are asked first and both handlers
-                        // gate themselves, so only one can claim the chord.
-                        if let row = AppConstants.Launcher.AISessions.row(forJumpDigit: key),
-                            onActivateSession(row)
-                        {
-                            Self.logger.debug("⌘+\(key, privacy: .public) -> session row \(row, privacy: .public)")
-                            return nil
-                        }
                         // The strip badges are 1-9, so 0 addresses no icon and
                         // falls through to its "Actual Size" menu equivalent.
                         if key > 0 {
@@ -389,7 +332,6 @@ final class KeyboardSelectionMonitor {
                 }
             }
 
-            // Shift+Esc leaves AI mode straight to home (skips the list step).
             // Only consume it when it actually acts, so Shift+Esc keeps its
             // command-mode "hide" meaning elsewhere.
             if event.keyCode == KeyCode.escape,
@@ -430,12 +372,6 @@ final class KeyboardSelectionMonitor {
             }
 
             if event.keyCode == KeyCode.escape {
-                // A pending launchpad Restart / Shut Down confirm swallows Escape
-                // to dismiss the prompt rather than hiding the launcher.
-                if let onLaunchpadEscape, onLaunchpadEscape() {
-                    return nil
-                }
-
                 if onDismissHelpIfVisible() {
                     return nil
                 }
@@ -513,9 +449,8 @@ final class KeyboardSelectionMonitor {
                 return nil
             }
 
-            // Shift+↑/↓ belongs to the text field: it extends the selection, and
-            // in AI mode that is over a composer several lines tall. Passed
-            // through untouched - the plain-arrow handlers below take no flags
+            // Shift+↑/↓ belongs to the text field: it extends the selection.
+            // Passed through untouched - the plain-arrow handlers below take no flags
             // into account, so without this they would swallow it.
             if event.keyCode == KeyCode.arrowUp || event.keyCode == KeyCode.arrowDown,
                 flags.contains(.shift)

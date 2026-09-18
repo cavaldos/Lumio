@@ -3,10 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ThemeSettingsView: View {
-    enum Field {
-        case fontName
-    }
-
     /// Outcome carried with the text so a failed save cannot be styled as a
     /// success by a stale flag.
     struct SaveMessage {
@@ -23,9 +19,6 @@ struct ThemeSettingsView: View {
     @Binding var settings: ThemeSettings
     @State var selectedTab = 0
     @State var saveMessage: SaveMessage?
-    @State var fontSuggestions: [String] = []
-    @State var showsFontSuggestions = false
-    @State var isPickingFontSuggestion = false
     @State var fileScanDepthInput = ""
     @State var fileScanLimitInput = ""
     @State var fileScanDepthError: String?
@@ -34,7 +27,8 @@ struct ThemeSettingsView: View {
     @State var showFreshConfigConfirm = false
     @State var freshConfigMessage: String?
     @State var localKeyMonitor: Any?
-    @FocusState var focusedField: Field?
+    @State var shortcutsTopicFilter: ShortcutTopic?
+    @State var expandedShortcutGroups: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,7 +60,6 @@ struct ThemeSettingsView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
                         saveMessage = nil
                     }
-                    NotificationCenter.default.post(name: .lookFocusSettingsInputRequested, object: nil)
                 }
                 .disabled(hasIndexingError)
                 .opacity(hasIndexingError ? 0.5 : 1)
@@ -102,11 +95,6 @@ struct ThemeSettingsView: View {
         .onExitCommand {
             closeSettingsPanel()
         }
-        // Nothing is focused on open. Otherwise the window hands first
-        // responder to whichever text field comes first, and a stray keystroke
-        // silently rewrites a live value (the Ollama host learned this the
-        // hard way).
-        .defaultFocus($focusedField, nil)
         .onAppear {
             installLocalKeyMonitorIfNeeded()
         }
@@ -159,7 +147,6 @@ struct ThemeSettingsView: View {
         let tabCornerRadius = themeStore.controlRadius
         return Button {
             selectedTab = index
-            showsFontSuggestions = false
         } label: {
             Text(title)
                 .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .medium))

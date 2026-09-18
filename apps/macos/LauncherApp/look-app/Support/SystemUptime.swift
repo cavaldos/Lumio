@@ -1,7 +1,7 @@
 import Foundation
 
 /// Human-readable system uptime, e.g. "2d 3h 14m" (the day part is dropped under
-/// 24h). Shared by the /sys command and the launchpad Battery/Uptime tile so both
+/// 24h). Shared by the /sys command so both
 /// format it identically.
 nonisolated enum SystemUptime {
     private enum Const {

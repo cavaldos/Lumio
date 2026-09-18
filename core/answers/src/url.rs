@@ -47,7 +47,7 @@ pub fn classify_url(query: &str) -> Option<UrlMatch> {
         return None;
     }
     // Interior whitespace means a search phrase, not an address. A launcher
-    // prefix marker (`a"`, `f"`, `t"`, ...) always carries a `"`; reject both.
+    // prefix marker (`a"`, `f"`, `tw"`, ...) always carries a `"`; reject both.
     if q.chars().any(char::is_whitespace) || q.contains('"') {
         return None;
     }

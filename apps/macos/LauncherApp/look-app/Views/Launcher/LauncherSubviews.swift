@@ -7,16 +7,12 @@ struct SearchInputBar: View {
     let isQueryFocused: FocusState<Bool>.Binding
     let activeCommand: AppCommand?
     let themeStore: ThemeStore
-    /// AI mode (`>`): sparkles icon + its own placeholder, no prefix needed.
-    var isAIMode: Bool = false
     /// When false the field draws no background of its own - used when it lives
     /// inside a shared top-row pane that already supplies one, so the search
     /// input and running-apps icons read as a single unified bar.
     var showsBackground: Bool = true
     /// Changes each time the launcher opens, replaying the spawn cascade.
     var revealToken: UInt64 = 0
-    /// Where a drill-down is, shown as a leading chip.
-    var breadcrumb: String?
     let onSubmit: () -> Void
     let onExitCommandMode: () -> Void
 
@@ -26,48 +22,25 @@ struct SearchInputBar: View {
         static let placeholderLeadingInset: CGFloat = 2
     }
 
-    /// Command mode wins the bar's identity (see the icon below), so the badge
-    /// steps aside rather than sitting next to the `/command` capsule.
-    private var showsBetaBadge: Bool { isAIMode && !isCommandMode }
-
     private var placeholderText: String {
-        if breadcrumb != nil {
-            return "Filter, or Esc to go back"
-        }
         if isCommandMode {
             return activeCommand?.placeholder ?? AppConstants.Launcher.commandModePlaceholder
-        }
-        if isAIMode {
-            return "Ask, act, or search conversations"
         }
         return AppConstants.Launcher.searchPlaceholder
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(
-                systemName: breadcrumb != nil
-                    ? "chevron.right"
-                    : (isCommandMode ? "terminal" : (isAIMode ? "sparkles" : "magnifyingglass"))
-            )
+        HStack(spacing: 10) {
+            Image(systemName: isCommandMode ? "terminal" : "magnifyingglass")
+            // Spotlight's loupe is ~20pt against ~21pt text, not a 14pt pair.
+            .font(.system(size: 20, weight: .regular))
             .foregroundStyle(
-                isCommandMode || isAIMode || breadcrumb != nil
+                isCommandMode
                     ? themeStore.accentColor() : themeStore.secondaryTextColor()
             )
             .contentTransition(.symbolEffect(.replace))
             .symbolEffect(.bounce, value: revealToken)
 
-            if let breadcrumb {
-                Text(breadcrumb)
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1)))
-                    .foregroundStyle(themeStore.fontColor())
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(themeStore.liftColor(opacity: 0.14), in: Capsule())
-                    .accessibilityLabel("Inside \(breadcrumb)")
-            }
             SmoothCaretTextField(
                 text: $text,
                 // Empty: the placeholder is drawn as the overlay below instead,
@@ -75,9 +48,9 @@ struct SearchInputBar: View {
                 placeholder: "",
                 isFocused: isQueryFocused,
                 themeStore: themeStore,
-                // Only the assistant composes prose; a search query with a line
-                // break in it means nothing to the matcher.
-                allowsMultiline: isAIMode,
+                // Spotlight-sized query text (~21pt at the default theme size).
+                fontSize: CGFloat(themeStore.settings.fontSize + 6),
+                allowsMultiline: false,
                 onSubmit: onSubmit
             )
                 // The field's own placeholder is empty, so it would otherwise
@@ -87,7 +60,7 @@ struct SearchInputBar: View {
                 .overlay(alignment: .leading) {
                     if text.isEmpty {
                         Text(placeholderText)
-                            .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize)))
+                            .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize + 6)))
                             .foregroundStyle(themeStore.placeholderTextColor())
                             .lineLimit(1)
                             .padding(.leading, Layout.placeholderLeadingInset)
@@ -99,19 +72,6 @@ struct SearchInputBar: View {
                             .placeholderReveal(token: revealToken)
                     }
                 }
-
-            if showsBetaBadge {
-                Text("BETA")
-                    .font(
-                        themeStore.uiFont(
-                            size: CGFloat(max(9, themeStore.settings.fontSize - 4)),
-                            weight: .semibold))
-                    .foregroundStyle(themeStore.accentColor().opacity(0.9))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(themeStore.liftColor(opacity: 0.14), in: Capsule())
-                    .accessibilityLabel("AI is in beta")
-            }
 
             if isCommandMode {
                 if let command = activeCommand {
@@ -129,8 +89,8 @@ struct SearchInputBar: View {
                     .foregroundStyle(themeStore.secondaryTextColor())
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .background {
             if showsBackground {
                 RoundedRectangle(cornerRadius: themeStore.barRadius, style: .continuous)
@@ -391,18 +351,7 @@ struct PickedItemsPanel: View {
 }
 
 struct HintBar: View {
-    /// Today's done/total quick view, clickable to open /todo. Shown on
-    /// the home screen in place of the command-mode hint.
-    struct TodoQuickView {
-        let done: Int
-        let total: Int
-        /// Names of today's unfinished tasks, listed in the hover tooltip.
-        let openTasks: [String]
-        let onTap: () -> Void
-    }
-
     let hint: String
-    var todo: TodoQuickView? = nil
     let themeStore: ThemeStore
 
     private enum Layout {
@@ -428,47 +377,6 @@ struct HintBar: View {
                 .minimumScaleFactor(Layout.minimumScale)
                 .truncationMode(.tail)
                 .layoutPriority(1)
-
-            if let todo {
-                Text("  •  ")
-                    .font(hintFont)
-                    .foregroundStyle(themeStore.secondaryTextColor())
-                    .lineLimit(1)
-                    .fixedSize()
-                Button(action: todo.onTap) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: CGFloat(themeStore.settings.fontSize - 3)))
-                        Text("Todo \(todo.done)/\(todo.total)")
-                            .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .semibold))
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                    .foregroundStyle(themeStore.accentColor())
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                // hoverBubble (not hoverTooltip): the popover would
-                // swallow the first click; the bubble is click-through,
-                // so tapping always opens /todo directly.
-                .hoverBubble(isEnabled: !todo.openTasks.isEmpty, width: 240) {
-                    openTasksBubbleContent(todo)
-                }
-            }
-        }
-    }
-
-    private func openTasksBubbleContent(_ todo: TodoQuickView) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Unfinished today")
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 3), weight: .semibold))
-                .foregroundStyle(themeStore.mutedTextColor())
-            ForEach(Array(todo.openTasks.enumerated()), id: \.offset) { _, name in
-                Text("• \(name)")
-                    .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 2)))
-                    .foregroundStyle(themeStore.fontColor())
-                    .lineLimit(2)
-            }
         }
     }
 }
@@ -631,8 +539,6 @@ enum LauncherHelpTopic: CaseIterable, Identifiable {
         case .topic(let topic): return ShortcutCatalog.groups(for: topic)
         }
     }
-
-    static let ai = LauncherHelpTopic.topic(.ai)
 }
 
 extension LauncherHelpTopic: Equatable {
@@ -651,8 +557,6 @@ struct LauncherHelpScreenView: View {
     }
 
     let themeStore: ThemeStore
-    /// Where the screen opens. ⌘H from AI mode passes `.ai` so the assistant's
-    /// keys are the first thing on screen.
     var initialTopic: LauncherHelpTopic = .all
 
     @State private var topic: LauncherHelpTopic

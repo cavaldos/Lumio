@@ -54,12 +54,18 @@ enum LauncherBlurMaterial: String, CaseIterable, Codable, Identifiable {
 
     /// Glass carries its own depth, so the tint sits lighter on it: anything
     /// near the other materials' weight cancels the refraction.
+    ///
+    /// Deliberately tuned so stock settings (tint 0.55 + full blur) land the
+    /// combined glass around 60% dark: translucent enough to keep refracting
+    /// like a macOS droplet, dark enough to stay legible. The relative order
+    /// of the materials is preserved (hudWindow still darkest); pushing the
+    /// Tint slider still reaches a near-opaque wall for those who want it.
     var tintOpacityScale: Double {
         switch self {
-        case .hudWindow: return 1.16
-        case .sidebar: return 0.84
-        case .menu: return 1.0
-        case .underWindowBackground: return 0.68
+        case .hudWindow: return 0.85
+        case .sidebar: return 0.61
+        case .menu: return 0.73
+        case .underWindowBackground: return 0.50
         case .liquidGlass: return 0.42
         }
     }
@@ -155,23 +161,6 @@ enum RunningAppsPlacement: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Which AI backend powers query understanding. On-device Apple Intelligence is
-/// the only option today; cloud providers can be added as new cases without
-/// touching the rest of the app. Persisted in `~/.look/config` as `ai_provider`.
-enum AIProviderKind: String, CaseIterable, Codable, Identifiable {
-    case appleIntelligence
-    case ollama
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .appleIntelligence: return "Apple Intelligence (on-device)"
-        case .ollama: return "Ollama (local)"
-        }
-    }
-}
-
 enum BackendLogLevel: String, CaseIterable, Codable, Identifiable {
     case error
     case info
@@ -236,58 +225,16 @@ struct ThemeSettings: Codable, Equatable {
     /// `0` keeps the classic flat layout with hairline dividers; any value > 0 turns
     /// each pane into its own rounded card separated by empty space. Persisted in
     /// `~/.look/config` under `inner_gap`.
-    var innerGap: Double = 7
+    var innerGap: Double = 0
 
     /// Multiplier on every surface's resting corner radius - the panel, the top
-    /// bar, the launchpad tiles and the controls. One geometry for all of them
+    /// bar and the controls. One geometry for all of them
     /// rather than a per-surface shape: glass reads as a lens and a tight corner
     /// makes it a clipped rectangle, and the classic surface is no better served
     /// by the tighter one, so the launcher does not change shape with its theme.
     /// `0` squares every corner. Persisted in `~/.look/config` under
     /// `ui_surface_radius`.
     var surfaceRadius: Double = 1.5
-
-    /// Whether Apple Intelligence / AI-assisted features are enabled. Defaults to
-    /// on; users can opt out via Settings → Appearance. Persisted in
-    /// `~/.look/config` under `ai_enabled`.
-    var aiEnabled: Bool = true
-
-    /// Which AI backend powers query understanding when `aiEnabled` is on.
-    var aiProvider: AIProviderKind = .appleIntelligence
-
-    /// Ollama daemon endpoint, used when `aiProvider` is `.ollama`. Persisted in
-    /// `~/.look/config` under `ollama_host`. Kept exactly as typed so the
-    /// settings field can show an empty box; call `ollamaEndpoint` to USE it.
-    var ollamaHost: String = "http://localhost:11434"
-
-    /// The endpoint to actually call. Blank means the local daemon, which is
-    /// what the field's placeholder promises, so an emptied box degrades to
-    /// "local Ollama" instead of building the unresolvable URL "/api/chat" and
-    /// surfacing as a model failure. Only ever consulted on the Ollama paths,
-    /// so this never invents a host for some other provider.
-    var ollamaEndpoint: String {
-        let trimmed = ollamaHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "http://localhost:11434" : trimmed
-    }
-
-    /// Ollama model tag, used when `aiProvider` is `.ollama`. Persisted in
-    /// `~/.look/config` under `ollama_model`. The default is the best scorer in
-    /// the planner eval (see docs/ai-architecture.md §9): 97% tool accuracy
-    /// at a 2s p50, ahead of both a 7B coder model and a 9B general one.
-    var ollamaModel: String = "qwen3.5:4b"
-
-    /// Whether private context (calendar, clipboard, remembered facts) may be
-    /// sent to a provider that is NOT on this machine - a remote Ollama host
-    /// today, a cloud provider later. Off by default: the answer is simply
-    /// computed without that context and says so, rather than quietly shipping
-    /// personal data off-device. Persisted in `~/.look/config` under
-    /// `ai_allow_remote_context`.
-    var aiAllowRemoteContext: Bool = false
-
-    /// Whether the empty-state super actions launchpad is shown. Off hides the
-    /// strip and makes its ⌘-mnemonics inert. Persisted in `~/.look/config`
-    /// under `super_actions_enabled`.
-    var superActionsEnabled: Bool = true
 
     static let `default` = ThemeSettings()
 }

@@ -44,7 +44,7 @@ impl TranslateError {
 
     pub fn message(self) -> &'static str {
         match self {
-            Self::EmptyText => "Type text after t\" to translate",
+            Self::EmptyText => "Type text after tw\" to translate",
             Self::InvalidTargetLang => "Invalid target language code",
             Self::RequestFailed => "Translation request failed",
             Self::RateLimited => "Translation is rate limited, try again shortly",

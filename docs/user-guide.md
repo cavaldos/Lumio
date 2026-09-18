@@ -14,7 +14,6 @@
 > | `Cmd+0`                                 | `Ctrl+0`          |
 > | `Cmd+1`…`Cmd+7` (command mode)          | `Ctrl+1`…`Ctrl+7` |
 > | `Cmd+1`…`Cmd+9` (running-apps switcher) | `Alt+1`…`Alt+9`   |
-> | `Cmd+<letter>` (super-action tiles)     | `Alt+<letter>`    |
 > | `Cmd+P`                                 | `Ctrl+P`          |
 > | `Cmd+Shift+P`                           | `Ctrl+Shift+P`    |
 > | `Cmd+Shift+,`                           | `Ctrl+Shift+,`    |
@@ -41,10 +40,8 @@ Look is designed to need as few macOS permissions as possible:
 - **No Accessibility permission** is required.
 - **No Full Disk Access** is required. Look indexes standard user directories (`~`, `/Applications`, `~/Documents`, `~/Downloads`, etc.). To index a directory outside those defaults, add it via `file_scan_extra_roots` in `~/.look/config`.
 - **No Screen Recording** is required.
-- **Network access** is used for explicit actions - `t"` translation, `tw"` dictionary lookup, and `Cmd+Enter` web search - and, when **AI features** are enabled (macOS, on by default), for live Google search suggestions and the DuckDuckGo/Wikipedia answer card as you type. The AI model runs wherever you point it. Apple Intelligence is on-device and Ollama defaults to `localhost`, so by default no prompt leaves the machine. If you change `ollama_host` to a non-loopback address, or select a cloud-routed Ollama model (a `-cloud` tag, which the local daemon proxies to Ollama's service), then **your prompt travels over the network to that provider**. Separately from the prompt, your calendar, clipboard, and remembered facts are attached only when inference is on this machine; for anything remote they are withheld until you turn on `ai_allow_remote_context` in Settings. Turn the AI/web features off by setting `ai_enabled = false` in `~/.look/config` (or via Settings). Local search and indexing never make network calls.
+- **Network access** is used for explicit actions only - `tw"` dictionary lookup, and `Cmd+Enter` web search. Local search and indexing never make network calls.
 - **Finder Automation** is requested only when you empty the Trash (`Cmd+D` on the pinned Trash folder). The Trash is protected by macOS, so Look asks Finder to empty it; macOS prompts once, and you can manage it under `System Settings > Privacy & Security > Automation`. Moving individual files to the Trash needs no permission.
-
-**Settings > AI > Permissions** lists every capability that needs OS access (Calendar, Reminders), what Look does with it, and whether it's connected. **Grant all** asks for the outstanding ones in turn; macOS has no single "allow everything" prompt, so each still appears on its own. Once a permission has been answered - granted or denied - only System Settings can change it, so those rows link straight to the right pane. Look also asks the first time you use a feature that needs access, which is why `join` may prompt for Calendar.
 
 If macOS prompts for permission during an action you didn't trigger, that's a bug - please [file an issue](https://github.com/kunkka19xx/look/issues).
 
@@ -57,7 +54,6 @@ Default search sources:
 - installed apps
 - local files/folders (from configured roots)
 - curated System Settings entries
-- anything you declared yourself (see [Your own sources](#your-own-sources))
 
 Useful actions:
 
@@ -120,139 +116,6 @@ Warp and Hyper are named because neither offers a way to run a command in a new 
 
 **The action menu.** `Cmd+K` (or `Cmd+J`) on a file, folder, or app row lists every verb that row accepts, with the chord beside it and the declared tool's name filled in: *Edit in Zed*, *Open in Ghostty*, *Reveal in Finder*. `Cmd+J` / `Cmd+K` or the arrows move, `Enter` runs, `Esc` closes. On a row from a source block that declares `then` targets, the menu lists those targets instead, and the chords above keep working on the row.
 
-## Super actions
-
-With an empty query, the home screen shows a strip of system controls instead of results. Fire a tile by clicking it, or with `Cmd`+letter (macOS) / `Alt`+letter (Linux, Windows), where the letter is the one highlighted on the tile:
-
-| Key | Tile        | Effect                       |
-| --- | ----------- | ---------------------------- |
-| `B` | Bluetooth   | Toggle on/off                |
-| `W` | Wi-Fi       | Toggle on/off                |
-| `T` | Theme       | Switch dark/light            |
-| `K` | Keep Awake  | Toggle sleep prevention      |
-| `S` | Screensaver | Start it                     |
-| `M` | Mic         | Mute/unmute                  |
-| `P` | Now Playing | Play/pause the current track |
-| `R` | Restart     | Restart (press twice)        |
-| `D` | Shut Down   | Shut down (press twice)      |
-
-Restart and Shut Down arm on the first press and only run on the second, so a stray key can't power the machine off. `Esc` or waiting a moment cancels the armed tile.
-
-The rest of the strip is read-only: **Battery**, **Weather**, and the large slot on the left, which shows a running Pomodoro session, otherwise today's remaining todos, otherwise the clock.
-
-Turn the strip off in `Settings > Appearance > Super Actions`. Off hides it and disables the letter shortcuts. Saved as `super_actions_enabled=true|false` in `~/.look/config`.
-
-### Rearranging the strip
-
-The arrangement is yours, in `~/.look/super-actions.toml`. Look writes it on first run with the layout above, so the file is its own reference - open it and the format explains itself.
-
-Ready-made tiles to paste in: [lookbook's `tiles/`](https://github.com/kunkka19xx/lookbook/tree/main/tiles), which is also the place to share one you wrote.
-
-It is a drawing of the screen. Each line is a row, each name is one cell:
-
-```toml
-layout = [
-    "lslot       lslot       bluetooth   wifi        battery     weather",
-    "lslot       lslot       theme       keepawake   screensaver weather",
-    "mic         restart     shutdown    nowplaying  nowplaying  nowplaying",
-]
-```
-
-Four edits, one mechanism:
-
-- **Hide** a tile by deleting its name. Nothing closes up behind it - you get a gap where it was, because you removed it.
-- **Move** one by putting its name somewhere else.
-- **Resize** one by repeating its name across more cells. `weather` above stands two rows tall because it appears in both. A tile's cells must form a rectangle.
-- **Leave a gap** on purpose with `.`.
-
-Three tiles need room to say anything, so they have a floor, in columns x rows: the big left slot 2x2, `weather` 1x2, `nowplaying` 2x1. Every other tile fits in one cell. Drawn smaller, a tile would be clipped rather than shrunk, so Look leaves it out and says which one. The seeded file lists each minimum beside its key.
-
-There is no column or row count to declare: the drawing is the count. Every row needs the same number of names, and there is a ceiling of five rows and six columns.
-
-The names are the tile ids - `lslot`, `bluetooth`, `wifi`, `battery`, `theme`, `keepawake`, `screensaver`, `weather`, `mic`, `restart`, `shutdown`, `nowplaying` - and the seeded file lists them with what each one does.
-
-`Cmd+Shift+;` reloads the file, so you can arrange the strip while looking at it. **Delete the file to go back to the default.**
-
-If the drawing is wrong, Look says so in the window rather than failing quietly. A problem with one tile drops that tile and keeps the rest; a problem with the file's structure - a row with the wrong number of names, or TOML it cannot read - falls back to the whole default layout, so the strip is never empty and never silent about why.
-
-### Tiles of your own
-
-A tile of your own is a name in the drawing plus an entry below it. Nothing changes in `~/.look/sources/` - a tile is declared whole, in this one file, and needs no source at all.
-
-```toml
-layout = [
-    "lslot   lslot   disk    weather",
-    "lslot   lslot   lock    weather",
-]
-
-[tiles.disk]
-value   = '''printf '{"value":"%s","caption":"DISK FREE","icon":"internaldrive","lines":["of %s"]}' "$(df -h / | awk 'NR==2 {print $4}')" "$(df -h / | awk 'NR==2 {print $2}')"'''
-refresh = "5m"
-
-# A tile that only ACTS. No `value`, so nothing runs until you press it and
-# there is nothing to display - it draws like Mic and Screensaver do.
-#
-# `pmset displaysleepnow` sleeps the display, which locks the Mac when
-# System Settings > Lock Screen is set to ask for a password after sleep.
-
-[tiles.lock]
-press    = "pmset displaysleepnow"
-title    = "Lock"
-confirm  = "Lock the screen?"
-icon     = "lock.fill"
-mnemonic = "L"   # Cmd+L (Alt+L elsewhere), and the L in "Lock" is highlighted
-```
-
-**`value` prints one JSON object.** Only `value` is required, so a shell one-liner is a whole tile:
-
-```json
-{"value": "84Gi"}
-```
-
-A tile drawn bigger than one cell can say as much as Weather does:
-
-```json
-{"value":   "84Gi",
- "caption": "DISK FREE",
- "lines":   ["of 460Gi"],
- "icon":    "internaldrive",
- "state":   "off"}
-```
-
-Printing nothing hides the tile - that is how a "next meeting" tile disappears on a day with no meetings.
-
-**`icon` names the symbol drawn on the tile.** A tile that only acts runs no command, so there is no JSON for an icon to arrive in and this key is its only way to be anything but the generic mark. A tile with a `value` can use either, and an icon in the printed JSON wins, since that one can change with what was read.
-
-On macOS the name is an SF Symbol, so anything in that set works (`lock.fill`, `internaldrive`, `calendar`).
-
-On Linux the name is either one of the strip's own glyphs - `bluetooth`, `wifi`, `theme`, `keepawake`, `battery`, `screensaver`, `mic`, `restart`, `shutdown` - or a path to an image of your own:
-
-```toml
-icon = "~/.look/icons/nixos.svg"
-```
-
-The file is read when the strip resolves its layout and drawn as a mask, so it takes the tile's colour like every other glyph rather than arriving in its own, and follows the active tint when a reading says `"state": "on"`. SVG, PNG, and the other formats an icon theme uses all work, up to 256 KB. Because it is a mask, only the shape survives: a flat silhouette reads at 16px, a detailed illustration collapses into a blob. Windows draws from the built-in names only.
-
-An unrecognised name draws nothing at all rather than a placeholder, so a tile with a typo in its `icon` looks like a tile that asked for none.
-
-**`press` is what a click or the tile's key runs.** A tile with `press` and no `value` is a button: it shows its name and never runs anything until you press it. A tile with `value` and no `press` is a readout. `confirm` arms the tile on the first press and fires on the second, the way Restart and Shut Down do.
-
-**Keep the command light.** `value` runs unattended - the point of a live tile - so it is capped: **two seconds**, then it is killed along with anything it started, and 16 KB of output. Within a tile's `refresh` window nothing runs at all, so most opens cost nothing. Read something and print it; a slow command will be cut off and the tile keeps its last good reading. Anything that needs to fetch, build, or wait belongs behind `press`, or in a script that caches to a file the tile just reads.
-
-A tile that fails says so and keeps what it last showed - one broken tile never blanks the strip. Its key follows the same rules as the built-ins: it fires with `Cmd` on macOS and `Alt` on Linux/Windows, a letter already used by a tile on the screen is not given away, `Cmd+Q` belongs to quitting Look, and either way the tile still works, it just has no key.
-
-## AI answers and web suggestions (macOS, Linux, Windows)
-
-Look can answer questions and look things up without leaving the launcher. These features are **on by default** on macOS, Linux, and Windows. Toggle them in Settings or with `ai_enabled` in `~/.look/config`.
-
-- **Answer card.** A question, an entity that has no local match (e.g. `sir alex ferguson`), or an instant-answer pattern (weather, currency, crypto) shows a Spotlight-style card above the results. Sources resolve independently and each appears as it lands - **DuckDuckGo** and **Wikipedia**. Arithmetic doesn't answer here anymore - see the **Calculator row** under Query prefixes below. On macOS, when no web source has an answer it falls back to a streaming on-device **Apple Intelligence** answer. Click a source label to open it; the copy button copies that block.
-- **Search suggestions.** For plain text queries (2+ characters), Google autocomplete rows appear under the results. `Enter` on a suggestion (or `Cmd+Enter` on your query) runs a web search in your default browser.
-- **Query rewrite** _(macOS only)_. When a natural-language query finds nothing locally, the on-device model rewrites it into Look's prefix grammar and searches again. It never overrides results you can already see - it only runs when the raw query came up empty.
-
-**Platform note.** The web answer card and Google suggestions are available on macOS, Linux, and Windows. The on-device LLM - query rewrite and the Apple Intelligence answer fallback - is **macOS-only**; there is no on-device model on Linux/Windows, so there the card uses web sources (DuckDuckGo, Wikipedia, currency/weather/crypto) only. The `ai_enabled` toggle is shared across platforms.
-
-**Network note.** While AI features are on, the answer card's web sources and the Google suggestions send your typed query to those services (DuckDuckGo, Wikipedia, Google). The on-device model makes no network calls of its own. Set `ai_enabled = false` to disable all of it and run fully offline.
-
 ## Query prefixes
 
 Don't remember the prefixes? Type a single `"` to open a menu listing every prefix with a short description - pick one (click or `↑`/`↓` then `Enter`) to drop it into the search field, ready for your term.
@@ -263,14 +126,11 @@ Don't remember the prefixes? Type a single `"` to open a menu listing every pref
 - `rc"term` -> recent files/folders, newest activity first (optional filter; `rc"` alone lists all). Blends what you've opened through Look with what recently appeared/changed on disk (downloads, screenshots). macOS for now.
 - `r"pattern` -> regex search (case-insensitive)
 - `c"term` -> clipboard history search
-- `t"text` -> quick translation panel
 - `tw"text` -> dictionary lookup panel
 
 Path-like queries (for example `git/project/readme`) are also supported and bias path matches.
 
 URL-like queries are detected automatically (no prefix). Type a URL and Look offers an **Open in browser** row: a structural URL (with a scheme, port, path, or `localhost`/IP - e.g. `http://localhost:3000` or `example.com/docs`) ranks at the top, while a bare `host.tld` (e.g. `github.com`) ranks after your local results so it never displaces a real match. URLs you open this way come back as **Recently opened** rows, ranked by frecency and filtered as you type.
-
-Arithmetic is detected automatically too (no prefix). Type an expression like `2+2` or `sqrt(16)` and Look pins a **Calculator** row above every other result with the answer. `Enter` or a click copies the value and hides the launcher; clipboard history (`c"`) shows the worked expression (`2+2 = 4`) but still pastes just the value. Shape decides whether something counts as math, not spacing, so a date (`20-05-2026`), a resolution (`1920x1080`), or a ratio (`16:9`) is left alone. Aliases `x`, `:`, and a leading `v` (multiply, divide, square root) only count as operators when they stand alone (`3 x 4`, `10 : 2`, `v 16`) - inside the dedicated `/calc` panel below they're honored wherever they land, so `1920x1080` there evaluates as a product.
 
 ## Clipboard and translation
 
@@ -280,41 +140,25 @@ Clipboard mode (`c"`):
 - `Enter` on a clipboard row copies that content back to clipboard,
 - `Cmd+D` (`Ctrl+D` on Linux/Windows) removes the selected row from Look's clipboard history.
 
-Translation mode (`t"`/`tw"`):
+Dictionary lookup (`tw"`):
 
 - supports EN/VI/JA result sections,
-- translation uses network requests.
+- dictionary lookup uses network requests.
 
 ## Command mode
 
 Enter command mode with `Cmd+/`, or jump straight to a specific command from the home screen with the `:` prefix:
 
-- `:calc` then `Enter` - open `/calc` with empty input
-- `:calc 2+2` - opens `/calc` with `2+2` already typed (the space after the command id is the trigger; you can keep typing without pressing Enter)
-- Same pattern for `:shell`, `:kill`, `:sys`, `:pomo`, `:todo`, `:speed`
+- `:kill` then `Enter` - open `/kill` with empty input
+- `:kill chrome` - opens `/kill` with `chrome` already typed (the space after the command id is the trigger; you can keep typing without pressing Enter)
+- Same pattern for `:speed`
 
-The `:` prefix only triggers when the word right after it is a known command id (`calc`, `pomo`, `todo`, `speed`, `kill`, `shell`, `sys`); anything else (`:foo`, `:Users/me/...`) stays in normal search.
+The `:` prefix only triggers when the word right after it is a known command id (`speed`, `kill`); anything else (`:foo`, `:Users/me/...`) stays in normal search.
 
 Built-in commands:
 
-- `calc`: evaluate expressions (supports `^`, `!`, constants `pi`/`e`, functions `sqrt`/`abs`/`round`/`floor`/`ceil`, `%` shorthand, implicit multiplication like `2pi`, comma-grouped/scientific-notation input like `1,500` or `1e6`, and aliases `x`/`:`/leading `v` honored wherever they land, e.g. `1920x1080`)
-- `shell`: run shell command text
 - `kill`: force-kill a running app/process (with confirmation), supports port queries like `:3000` or `port 3000`
-- `sys`: show system information
-- `pomo`: pomodoro focus timer with editable session list, three timer styles (Modern Ring / Vintage Dial / Minimal Text), background-music folder, menu-bar mini-timer, and a 5-second standby fade
-- `todo`: daily tasks and progress. Two pages - a task list grouped by day, and a Stats page (weekly/monthly completion, streak, 30-day trend, GitHub-style year heatmap)
 - `speed`: measure the connection (download, upload, latency) on a live dial, with your LAN and public addresses
-
-`calc` quick examples:
-
-- `2^3` -> `8`
-- `-2^2` -> `-4`
-- `4!` -> `24`
-- `2*pi` -> `6.2832`
-- `200*15%` -> `30`
-- `10%3` -> `1` (`%` remains modulo when used between operands)
-- `1920x1080` -> `2,073,600` (`x` as an alias for multiply, honored even glued to digits inside `/calc`)
-- `1,500 + 1` -> `1,501` (comma-grouped input round-trips)
 
 `speed` quick reference:
 
@@ -326,76 +170,14 @@ Built-in commands:
 - The footer names your ISP, rough location, and which server answered. `via Cloudflare` is the primary; anything else is a fallback mirror and reads conservatively low
 - Latency is the round trip to the test server, timed as one TCP handshake against an already-resolved address, so it sits a little above what `ping` reports
 
-`pomo` quick reference:
-
-- Edit the **Session List** to plan focus + break blocks; the timer auto-advances through them and loops the music folder while running
-- `Space` start/pause the active session • `R` reset • `P` toggle music play/pause
-- Pick a folder of audio files (mp3/m4a/wav/aac/flac/ogg/aiff/alac); tracks are played one at a time, shuffled per launch
-- A "session ending soon" alert fires 10s before each block ends - both as a menu-bar popover and (when granted) a macOS notification with chime
-- Menu-bar mini-timer shows remaining time even when the launcher is hidden; click to jump back into `/pomo`
-
-`todo` quick reference:
-
-- Tasks are grouped by day, newest on top. Up to 3 unfinished tasks per day (complete one to add more) and up to 3 upcoming date groups (`Add date + N`)
-- Past days are non-editable. Unfinished tasks 1-3 days late show an `EXTENDED` badge and can still be marked done; unfinished tasks more than 3 days late show `OVERDUE` and their completion state is locked
-- Search matches task names and dates (`jul 3`, `yesterday`); case- and diacritic-insensitive
-- Nothing autosaves: hit `Save` or `Cmd+S`; `Cmd+N` flips between the Tasks and Stats pages
-- Press `Cmd+Z` (`Ctrl+Z` on Linux/Windows) to undo task changes, including deleting one task or clearing a day. The last 50 changes are kept, saved or not: undoing back past a Save marks the panel unsaved again, so a second Save writes the reverted list. Text fields keep their typing undo.
-- Press `Cmd+Shift+Z` (`Ctrl+Shift+Z` on Linux/Windows) to redo an undone task change. Making a new edit clears the redo history; text fields keep their typing redo.
-- When today has tasks, the home-screen hint bar shows a clickable `Todo X/Y` stat; hovering it lists what's still unfinished
-- Data lives in the local database and is kept for one year
-
 Behavior:
 
 - `Escape`: leave command mode
 - `Shift+Escape`: hide launcher
 - `Tab` / `Shift+Tab`: switch commands while staying in command mode
-- `Cmd+1`..`Cmd+7`: jump to specific command (`calc`, `pomo`, `todo`, `speed`, `kill`, `shell`, `sys`)
-- `Cmd+N` / `Cmd+S` (inside `/todo`): switch Tasks/Stats page, save changes
+- `Cmd+1`..`Cmd+2`: jump to specific command (`speed`, `kill`)
 - `R` / `E` (inside `/speed`): run the test again, show or hide the public address
 - `Up` / `Down`: in `kill`, navigate process/app results
-- shell text containing `sudo` shows an orange warning cue
-
-## Your own sources
-
-Look indexes apps, files, and System Settings by default. **Sources** are how you add your own rows: your repos, your SSH hosts, your morning routine, your deploy script. They rank, preview, and act like every other row.
-
-> Needs Look v0.6.12 or newer.
-
-Declare them in TOML files under `~/.look/sources/`. Put as many files in there as you like: Look reads **every** `.toml` in the directory and merges them, so you can split by topic (`work.toml`, `git.toml`, `ssh.toml`) and delete one when you are done with it. Block ids have to be unique across all of them.
-
-Each `[block]` has a `name` you can type and exactly one producer key that says what it is:
-
-| Producer | Rows it makes                           |
-| -------- | --------------------------------------- |
-| `do`     | one row; `Enter` performs its steps     |
-| `dir`    | the children of one or more directories |
-| `file`   | the lines of a text file                |
-| `run`    | the lines a command prints              |
-
-```toml
-# ~/.look/sources/mine.toml
-
-[projects]
-name = "Projects"
-dir  = "~/dev"
-only = "dirs"
-edit = "nvim {path}"
-
-[work]
-name = "Work setup"
-do   = ["open -a Slack", "open -a Safari https://github.com"]
-```
-
-Reload with `Cmd+Shift+;` (macOS) or `Ctrl+Shift+;` (Linux, Windows) and type `projects`.
-
-From there you can add `then` targets (actions and drill-downs reached with `Cmd+K`), a `preview` command for the right panel, a `confirm` question before anything destructive, per-row icons via `format = "json"`, and `aliases` / `bias` to place a block in the ranking.
-
-Commands are shell text, run by your login shell, so your own scripts are first-class: `run = "~/bin/my-repos"` or `do = ["~/bin/deploy.sh {path}"]`, in any language with a shebang, reading the row from `LOOK_ID` / `LOOK_TITLE` / `LOOK_PATH` if that suits it better than arguments. An executable dropped straight into `~/.look/sources/` needs no declaration at all: it _is_ a `run` block. One caveat worth knowing up front: a login shell reads `~/.zprofile` and `~/.zshenv`, not `~/.zshrc`, and fish/nu users fall back to `/bin/sh`.
-
-**Full guide: [Declaring your own sources](user-sources.md)** - every key, every placeholder, limits, troubleshooting, and recipes.
-
-**Ready-made ones: [lookbook](https://github.com/kunkka19xx/lookbook)** - copy a file into `~/.look/sources/`, reload, done. Also the place to share one you wrote.
 
 ## Settings and config
 
@@ -410,8 +192,8 @@ The Appearance tab controls:
 - **Font** - name and size for launcher text
 - **Font Color** - text color (RGB + opacity)
 - **Border** - border thickness and color
-- **Inner Gap** - gap between the top row, results list and preview, `0` to `24` in the platform's own unit (points on macOS, pixels on Linux and Windows). `0` is the classic framed panel; above 0 each becomes its own floating card. Both a fresh config and an absent key mean `7`. Saved as `inner_gap`
-- **Corner Radius** - one multiplier on the resting corner rounding of every surface at once: the window, the top bar, the super-action tiles, the controls. Range `0` to `2.5`, default `1.5`; `0` is square. Saved as `ui_surface_radius`. One setting rather than one per surface, so they cannot disagree with each other
+- **Inner Gap** - gap between the top row, results list and preview, `0` to `24` in the platform's own unit (points on macOS, pixels on Linux and Windows). `0` is the classic framed panel; above 0 each becomes its own floating card. Both a fresh config and an absent key mean `0`. Saved as `inner_gap`
+- **Corner Radius** - one multiplier on the resting corner rounding of every surface at once: the window, the top bar, and the controls. Range `0` to `2.5`, default `1.5`; `0` is square. Saved as `ui_surface_radius`. One setting rather than one per surface, so they cannot disagree with each other
 
 Built-in theme presets are available:
 
@@ -468,7 +250,6 @@ plain sway, X11 without KWin) Look stays clear glass and `Blur Opacity` applies
 only when you have set a background image. Driving blur from your own compositor
 config still works; Look's request is additional, not exclusive.
 
-**Running Apps**: a switch that shows running-app icons in the right half of the search bar. When on, the search field shrinks to the left half and the running apps fill the right half (right-aligned, growing leftward as more apps open). Each icon has a corner number badge; pressing the modifier + the badge digit on the home screen activates that app - `Cmd+1`..`Cmd+9` on macOS, `Alt+1`..`Alt+9` on Linux and Windows. When off, the search bar spans the full width and the switcher shortcut is disabled. AI mode (`>`) hides the row regardless of this setting, and its digits open listed conversations instead. The launcher window stays the same size either way.
 
 Behavior:
 
@@ -479,7 +260,6 @@ Behavior:
 
 Saved as `running_apps_placement=<value>` in `~/.look/config` (`none` = off, any other value = on; legacy `top`/`right`/`bottom` values still load as "on"). New keys are auto-appended to existing config files on next Save Config.
 
-**Super Actions**: a switch that shows the control strip on the empty home screen. Off hides it and disables its letter shortcuts. See [Super actions](#super-actions). Saved as `super_actions_enabled=true|false`. Which tiles are on the strip, and where, is not a setting - it is the drawing in `~/.look/super-actions.toml`; see [Rearranging the strip](#rearranging-the-strip).
 
 ### Indexing Settings
 
@@ -505,7 +285,7 @@ Lazy indexing behavior:
 ### Other Settings
 
 - settings-only blur multiplier (`Settings Blur`) for readability when settings is open
-- translation privacy and backend log level
+- dictionary lookup privacy and backend log level
 - launch at login
 
 Runtime config file:
@@ -538,7 +318,6 @@ homeConfigurations."me" = home-manager.lib.homeManagerConfiguration {
   programs.lookapp = {
     enable = true;
     theme = "kindle";
-    settings.ai_enabled = false;
     # package = null;  # config only, Look already installed system-wide
   };
 }
@@ -628,16 +407,6 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 - `:cmd` (e.g. `:calc 2+2`, `:kill chrome`, `:sys`, `:todo`, `:speed`): jump to a command directly from the home screen
 - `Cmd+1`..`Cmd+7`: in command mode, direct command switch (`calc`, `pomo`, `todo`, `speed`, `kill`, `shell`, `sys`)
 - `Cmd+1`..`Cmd+9` (macOS) / `Alt+1`..`Alt+9` (Linux, Windows): on the home screen, activate the running-app whose badge shows that digit, when `Running Apps` is on. Badge labels are ergonomic, not strictly positional - see Settings → Appearance → Running Apps
-- `Option+Up` / `Option+Down` in AI mode (`>`): walk your recent prompts, like a shell history. `Shift+Up` / `Shift+Down` select text in the message instead
-- `Shift+Enter` in AI mode (`>`): new line in the message instead of sending. The box grows to 6 lines and stops there. Elsewhere `Shift+Enter` still opens all picked files
-- `join` (or `join meeting`, `join my next meeting`, or `join <meeting name>`): pins a "Join <meeting>" row for the next Teams / Zoom / Meet / Webex / Jitsi / GoToMeeting / Whereby meeting in your calendar; Enter opens the link. Works in the main bar and in `>` AI mode. Looks two days ahead. Needs the account in macOS Calendar (System Settings → Internet Accounts), since Look reads the OS's calendar and makes no network call of its own
-- `call <name>` / `facetime <name>` / `message <name>` in AI mode (`>`): finds the person in Contacts and opens FaceTime or Messages. `call mom on iphone` dials through your iPhone. A bare `call` means FaceTime audio, the one that works with no iPhone nearby. Look always lists what it found first; `Enter` on the highlighted row places the call
-- `Cmd+D` in AI mode (`>`): delete the highlighted conversation (same as `Cmd+Delete`; undo from the banner with `Cmd+Z`)
-- `Cmd+H` in AI mode (`>`): open the help screen on its **AI** topic without leaving the conversation. `Cmd+H`, `Esc`, or typing returns to it. The help screen's topic capsules (All / Main / AI / Prefixes / Command) also switch by click
-- `Cmd+1`..`Cmd+9` and `Cmd+0` in AI mode (`>`): open the listed conversation carrying that chip (`Cmd+0` is the tenth). The running-apps row is hidden on the AI screen, so the digits mean sessions there, and `Cmd+0` opens the tenth session rather than resetting the UI scale while the list is up. The list stops at ten because a `Cmd` chord is a single keypress; older conversations are found by typing, then Tab/arrows and Enter
-- `Cmd+<letter>` (macOS) / `Alt+<letter>` (Linux, Windows): on the empty home screen, fire the super action with that highlighted letter (`B` Bluetooth, `W` Wi-Fi, `T` Theme, `K` Keep Awake, `S` Screensaver, `M` Mic, `P` play/pause, `R` Restart, `D` Shut Down), when `Super Actions` is on. A letter belongs to its tile, so one you have taken off the strip does nothing
-- `Space` / `R` / `P` (inside `/pomo`): start/pause session, reset, toggle music play/pause
-- `Cmd+N` / `Cmd+S` (inside `/todo`): switch Tasks/Stats page, save changes
 - `R` / `E` (inside `/speed`): run the test again, show or hide the public address
 - `Escape`: back/close (context dependent)
 - `Shift+Escape`: hide launcher
@@ -650,7 +419,7 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 - `Cmd+P` / `Cmd+Shift+P`: toggle pick / clear picked set
 - `Cmd+D`: remove the selected clipboard history item; otherwise move selected file/folder (or picked items) to Trash, or empty the pinned Trash folder
 - `Cmd+Shift+,`: toggle settings panel
-- `Cmd+Shift+;` (macOS) / `Ctrl+Shift+;` (Linux, Windows): reload config, re-read your declared sources, and re-read `~/.look/super-actions.toml` so the strip can be arranged while you look at it
+- `Cmd+Shift+;` (macOS) / `Ctrl+Shift+;` (Linux, Windows): reload config
 - `Cmd+Shift+H`: hide the selected app from Look
 - `Cmd+-`, `Cmd+=`, `Cmd+0`: temporary UI zoom out/in/reset
 
@@ -684,10 +453,10 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 - Look reads `~/.look/config` at launch. After editing manually, reload with `Cmd+Shift+;` or restart Look.
 - confirm you edited the active config path (`LOOK_CONFIG_PATH` overrides `~/.look/config` when set)
 
-**Translation (`t"` / `tw"`) returns no results.**
+**Dictionary lookup (`tw"`) returns no results.**
 
-- translation requires network; check connectivity and retry
-- corporate proxies and VPNs can block the translation endpoint
+- dictionary lookup requires network; check connectivity and retry
+- corporate proxies and VPNs can block the lookup endpoint
 
 **Linux only - ghost slider trails or overlapping popovers in Settings.**
 
@@ -724,11 +493,10 @@ rm -rf "$HOME/Library/Application Support/look"
 rm -f "$HOME/.look.config"   # only if a pre-0.6 config was left behind
 ```
 
-Those are the default paths. If you moved anything with an environment override, remove it yourself as well: `LOOK_CONFIG_PATH` (the config file), `LOOK_SOURCES_DIR` (your declared sources), and `LOOK_ROWS_CACHE_DIR` (the rows a `run` block cached).
+Those are the default paths. If you moved anything with an environment override, remove it yourself as well: `LOOK_CONFIG_PATH` (the config file), `LOOK_CONFIG_PATH` (the config file).
 
 ## Related docs
 
 - Architecture guide: `docs/architecture.md`
 - Feature status: `docs/features.md`
 - Backend contributor guide: `docs/backend-guide.md`
-- Declaring your own sources: `docs/user-sources.md`
