@@ -4,7 +4,7 @@ use crate::platform::paths::{
     candidate_id_path_component, expand_with_home, path_is_same_or_child,
 };
 use crate::platform::windows;
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::{Candidate, CandidateKind};
 use std::collections::HashSet;
 use std::fs;
 use std::sync::mpsc;

@@ -2,7 +2,7 @@ use crate::config::RuntimeConfig;
 use crate::index::APP_CANDIDATE_ID_PREFIX;
 use crate::platform::linux;
 use crate::platform::paths::candidate_id_path_component;
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::{Candidate, CandidateKind};
 use std::collections::HashSet;
 use std::fs;
 use std::sync::mpsc;

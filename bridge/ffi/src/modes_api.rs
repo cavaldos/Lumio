@@ -1,5 +1,5 @@
 use crate::state::store_json_allocation;
-use look_engine::modes;
+use lumio_engine::modes;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -11,13 +11,13 @@ fn allocate(json: String) -> *mut c_char {
     store_json_allocation(cstring)
 }
 
-pub(crate) fn look_modes_list_text_impl() -> *mut c_char {
+pub(crate) fn lumio_modes_list_text_impl() -> *mut c_char {
     allocate(modes::list_text())
 }
 
 /// Argv in as a JSON array (program name already dropped), the decision out as
 /// `{"kind":"normal"|"query"|"list_modes"|"unknown_mode"|"unavailable_mode", ...}`.
-pub(crate) fn look_modes_parse_json_impl(argv_json: *const c_char) -> *mut c_char {
+pub(crate) fn lumio_modes_parse_json_impl(argv_json: *const c_char) -> *mut c_char {
     if argv_json.is_null() {
         return allocate(NULL_JSON.to_string());
     }
@@ -48,9 +48,9 @@ mod tests {
 
     fn parse(args: &[&str]) -> serde_json::Value {
         let json = CString::new(serde_json::to_string(args).unwrap()).unwrap();
-        let ptr = look_modes_parse_json_impl(json.as_ptr());
+        let ptr = lumio_modes_parse_json_impl(json.as_ptr());
         let out = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
-        crate::look_free_cstring(ptr);
+        crate::lumio_free_cstring(ptr);
         serde_json::from_str(&out).unwrap()
     }
 
@@ -96,13 +96,13 @@ mod tests {
     #[test]
     fn junk_input_returns_null_rather_than_panicking() {
         let json = CString::new("not json").unwrap();
-        let ptr = look_modes_parse_json_impl(json.as_ptr());
+        let ptr = lumio_modes_parse_json_impl(json.as_ptr());
         let out = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
-        crate::look_free_cstring(ptr);
+        crate::lumio_free_cstring(ptr);
 
         assert_eq!(out, NULL_JSON);
         assert_eq!(
-            unsafe { CStr::from_ptr(look_modes_parse_json_impl(std::ptr::null())) }
+            unsafe { CStr::from_ptr(lumio_modes_parse_json_impl(std::ptr::null())) }
                 .to_str()
                 .unwrap(),
             NULL_JSON
@@ -111,9 +111,9 @@ mod tests {
 
     #[test]
     fn the_listing_comes_back_whole() {
-        let ptr = look_modes_list_text_impl();
+        let ptr = lumio_modes_list_text_impl();
         let text = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
-        crate::look_free_cstring(ptr);
+        crate::lumio_free_cstring(ptr);
 
         assert!(text.contains("clipboard"));
         assert!(text.contains("macOS only"));

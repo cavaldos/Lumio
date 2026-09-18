@@ -12,7 +12,7 @@ fi
 
 "$ROOT_DIR/scripts/release-macos-app.sh" "$VERSION"
 
-ZIP_PATH="$ROOT_DIR/dist/Look-${VERSION}-macOS.zip"
+ZIP_PATH="$ROOT_DIR/dist/Lumio-${VERSION}-macOS.zip"
 if [[ ! -f "$ZIP_PATH" ]]; then
   echo "Expected artifact missing: $ZIP_PATH" >&2
   exit 1

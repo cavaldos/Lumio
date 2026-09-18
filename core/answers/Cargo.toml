@@ -1,5 +1,5 @@
 [package]
-name = "look-answers"
+name = "lumio-answers"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true

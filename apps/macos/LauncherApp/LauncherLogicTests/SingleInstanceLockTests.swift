@@ -3,7 +3,7 @@ import XCTest
 
 final class SingleInstanceLockTests: XCTestCase {
     func testLockPathIsStableForSameBundlePath() {
-        let bundlePath = "/Applications/Look.app"
+        let bundlePath = "/Applications/Lumio.app"
         let first = SingleInstanceLock.lockPath(for: bundlePath, tempDirectory: "/tmp")
         let second = SingleInstanceLock.lockPath(for: bundlePath, tempDirectory: "/tmp")
 
@@ -12,7 +12,7 @@ final class SingleInstanceLockTests: XCTestCase {
 
     func testSecondAcquireReportsHeldByOtherInstance() {
         let lockPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("look-single-instance-test-\(UUID().uuidString).lock")
+            .appendingPathComponent("lumio-single-instance-test-\(UUID().uuidString).lock")
             .path
 
         let firstResult = SingleInstanceLock.acquire(
@@ -45,7 +45,7 @@ final class SingleInstanceLockTests: XCTestCase {
 
     func testAcquireWorksAfterRelease() {
         let lockPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("look-single-instance-test-\(UUID().uuidString).lock")
+            .appendingPathComponent("lumio-single-instance-test-\(UUID().uuidString).lock")
             .path
 
         let firstResult = SingleInstanceLock.acquire(

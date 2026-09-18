@@ -28,7 +28,7 @@ pub(crate) fn app_scan_roots() -> &'static [&'static str] {
 #[cfg(target_os = "windows")]
 pub(crate) fn discover_windows_installed_apps(
     config: &crate::config::RuntimeConfig,
-    tx: std::sync::mpsc::SyncSender<look_indexing::Candidate>,
+    tx: std::sync::mpsc::SyncSender<lumio_indexing::Candidate>,
 ) {
     windows::discover_installed_apps(config, tx)
 }
@@ -49,7 +49,7 @@ pub(crate) fn windows_control_panel_target_path(entry: &WindowsControlPanelEntry
 #[cfg(target_os = "macos")]
 pub(crate) fn discover_macos_installed_apps(
     config: &crate::config::RuntimeConfig,
-    tx: std::sync::mpsc::SyncSender<look_indexing::Candidate>,
+    tx: std::sync::mpsc::SyncSender<lumio_indexing::Candidate>,
 ) {
     macos::discover_installed_apps(config, tx)
 }
@@ -60,7 +60,7 @@ pub(crate) use macos::localized_settings_titles;
 #[cfg(target_os = "linux")]
 pub(crate) fn discover_linux_installed_apps(
     config: &crate::config::RuntimeConfig,
-    tx: std::sync::mpsc::SyncSender<look_indexing::Candidate>,
+    tx: std::sync::mpsc::SyncSender<lumio_indexing::Candidate>,
 ) {
     linux::discover_installed_apps(config, tx)
 }

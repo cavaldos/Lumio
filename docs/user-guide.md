@@ -1,6 +1,6 @@
-# look User Guide
+# lumio User Guide
 
-`look` is a keyboard-first launcher for macOS, Windows, and Linux focused on fast local actions.
+`lumio` is a keyboard-first launcher for macOS, Windows, and Linux focused on fast local actions.
 
 > **Cross-platform shortcut note.** Examples are written with macOS modifiers (`Cmd+...`). On Windows and Linux, read `Cmd` as `Ctrl` - except the launcher toggle, which is `Alt+Space` (since `Win+Space` / `Super+Space` are reserved by the OS or desktop environment).
 >
@@ -23,23 +23,23 @@
 
 ## First run
 
-Install from the [latest GitHub Release](../README.md#install) (download the zip, move `Look.app` to `/Applications`):
+Install from the [latest GitHub Release](../README.md#install) (download the zip, move `Lumio.app` to `/Applications`):
 
-On first launch, Look will index your apps, files, and folders in the background. You can start using it immediately - results appear as indexing completes.
+On first launch, Lumio will index your apps, files, and folders in the background. You can start using it immediately - results appear as indexing completes.
 
-To bind `Cmd+Space` to Look, disable Spotlight's default shortcut: `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`.
+To bind `Cmd+Space` to Lumio, disable Spotlight's default shortcut: `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`.
 
 ## Permissions
 
-Look is designed to need as few macOS permissions as possible:
+Lumio is designed to need as few macOS permissions as possible:
 
 - **No Accessibility permission** is required.
-- **No Full Disk Access** is required. Look indexes standard user directories (`~`, `/Applications`, `~/Documents`, `~/Downloads`, etc.). To index a directory outside those defaults, add it via `file_scan_extra_roots` in `~/.look/config`.
+- **No Full Disk Access** is required. Lumio indexes standard user directories (`~`, `/Applications`, `~/Documents`, `~/Downloads`, etc.). To index a directory outside those defaults, add it via `file_scan_extra_roots` in `~/.lumio/config`.
 - **No Screen Recording** is required.
 - **Network access** is used for explicit actions only - `tw"` dictionary lookup, and `Cmd+Enter` web search. Local search and indexing never make network calls.
-- **Finder Automation** is requested only when you empty the Trash (`Cmd+D` on the pinned Trash folder). The Trash is protected by macOS, so Look asks Finder to empty it; macOS prompts once, and you can manage it under `System Settings > Privacy & Security > Automation`. Moving individual files to the Trash needs no permission.
+- **Finder Automation** is requested only when you empty the Trash (`Cmd+D` on the pinned Trash folder). The Trash is protected by macOS, so Lumio asks Finder to empty it; macOS prompts once, and you can manage it under `System Settings > Privacy & Security > Automation`. Moving individual files to the Trash needs no permission.
 
-If macOS prompts for permission during an action you didn't trigger, that's a bug - please [file an issue](https://github.com/kunkka19xx/look/issues).
+If macOS prompts for permission during an action you didn't trigger, that's a bug - please [file an issue](https://github.com/cavaldos/Lumio/issues).
 
 ## Core workflow
 
@@ -65,11 +65,11 @@ Useful actions:
 
 When at least one item is picked, the right panel switches to the **Picked** list - each row has an `X` to remove a single item, plus a **Clear all** button. File/folder copies (both `Cmd+C` and `Cmd+P`) are excluded from clipboard history.
 
-**Trash.** Type `trash` to pin the Trash quick folder; `Enter` opens it in Finder. With the Trash folder selected, its preview shows the item count and `Cmd+D` **empties** the Trash. Emptying is permanent, so it asks you to confirm (`Y`/`Enter` to empty, `N`/`Esc` to cancel). Look empties the Trash through Finder, so the first time you do this macOS asks for permission to control Finder (see [Permissions](#permissions)).
+**Trash.** Type `trash` to pin the Trash quick folder; `Enter` opens it in Finder. With the Trash folder selected, its preview shows the item count and `Cmd+D` **empties** the Trash. Emptying is permanent, so it asks you to confirm (`Y`/`Enter` to empty, `N`/`Esc` to cancel). Lumio empties the Trash through Finder, so the first time you do this macOS asks for permission to control Finder (see [Permissions](#permissions)).
 
 ## Preferred tools
 
-Name the editor, terminal, and file manager Look should hand a row to, and `Cmd+E` / `Cmd+T` / `Cmd+F` act through them. Four optional keys in `~/.look/config`:
+Name the editor, terminal, and file manager Lumio should hand a row to, and `Cmd+E` / `Cmd+T` / `Cmd+F` act through them. Four optional keys in `~/.lumio/config`:
 
 ```ini
 text_editor=nvim
@@ -85,9 +85,9 @@ file_manager=nautilus
 | `terminal`     | `Cmd+T`, and the host for any terminal editor       | `ghostty`, `iterm`, `kitty`, `wezterm`, `gnome-terminal`   |
 | `file_manager` | the `Cmd+F` reveal target                           | `nautilus`, `dolphin`, `thunar`, `finder`                 |
 
-**Declare nothing and nothing changes.** An undeclared key means the system default, which is what Look did before these keys existed. They are config-file only, with no Settings control, so edit `~/.look/config` and reload with `Cmd+Shift+;`.
+**Declare nothing and nothing changes.** An undeclared key means the system default, which is what Lumio did before these keys existed. They are config-file only, with no Settings control, so edit `~/.lumio/config` and reload with `Cmd+Shift+;`.
 
-**Name the tool, not a command.** A value is a tool *name*, never a command carrying its own arguments: `text_editor=nvim -u NONE` will not work. Look already knows how to drive each tool, including running a terminal editor inside your terminal, which is the whole reason you name one instead of writing a command. Case, a trailing `.app`, and a leading directory are forgiven, so `Zed`, `Zed.app`, and `/opt/homebrew/bin/zed` all mean `zed`. Spelling out a full path pins that exact build instead of whatever `PATH` finds first.
+**Name the tool, not a command.** A value is a tool *name*, never a command carrying its own arguments: `text_editor=nvim -u NONE` will not work. Lumio already knows how to drive each tool, including running a terminal editor inside your terminal, which is the whole reason you name one instead of writing a command. Case, a trailing `.app`, and a leading directory are forgiven, so `Zed`, `Zed.app`, and `/opt/homebrew/bin/zed` all mean `zed`. Spelling out a full path pins that exact build instead of whatever `PATH` finds first.
 
 Which key an action uses:
 
@@ -97,16 +97,16 @@ Which key an action uses:
 - A [source block](#your-own-sources) declaring its own `open` / `edit` / `terminal` / `reveal` beats these keys, for that block's rows only.
 - `file_manager` opens the **containing folder**. Leave it undeclared if you want the file itself selected on arrival: only the platform's own manager can do that.
 
-**Terminal editors.** Naming a terminal editor (`nvim`, `helix`, `kakoune`, `micro`, `nano`) as `text_editor` needs `terminal` declared too. Look then opens the terminal and runs the editor inside it, at the right path, so `terminal=ghostty` plus `text_editor=nvim` gives you all three of edit-a-file, edit-a-folder, and terminal-here from two words of config.
+**Terminal editors.** Naming a terminal editor (`nvim`, `helix`, `kakoune`, `micro`, `nano`) as `text_editor` needs `terminal` declared too. Lumio then opens the terminal and runs the editor inside it, at the right path, so `terminal=ghostty` plus `text_editor=nvim` gives you all three of edit-a-file, edit-a-folder, and terminal-here from two words of config.
 
 A value that cannot work says so instead of doing nothing:
 
-| What you set                     | What Look tells you                                                |
+| What you set                     | What Lumio tells you                                                |
 | -------------------------------- | ------------------------------------------------------------------ |
-| a terminal editor, no `terminal` | _nvim runs in a terminal; set terminal in your Look config_        |
+| a terminal editor, no `terminal` | _nvim runs in a terminal; set terminal in your Lumio config_        |
 | a terminal as `text_editor`      | _ghostty is a terminal; set text_editor to the editor it should run_ |
 | `terminal=warp`, `terminal=hyper` | _warp cannot be told to run a command_                             |
-| nothing at all                   | _Set text_editor in your Look config_                              |
+| nothing at all                   | _Set text_editor in your Lumio config_                              |
 
 Warp and Hyper are named because neither offers a way to run a command in a new window. Every other terminal is either known or driven with the `-e` convention, and one nobody has listed simply works if it honors `-e`.
 
@@ -119,14 +119,14 @@ Don't remember the prefixes? Type a single `"` to open a menu listing every pref
 - `a"term` -> apps only
 - `f"term` -> files only
 - `d"term` -> folders only
-- `rc"term` -> recent files/folders, newest activity first (optional filter; `rc"` alone lists all). Blends what you've opened through Look with what recently appeared/changed on disk (downloads, screenshots). macOS for now.
+- `rc"term` -> recent files/folders, newest activity first (optional filter; `rc"` alone lists all). Blends what you've opened through Lumio with what recently appeared/changed on disk (downloads, screenshots). macOS for now.
 - `r"pattern` -> regex search (case-insensitive)
 - `c"term` -> clipboard history search
 - `tw"text` -> dictionary lookup panel
 
 Path-like queries (for example `git/project/readme`) are also supported and bias path matches.
 
-URL-like queries are detected automatically (no prefix). Type a URL and Look offers an **Open in browser** row: a structural URL (with a scheme, port, path, or `localhost`/IP - e.g. `http://localhost:3000` or `example.com/docs`) ranks at the top, while a bare `host.tld` (e.g. `github.com`) ranks after your local results so it never displaces a real match. URLs you open this way come back as **Recently opened** rows, ranked by frecency and filtered as you type.
+URL-like queries are detected automatically (no prefix). Type a URL and Lumio offers an **Open in browser** row: a structural URL (with a scheme, port, path, or `localhost`/IP - e.g. `http://localhost:3000` or `example.com/docs`) ranks at the top, while a bare `host.tld` (e.g. `github.com`) ranks after your local results so it never displaces a real match. URLs you open this way come back as **Recently opened** rows, ranked by frecency and filtered as you type.
 
 ## Clipboard and translation
 
@@ -134,7 +134,7 @@ Clipboard mode (`c"`):
 
 - stores recent text clips for the running app session (history size is configurable via `clipboard_history_limit`, see File-only settings below),
 - `Enter` on a clipboard row copies that content back to clipboard,
-- `Cmd+D` (`Ctrl+D` on Linux/Windows) removes the selected row from Look's clipboard history.
+- `Cmd+D` (`Ctrl+D` on Linux/Windows) removes the selected row from Lumio's clipboard history.
 
 Dictionary lookup (`tw"`):
 
@@ -201,7 +201,7 @@ Built-in theme presets are available:
 | Gruvbox     | Retro warm tones                  |
 | Dracula     | Classic purple-accented dark      |
 | Kanagawa    | Japanese-inspired dark theme      |
-| Kindle      | Paper and ink e-reader look       |
+| Kindle      | Paper and ink e-reader lumio       |
 | Liquid      | Liquid Glass surface (macOS 26+)  |
 | Custom      | Your own colors derived from tint |
 
@@ -236,25 +236,25 @@ Refraction is not available to a web frontend at all - CSS can only blur what
 the page itself drew, and the desktop behind the window is drawn by the system,
 not the page.
 
-Blur behind the window is the compositor's to grant, and Look asks for it
+Blur behind the window is the compositor's to grant, and Lumio asks for it
 wherever the ask exists: KDE Plasma 6.7+, Hyprland 0.56+ and Niri through the
 `ext-background-effect-v1` protocol, older Plasma through KDE's own, and KWin on
 X11 through a window property. There is nothing to switch on - if your
 compositor takes the request the frost is there, and `Blur Opacity` starts
 thinning the tint so more of it shows through. Everywhere else (GNOME today,
-plain sway, X11 without KWin) Look stays clear glass and `Blur Opacity` applies
+plain sway, X11 without KWin) Lumio stays clear glass and `Blur Opacity` applies
 only when you have set a background image. Driving blur from your own compositor
-config still works; Look's request is additional, not exclusive.
+config still works; Lumio's request is additional, not exclusive.
 
 
 Behavior:
 
 - **Stable** - icons sit in alphabetical order and don't shuffle when you switch apps. The activation digit for a given app stays the same until you launch or quit something.
 - **Ergonomic badge keys** - easier-to-reach keys are assigned first. With 5 running apps the badges are `1, 2, 3, 8, 9` (skipping the harder middle keys); `5/6/7` only get used when you have 7+ apps running.
-- **Linux focus** - Look's GNOME Shell extension activates the app's most-recent window on Wayland; X11 uses `_NET_ACTIVE_WINDOW` via x11rb; sway/Hyprland use `wlr-foreign-toplevel-management`; i3 uses `i3-msg`; niri uses its own IPC socket, which also scrolls the view to the window's workspace.
+- **Linux focus** - Lumio's GNOME Shell extension activates the app's most-recent window on Wayland; X11 uses `_NET_ACTIVE_WINDOW` via x11rb; sway/Hyprland use `wlr-foreign-toplevel-management`; i3 uses `i3-msg`; niri uses its own IPC socket, which also scrolls the view to the window's workspace.
 - **Windowless apps** (Finder with no Finder windows, etc.) get a fresh window via a Dock-style "reopen" so you don't see an empty flash.
 
-Saved as `running_apps_placement=<value>` in `~/.look/config` (`none` = off, any other value = on; legacy `top`/`right`/`bottom` values still load as "on"). New keys are auto-appended to existing config files on next Save Config.
+Saved as `running_apps_placement=<value>` in `~/.lumio/config` (`none` = off, any other value = on; legacy `top`/`right`/`bottom` values still load as "on"). New keys are auto-appended to existing config files on next Save Config.
 
 
 ### Indexing Settings
@@ -274,7 +274,7 @@ These control how deeply and how many files are indexed for search.
 
 Lazy indexing behavior:
 
-- when **On**, Look listens for file/app create/remove/rename events and marks the index dirty,
+- when **On**, Lumio listens for file/app create/remove/rename events and marks the index dirty,
 - pressing `Cmd+Space` triggers background reindex only when dirty,
 - when **Off**, pressing `Cmd+Space` always triggers background reindex.
 
@@ -286,8 +286,8 @@ Lazy indexing behavior:
 
 Runtime config file:
 
-- path: `~/.look/config`
-- optional override: `LOOK_CONFIG_PATH=/path/to/config`
+- path: `~/.lumio/config`
+- optional override: `LUMIO_CONFIG_PATH=/path/to/config`
 - reload after manual edits: `Cmd+Shift+;`
 - reset to fresh defaults from UI: `Settings -> Advanced -> Create Fresh Config` (confirmation popup)
 
@@ -297,7 +297,7 @@ modules, which Home Manager does not do on its own:
 
 ```nix
 # flake.nix
-inputs.look.url = "github:kunkka19xx/look?dir=apps/linows";
+inputs.lumio.url = "github:cavaldos/Lumio?dir=apps/linows";
 
 homeConfigurations."me" = home-manager.lib.homeManagerConfiguration {
   inherit pkgs;
@@ -309,22 +309,22 @@ homeConfigurations."me" = home-manager.lib.homeManagerConfiguration {
 ```nix
 # home.nix
 { inputs, ... }: {
-  imports = [ inputs.look.homeModules.default ];
+  imports = [ inputs.lumio.homeModules.default ];
 
-  programs.lookapp = {
+  programs.lumio = {
     enable = true;
     theme = "kindle";
-    # package = null;  # config only, Look already installed system-wide
+    # package = null;  # config only, Lumio already installed system-wide
   };
 }
 ```
 
-Activation merges those keys into `~/.look/config` instead of replacing it, so
+Activation merges those keys into `~/.lumio/config` instead of replacing it, so
 settings you change in the app are kept and only the keys declared in Nix are
 overwritten. Removing a key from the Nix config removes it from the file on the
 next rebuild. Nix wins on every activation, so for the keys it manages, edit the
-Nix config and rebuild rather than using Look's in-app Save Config button. The
-first activation copies the pre-Nix file to `~/.look.config.hm-backup`. See
+Nix config and rebuild rather than using Lumio's in-app Save Config button. The
+first activation copies the pre-Nix file to `~/.lumio.config.hm-backup`. See
 `apps/linows/BUILDING.md` for the full option list.
 
 Backend-related keys:
@@ -339,10 +339,10 @@ Backend-related keys:
 
 File-only settings (no Settings UI):
 
-These keys have no control in the Settings screens. Edit `~/.look/config` directly, then reload with `Cmd+Shift+;` (macOS) or `Ctrl+Shift+;` (Linux/Windows), or restart Look. Out-of-range or unparseable values fall back to the listed default. More keys will be added here over time.
+These keys have no control in the Settings screens. Edit `~/.lumio/config` directly, then reload with `Cmd+Shift+;` (macOS) or `Ctrl+Shift+;` (Linux/Windows), or restart Lumio. Out-of-range or unparseable values fall back to the listed default. More keys will be added here over time.
 
 - `clipboard_history_limit` (clipboard history size, range 10 to 100, default 10)
-- `query_retention_seconds` (how long the main query survives while Look is hidden, in seconds; the first open past it returns to the empty home screen; default 5, `0` clears on every hide, and any negative value keeps the query indefinitely)
+- `query_retention_seconds` (how long the main query survives while Lumio is hidden, in seconds; the first open past it returns to the empty home screen; default 5, `0` clears on every hide, and any negative value keeps the query indefinitely)
 - `text_editor`, `code_editor`, `terminal`, `file_manager` (the tools `Cmd+E` / `Cmd+T` / `Cmd+F` act through, see [Preferred tools](#preferred-tools); undeclared means the system default)
 
 - `ignored_patterns_<group>` uses gitignore-style path glob syntax: `*`, `**`, `?`, `[abc]`
@@ -381,18 +381,18 @@ Default alias presets (fresh config files):
 
 Preset update behavior:
 
-- presets are written automatically only when `~/.look/config` is created for the first time
+- presets are written automatically only when `~/.lumio/config` is created for the first time
 - app updates do not rewrite an existing config file, so existing users should add new `alias_*` keys manually
 
 Fresh config reset behavior:
 
 - `Create Fresh Config` replaces the current config file with the latest default template
-- reset uses the active config path (`LOOK_CONFIG_PATH` when set, otherwise `~/.look/config`)
+- reset uses the active config path (`LUMIO_CONFIG_PATH` when set, otherwise `~/.lumio/config`)
 - existing custom values are replaced during this reset flow (use manual edit + `Cmd+Shift+;` if you only want partial changes)
 
 UI-related keys include the `ui_*` group (tint/blur/font/border values).
 
-Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not written to `~/.look/config`.
+Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not written to `~/.lumio/config`.
 
 ## Keyboard shortcuts (quick reference)
 
@@ -416,7 +416,7 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 - `Cmd+D`: remove the selected clipboard history item; otherwise move selected file/folder (or picked items) to Trash, or empty the pinned Trash folder
 - `Cmd+Shift+,`: toggle settings panel
 - `Cmd+Shift+;` (macOS) / `Ctrl+Shift+;` (Linux, Windows): reload config
-- `Cmd+Shift+H`: hide the selected app from Look
+- `Cmd+Shift+H`: hide the selected app from Lumio
 - `Cmd+-`, `Cmd+=`, `Cmd+0`: temporary UI zoom out/in/reset
 
 ## Troubleshooting
@@ -424,15 +424,15 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 **Results seem stale or a newly installed app is missing.**
 
 - reload config with `Cmd+Shift+;`
-- if lazy indexing is Off, Look reindexes on every launcher open; if On, it reindexes only when filesystem changes are detected
-- check scan roots, depth, and limits in `~/.look/config`
+- if lazy indexing is Off, Lumio reindexes on every launcher open; if On, it reindexes only when filesystem changes are detected
+- check scan roots, depth, and limits in `~/.lumio/config`
 - add user-specific directories via `file_scan_extra_roots`
 
-**`Cmd+Space` does not open Look.**
+**`Cmd+Space` does not open Lumio.**
 
 - confirm Spotlight's `Cmd+Space` is disabled or rebound (`System Settings > Keyboard > Keyboard Shortcuts > Spotlight`)
-- relaunch Look (`open "/Applications/Look.app"`) after changing the Spotlight binding
-- if you previously ran a dev/side-by-side build, make sure only one Look instance is running
+- relaunch Lumio (`open "/Applications/Lumio.app"`) after changing the Spotlight binding
+- if you previously ran a dev/side-by-side build, make sure only one Lumio instance is running
 
 **The launcher opens behind another window.**
 
@@ -442,12 +442,12 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 **High CPU or slow first launch.**
 
 - the initial index scan is a one-time cost on first run; subsequent launches use the cached SQLite index
-- you can lower `file_scan_depth` and `file_scan_limit` in `~/.look/config` if you have very large user directories
+- you can lower `file_scan_depth` and `file_scan_limit` in `~/.lumio/config` if you have very large user directories
 
 **A config change was ignored.**
 
-- Look reads `~/.look/config` at launch. After editing manually, reload with `Cmd+Shift+;` or restart Look.
-- confirm you edited the active config path (`LOOK_CONFIG_PATH` overrides `~/.look/config` when set)
+- Lumio reads `~/.lumio/config` at launch. After editing manually, reload with `Cmd+Shift+;` or restart Lumio.
+- confirm you edited the active config path (`LUMIO_CONFIG_PATH` overrides `~/.lumio/config` when set)
 
 **Dictionary lookup (`tw"`) returns no results.**
 
@@ -464,23 +464,23 @@ Note: `Settings Blur` is stored as local app UI state (UserDefaults) and is not 
 
 **I want to reset everything to defaults.**
 
-- `Settings > Advanced > Create Fresh Config` rewrites `~/.look/config` from the latest defaults (with a confirmation prompt)
+- `Settings > Advanced > Create Fresh Config` rewrites `~/.lumio/config` from the latest defaults (with a confirmation prompt)
 
 ## Uninstall
 
 ```bash
-rm -rf "/Applications/Look.app"
+rm -rf "/Applications/Lumio.app"
 ```
 
 Remove local state (optional - includes config, your declared sources, index, and usage history):
 
 ```bash
-rm -rf "$HOME/.look"
-rm -rf "$HOME/Library/Application Support/look"
-rm -f "$HOME/.look.config"   # only if a pre-0.6 config was left behind
+rm -rf "$HOME/.lumio"
+rm -rf "$HOME/Library/Application Support/lumio"
+rm -f "$HOME/.lumio.config"   # only if a pre-0.6 config was left behind
 ```
 
-Those are the default paths. If you moved anything with an environment override, remove it yourself as well: `LOOK_CONFIG_PATH` (the config file), `LOOK_CONFIG_PATH` (the config file).
+Those are the default paths. If you moved anything with an environment override, remove it yourself as well: `LUMIO_CONFIG_PATH` (the config file), `LUMIO_CONFIG_PATH` (the config file).
 
 ## Related docs
 

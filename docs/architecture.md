@@ -1,12 +1,12 @@
 # Architecture Guide
 
-This is the canonical architecture document for `look`.
+This is the canonical architecture document for `lumio`.
 
 It intentionally merges architecture explanation and diagrams into one place, so design decisions and Mermaid views stay in sync.
 
 ## 1) System overview and design intent
 
-`look` is a keyboard-first launcher for macOS designed for low-latency local search. The architecture separates UI concerns (Swift) from search/index/ranking concerns (Rust), joined through a small FFI boundary. The SwiftUI app under `apps/macos/LauncherApp/` (Xcode project) talks to the Rust core via the C ABI (`bridge/ffi`).
+`lumio` is a keyboard-first launcher for macOS designed for low-latency local search. The architecture separates UI concerns (Swift) from search/index/ranking concerns (Rust), joined through a small FFI boundary. The SwiftUI app under `apps/macos/LauncherApp/` (Xcode project) talks to the Rust core via the C ABI (`bridge/ffi`).
 
 Key design goals:
 
@@ -19,17 +19,17 @@ Key design goals:
 ```mermaid
 flowchart LR
     User[User keyboard input] --> Hotkey[GlobalHotKeyManager\nSupport/Launcher/ Cmd+Space]
-    Hotkey --> App[SwiftUI macOS App\nlook_appApp / AppDelegate / LauncherView]
+    Hotkey --> App[SwiftUI macOS App\nlumio_appApp / AppDelegate / LauncherView]
 
     App --> Clipboard[ClipboardHistoryStore\nSupport/Launcher/ in-memory history]
-    App --> Theme[ThemeStore\n.look/config + UserDefaults]
+    App --> Theme[ThemeStore\n.lumio/config + UserDefaults]
     App --> Bridge[EngineBridge.swift\nSupport/Launcher/]
     App --> Services[LauncherSearchCoordinator\nLauncherTranslationService\nLauncherWindowCoordinator]
 
     Bridge --> FFI[bridge/ffi\nC ABI]
     FFI --> Engine[core/engine\nQueryEngine]
     Engine --> Storage[core/storage\nSqliteStore]
-    Storage --> DB[(SQLite look.db)]
+    Storage --> DB[(SQLite lumio.db)]
 
     Engine --> Indexers[Index discovery\napps + files + settings]
     Indexers --> DB
@@ -42,7 +42,7 @@ flowchart LR
 
 ## 2) Module boundaries and responsibilities
 
-- `apps/macos/LauncherApp/look-app`: launcher window, keyboard input, global hotkey, action dispatch, clipboard/history mode, command mode, theme/settings UX.
+- `apps/macos/LauncherApp/lumio-app`: launcher window, keyboard input, global hotkey, action dispatch, clipboard/history mode, command mode, theme/settings UX.
 - `Support/Launcher/`: launcher-specific services and utilities:
   - `LauncherSearchCoordinator`: debounce + async search lifecycle
   - `LauncherTranslationService`: translation lookup
@@ -57,20 +57,20 @@ flowchart LR
 - `core/matching`: exact/prefix/fuzzy matching primitives.
 - `core/ranking`: ranking helpers (usage/recency-aware adjustments and score composition).
 - `core/storage`: SQLite integration, schema/migrations, candidate/usage persistence.
-- `core/todo`: shared store for the `/todo` command. Owns the `todo_tasks` table inside the app's existing `look.db` (full-set load/save, one-year retention), reached via `bridge/ffi`. `examples/seed.rs` fills a dev database with demo history, including near-today extension-window cases for `/todo` UI testing.
+- `core/todo`: shared store for the `/todo` command. Owns the `todo_tasks` table inside the app's existing `lumio.db` (full-set load/save, one-year retention), reached via `bridge/ffi`. `examples/seed.rs` fills a dev database with demo history, including near-today extension-window cases for `/todo` UI testing.
 - `core/netspeed`: the `/speed` measurement. A latency probe (the best of several TCP handshakes against a pre-resolved address), download and upload phases (four parallel `curl` streams each), and plain-language verdicts. Cloudflare's keyless endpoints are the primary source; when they rate-limit a connection the download phase falls back to the nearest of several public test mirrors, ranked by a round-trip probe. No async runtime, and every phase is timeout-bounded. Reached via `bridge/ffi`.
 - `core/engine`: query parsing, indexing orchestration, scoring, top-k retrieval, in-memory cache management.
 
 ```mermaid
 flowchart TB
     subgraph CoreWorkspace[core workspace]
-      IDX[look-indexing]
-      MAT[look-matching]
-      RNK[look-ranking]
-      STG[look-storage]
-      ENG[look-engine]
-      ANS[look-answers\nurl + translation]
-      NET[look-netspeed\nspeed test]
+      IDX[lumio-indexing]
+      MAT[lumio-matching]
+      RNK[lumio-ranking]
+      STG[lumio-storage]
+      ENG[lumio-engine]
+      ANS[lumio-answers\nurl + translation]
+      NET[lumio-netspeed\nspeed test]
     end
 
     IDX --> ENG
@@ -79,7 +79,7 @@ flowchart TB
     STG --> ENG
 
     subgraph Bridge[bridge/ffi]
-      FFI[look-ffi]
+      FFI[lumio-ffi]
     end
 
     ENG --> FFI
@@ -100,7 +100,7 @@ sequenceDiagram
     participant U as User
     participant LV as LauncherView
     participant EB as EngineBridge
-    participant FFI as look_search_json_compact
+    participant FFI as lumio_search_json_compact
     participant QE as QueryEngine
 
     U->>LV: Type query
@@ -171,7 +171,7 @@ Benchmarks for this path live in `tools/perf/` (see [tools/perf/WATCHER_PERF.md]
 ```mermaid
 flowchart TD
     Start[Engine cache init or config reload] --> Bootstrap[QueryEngine bootstrap_sqlite_scoped scope]
-    Bootstrap --> LoadCfg[RuntimeConfig load from .look/config]
+    Bootstrap --> LoadCfg[RuntimeConfig load from .lumio/config]
     LoadCfg --> OpenStore[SqliteStore open and migrate]
     OpenStore --> Stream[discover_candidates_stream_scoped]
 
@@ -259,12 +259,12 @@ Usage recording closes the loop by updating persistent and in-memory state after
 sequenceDiagram
     participant UI as Swift UI
     participant EB as EngineBridge
-    participant FFI as look_record_usage_json
+    participant FFI as lumio_record_usage_json
     participant ST as SqliteStore
     participant QE as QueryEngine cache
 
     UI->>EB: recordUsage(candidateId, action)
-    EB->>FFI: look_record_usage_json(id, action)
+    EB->>FFI: lumio_record_usage_json(id, action)
     FFI->>FFI: Validate candidate id prefix and action
     FFI->>ST: INSERT usage_events and UPDATE candidates
     FFI->>QE: record_usage_in_memory(candidateId, now)
@@ -520,7 +520,7 @@ motion sensitivity.
 
 ### Config File Integration
 
-All settings are persisted to `.look/config`:
+All settings are persisted to `.lumio/config`:
 
 **UI Theme:**
 - `ui_theme` - theme name (catppuccin, tokyoNight, rosePine, gruvbox, dracula, kanagawa, kindle, liquid). Matched case-insensitively, and applied after the individual `ui_*` keys below, so a preset overrides them. Empty means Custom. Save Config writes a preset name only while the values still match that preset, so a theme you have tweaked is stored as its literal values.

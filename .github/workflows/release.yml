@@ -41,8 +41,8 @@ jobs:
       - name: Build app
         run: |
           ./scripts/release-macos-app.sh "$VERSION"
-          echo "APP_PATH=.build/release-macos/DerivedData/Build/Products/Release/Look.app" >> $GITHUB_ENV
-          echo "ZIP_PATH=dist/Look-${VERSION}-macOS.zip" >> $GITHUB_ENV
+          echo "APP_PATH=.build/release-macos/DerivedData/Build/Products/Release/Lumio.app" >> $GITHUB_ENV
+          echo "ZIP_PATH=dist/Lumio-${VERSION}-macOS.zip" >> $GITHUB_ENV
       - name: Zip and publish to GitHub Release
         run: |
           codesign --force --deep --sign - "$APP_PATH"
@@ -52,7 +52,7 @@ jobs:
           shasum -a 256 "$ZIP_PATH"
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/Look-*-macOS.zip
+          files: dist/Lumio-*-macOS.zip
           generate_release_notes: true
 # Release flow:
 #   ./scripts/release.sh vX.Y.Z   (lints/builds first, then tags + pushes here)

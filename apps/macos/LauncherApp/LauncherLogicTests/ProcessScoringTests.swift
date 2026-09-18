@@ -8,7 +8,7 @@ import XCTest
 /// so what needs testing here is the numeric-tier layering and the apps-first
 /// kill ordering - both pure Swift.
 final class ProcessScoringTests: XCTestCase {
-    /// Deterministic stand-in for `look_fuzzy_score`: a positive score when
+    /// Deterministic stand-in for `lumio_fuzzy_score`: a positive score when
     /// `query` is a subsequence of `title`, else nil. Both are already
     /// lowercased by the scorer, matching the FFI contract.
     private func stubFuzzy(_ query: String) -> (String) -> Int? {

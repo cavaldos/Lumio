@@ -1,6 +1,6 @@
 use crate::state::{cstr_to_string, default_db_path, refresh_engine_cache};
-use look_indexing::{Candidate, CandidateKind};
-use look_storage::SqliteStore;
+use lumio_indexing::{Candidate, CandidateKind};
+use lumio_storage::SqliteStore;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::os::raw::c_char;
@@ -19,7 +19,7 @@ struct UwpAppPayload {
 // [{"aumid": "...", "title": "..."}, ...]
 //
 // Each entry is upserted as:
-//   id    = app:uwp:<AUMID>          - `app:` prefix so look_record_usage accepts it
+//   id    = app:uwp:<AUMID>          - `app:` prefix so lumio_record_usage accepts it
 //   kind  = App
 //   title = <DisplayName>            - e.g. "Terminal", "Notepad"
 //   path  = shell:AppsFolder\<AUMID> - launched through explorer.exe
@@ -30,7 +30,7 @@ struct UwpAppPayload {
 //
 // Windows app discovery also enumerates AppsFolder itself, in
 // `core/engine/src/platform/windows/uwp.rs`, building the same ids.
-pub(crate) fn look_seed_uwp_apps_json_impl(json: *const c_char) -> bool {
+pub(crate) fn lumio_seed_uwp_apps_json_impl(json: *const c_char) -> bool {
     let json = cstr_to_string(json);
     if json.trim().is_empty() {
         return false;

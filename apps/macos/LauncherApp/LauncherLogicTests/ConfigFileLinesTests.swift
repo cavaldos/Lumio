@@ -6,7 +6,7 @@ final class ConfigFileLinesTests: XCTestCase {
 
     func testWritingAKeyLeavesEveryOtherLineUntouched() {
         let original = """
-        # look configuration
+        # lumio configuration
 
         ##########
         # indexing
@@ -31,12 +31,12 @@ final class ConfigFileLinesTests: XCTestCase {
     }
 
     func testAddingAKeyAppendsItAndChangesNothingElse() {
-        let original = "# look configuration\n\napp_scan_depth=3\n"
+        let original = "# lumio configuration\n\napp_scan_depth=3\n"
 
         var lines = ConfigFileLines.parse(original)
         ConfigFileLines.upsert(&lines, key: "inner_gap", value: "10")
 
-        XCTAssertEqual(ConfigFileLines.render(lines), "# look configuration\n\napp_scan_depth=3\ninner_gap=10\n")
+        XCTAssertEqual(ConfigFileLines.render(lines), "# lumio configuration\n\napp_scan_depth=3\ninner_gap=10\n")
     }
 
     func testRemovingAKeyDropsOnlyThatLine() {
@@ -90,7 +90,7 @@ final class ConfigFileLinesTests: XCTestCase {
     func testRepairLeavesAnUndamagedConfigAlone() {
         // No signature, so no rewrite: not even a reformat. Returning nil is what keeps
         // launch from bumping the mtime and waking the config watcher.
-        let clean = "# look configuration\n\napp_scan_depth=3\n\n# UI theme\nui_font_size=14\n"
+        let clean = "# lumio configuration\n\napp_scan_depth=3\n\n# UI theme\nui_font_size=14\n"
 
         XCTAssertNil(ConfigFileLines.repairingLegacyDamage(clean))
     }
@@ -116,16 +116,16 @@ final class ConfigFileLinesTests: XCTestCase {
     }
 
     func testRepairKeepsRepeatedMigrationMarkers() {
-        // Two `# Added by look update` blocks are legitimate: each came from a separate
+        // Two `# Added by lumio update` blocks are legitimate: each came from a separate
         // migration. Only the legacy header is surplus.
         let scarred = """
-        # Added by look update
+        # Added by lumio update
         app_exclude_paths=
 
         # UI theme
 
         # UI theme
-        # Added by look update
+        # Added by lumio update
         file_scan_extra_roots=
 
         """
@@ -133,12 +133,12 @@ final class ConfigFileLinesTests: XCTestCase {
         let repaired = ConfigFileLines.repairingLegacyDamage(scarred)
 
         XCTAssertEqual(repaired, """
-        # Added by look update
+        # Added by lumio update
         app_exclude_paths=
 
         # UI theme
 
-        # Added by look update
+        # Added by lumio update
         file_scan_extra_roots=
 
         """)

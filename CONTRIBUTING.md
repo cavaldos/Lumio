@@ -1,4 +1,4 @@
-# Contributing to look
+# Contributing to Lumio
 
 Thanks for contributing.
 
@@ -27,7 +27,7 @@ A good bug report must include:
 - frequency (`always`, `sometimes`, `once`)
 - environment details:
   - OS + version (macOS 15.x)
-  - look app version or commit SHA
+  - lumio app version or commit SHA
   - install method: Xcode run, zip install
   - architecture (`arm64` / `x86_64`)
 - logs or screenshots if available

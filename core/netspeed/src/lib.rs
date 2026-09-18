@@ -2,7 +2,7 @@
 //! download phase and an upload phase against Cloudflare's keyless speed-test
 //! endpoints.
 //!
-//! Transport is the system `curl`, the same choice `look-answers` made for its
+//! Transport is the system `curl`, the same choice `lumio-answers` made for its
 //! HTTP helper, so this crate needs no async runtime and no TLS dependency.
 //! `curl` already measures each transfer for us, so a phase is "spawn N of them
 //! and sum what they report".
@@ -582,7 +582,7 @@ fn curl_command() -> Command {
     #[allow(unused_mut)]
     let mut command = Command::new("curl");
     // The AppImage points LD_LIBRARY_PATH at bundled Ubuntu libs, against which
-    // the system curl fails to resolve libcurl (see `look-answers`).
+    // the system curl fails to resolve libcurl (see `lumio-answers`).
     #[cfg(target_os = "linux")]
     command.env_remove("LD_LIBRARY_PATH");
     #[cfg(target_os = "windows")]

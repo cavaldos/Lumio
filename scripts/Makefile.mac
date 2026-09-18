@@ -1,15 +1,15 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-XCODE_PROJECT := apps/macos/LauncherApp/look-app.xcodeproj
-XCODE_SCHEME := Look
+XCODE_PROJECT := apps/macos/LauncherApp/lumio-app.xcodeproj
+XCODE_SCHEME := Lumio
 XCODE_CONFIG := Debug
 XCODE_DERIVED_DATA := .build/xcode
 
-APP_ID := noah-code.Look
-APP_PROCESS := Look
-APP_BUNDLE := $(XCODE_DERIVED_DATA)/Build/Products/$(XCODE_CONFIG)/Look.app
-APP_DEBUG_DYLIB := $(APP_BUNDLE)/Contents/MacOS/Look.debug.dylib
+APP_ID := noah-code.Lumio
+APP_PROCESS := Lumio
+APP_BUNDLE := $(XCODE_DERIVED_DATA)/Build/Products/$(XCODE_CONFIG)/Lumio.app
+APP_DEBUG_DYLIB := $(APP_BUNDLE)/Contents/MacOS/Lumio.debug.dylib
 
 # The Xcode "Build Rust FFI" phase declares this .a as an output and declares NO
 # inputs, so Xcode skips the phase whenever the file exists and a Rust change
@@ -20,44 +20,44 @@ APP_DEBUG_DYLIB := $(APP_BUNDLE)/Contents/MacOS/Look.debug.dylib
 # dependency bump changes no .rs), deletions (removing a file makes nothing
 # newer), and the CONFIGURATION - the phase copies debug and release output to
 # the SAME path, so switching profiles would otherwise link the wrong one.
-FFI_STATIC_LIB := apps/macos/LauncherApp/RustBuild/liblook_ffi.a
+FFI_STATIC_LIB := apps/macos/LauncherApp/RustBuild/liblumio_ffi.a
 FFI_STAMP := apps/macos/LauncherApp/RustBuild/.build-identity
 RUST_SOURCE_DIRS := core bridge
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-DEV_APP_NAME ?= Look Dev
-DEV_APP_ID ?= noah-code.Look.Dev
+DEV_APP_NAME ?= Lumio Dev
+DEV_APP_ID ?= noah-code.Lumio.Dev
 DEV_APP_INSTALL_BUNDLE := /Applications/$(DEV_APP_NAME).app
-LOG_PREDICATE ?= subsystem == "noah-code.Look"
+LOG_PREDICATE ?= subsystem == "noah-code.Lumio"
 
-REAL_DB_PATH := $(HOME)/Library/Application Support/look/look.db
-# The dev file Look itself names (core/engine/src/config_path.rs). Never
-# migrated: a dev who had ~/.look.dev.config moves it across themselves.
-DEV_CONFIG_PATH ?= $(HOME)/.look/config.dev
-DEV_OPEN_ENV = env -u LOOK_DB_PATH LOOK_CONFIG_PATH="$(DEV_CONFIG_PATH)" LOOK_DEV_HINT=1 LOOK_LOG_LEVEL=debug LOOK_UI_DEBUG_EVENTS=1
+REAL_DB_PATH := $(HOME)/Library/Application Support/lumio/lumio.db
+# The dev file Lumio itself names (core/engine/src/config_path.rs). Never
+# migrated: a dev who had ~/.lumio.dev.config moves it across themselves.
+DEV_CONFIG_PATH ?= $(HOME)/.lumio/config.dev
+DEV_OPEN_ENV = env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$(DEV_CONFIG_PATH)" LUMIO_DEV_HINT=1 LUMIO_LOG_LEVEL=debug LUMIO_UI_DEBUG_EVENTS=1
 
 .PHONY: help core-check ffi-check ffi-build ffi-build-release ffi-unstale app-build app-ensure-bundle app-stop app-run app-install-dev app-run-dev app-uninstall-dev dev-cli app-logs app-logs-all symbols db-path db-status db-shell db-reset db-refresh
 
 help:
-	@printf "look developer tasks\n\n"
+	@printf "lumio developer tasks\n\n"
 	@printf "build/check\n"
 	@printf "  make core-check          - cargo check core workspace\n"
 	@printf "  make ffi-check          - cargo check ffi crate\n"
 	@printf "  make ffi-build          - build the ffi crate alone (link check; the app builds its own)\n"
 	@printf "  make ffi-build-release  - same, release profile\n"
 	@printf "  make app-build          - xcodebuild app (macOS, includes rust ffi build/link)\n"
-	@printf "  make ffi-unstale        - drop RustBuild/liblook_ffi.a when the Rust build identity changes\n"
+	@printf "  make ffi-unstale        - drop RustBuild/liblumio_ffi.a when the Rust build identity changes\n"
 	@printf "  make symbols            - verify ffi symbols in app binary\n\n"
 	@printf "run app\n"
-	@printf "  make app-stop     - stop running Look app process\n"
+	@printf "  make app-stop     - stop running Lumio app process\n"
 	@printf "  make app-run      - stop running app, then open local app with dev config\n"
 	@printf "  make app-install-dev - install side-by-side /Applications/$(DEV_APP_NAME).app\n"
 	@printf "  make app-run-dev  - install+open side-by-side dev app with dev config\n"
 	@printf "  make app-uninstall-dev - remove side-by-side dev app from /Applications\n"
-	@printf "  make dev-cli      - install the lookdev command (done by app-install-dev)\n"
+	@printf "  make dev-cli      - install the lumiodev command (done by app-install-dev)\n"
 	@printf "  make app-logs     - stream app logs (predicate: $(LOG_PREDICATE))\n"
-	@printf "  make app-logs-all - stream all logs for process Look\n"
-	@printf "  (override config) make app-run DEV_CONFIG_PATH=\"$$HOME/.look/config.qa\"\n\n"
+	@printf "  make app-logs-all - stream all logs for process Lumio\n"
+	@printf "  (override config) make app-run DEV_CONFIG_PATH=\"$$HOME/.lumio/config.qa\"\n\n"
 	@printf "database\n"
 	@printf "  make db-path      - print real db path\n"
 	@printf "  make db-status    - inspect candidates/usage tables\n"
@@ -98,7 +98,7 @@ app-ensure-bundle:
 	@if [ ! -d "$(APP_BUNDLE)" ]; then echo "missing app bundle: $(APP_BUNDLE)"; exit 1; fi
 
 app-stop:
-	@echo "Stopping any running Look app (including Homebrew install)"
+	@echo "Stopping any running Lumio app (including Homebrew install)"
 	@osascript -e 'tell application id "$(APP_ID)" to quit' >/dev/null 2>&1 || true
 	@pkill -x "$(APP_PROCESS)" >/dev/null 2>&1 || true
 
@@ -121,18 +121,18 @@ app-install-dev: app-build app-ensure-bundle
 	@# Keep the Apple Events entitlement (Empty Trash via Finder) the ad-hoc
 	@# re-sign would otherwise strip, so dev matches the notarized release.
 	@codesign --force --sign - --deep \
-		--entitlements apps/macos/LauncherApp/look-app/Look.entitlements \
+		--entitlements apps/macos/LauncherApp/lumio-app/Lumio.entitlements \
 		"$(DEV_APP_INSTALL_BUNDLE)" >/dev/null
 	@"$(LSREGISTER)" -f "$(DEV_APP_INSTALL_BUNDLE)" >/dev/null
 	@echo "Installed $(DEV_APP_NAME) with bundle id $(DEV_APP_ID)"
 	@$(MAKE) --no-print-directory dev-cli
 
-# Beside whatever directory `lookapp` already lives in.
+# Beside whatever directory `lumio` already lives in.
 dev-cli:
-	@dir=$$(dirname "$$(command -v lookapp 2>/dev/null || echo /opt/homebrew/bin/lookapp)"); \
+	@dir=$$(dirname "$$(command -v lumio 2>/dev/null || echo /opt/homebrew/bin/lumio)"); \
 	if [ ! -w "$$dir" ]; then dir="$$HOME/.local/bin"; mkdir -p "$$dir"; fi; \
-	ln -sf "$(CURDIR)/scripts/lookdev" "$$dir/lookdev"; \
-	echo "Installed $$dir/lookdev"; \
+	ln -sf "$(CURDIR)/scripts/lumiodev" "$$dir/lumiodev"; \
+	echo "Installed $$dir/lumiodev"; \
 	case ":$$PATH:" in *":$$dir:"*) ;; *) echo "Add to PATH: export PATH=\"$$dir:\$$PATH\"" ;; esac
 
 app-run-dev: app-install-dev app-stop
@@ -149,11 +149,11 @@ app-logs:
 	@log stream --style compact --level debug --predicate '$(LOG_PREDICATE)'
 
 app-logs-all:
-	@echo "Streaming all logs for Look process"
-	@log stream --style compact --level debug --predicate 'process == "Look"'
+	@echo "Streaming all logs for Lumio process"
+	@log stream --style compact --level debug --predicate 'process == "Lumio"'
 
 symbols: app-build
-	@nm -gU "$(APP_DEBUG_DYLIB)" | rg "_look_search_json|_look_record_usage|_look_free_cstring"
+	@nm -gU "$(APP_DEBUG_DYLIB)" | rg "_lumio_search_json|_lumio_record_usage|_lumio_free_cstring"
 
 db-path:
 	@echo "$(REAL_DB_PATH)"

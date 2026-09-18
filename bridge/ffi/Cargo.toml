@@ -1,25 +1,25 @@
 [package]
-name = "look-ffi"
+name = "lumio-ffi"
 edition = "2024"
 # Let chains, stabilized in 1.88 (edition 2024 alone is not enough).
 rust-version = "1.88"
 license = "GPL-3.0-or-later"
-authors = ["kunkka19xx <nobita079x@gmail.com>"]
+authors = ["cavaldos"]
 version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-look-answers = { path = "../../core/answers" }
-look-engine = { path = "../../core/engine" }
-look-indexing = { path = "../../core/indexing" }
-look-lunar = { path = "../../core/lunar" }
-look-matching = { path = "../../core/matching" }
-look-netspeed = { path = "../../core/netspeed" }
-look-ranking = { path = "../../core/ranking" }
-look-storage = { path = "../../core/storage" }
-look-tools = { path = "../../core/tools" }
+lumio-answers = { path = "../../core/answers" }
+lumio-engine = { path = "../../core/engine" }
+lumio-indexing = { path = "../../core/indexing" }
+lumio-lunar = { path = "../../core/lunar" }
+lumio-matching = { path = "../../core/matching" }
+lumio-netspeed = { path = "../../core/netspeed" }
+lumio-ranking = { path = "../../core/ranking" }
+lumio-storage = { path = "../../core/storage" }
+lumio-tools = { path = "../../core/tools" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "8"

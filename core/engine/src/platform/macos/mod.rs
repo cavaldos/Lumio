@@ -118,7 +118,7 @@ where
             .collect();
         for worker in workers {
             let Ok(chunk_names) = worker.join() else {
-                eprintln!("look index: bundle metadata worker panicked");
+                eprintln!("lumio index: bundle metadata worker panicked");
                 return;
             };
             names.extend(chunk_names);
@@ -302,7 +302,7 @@ mod tests {
         let app = dir.path().join(format!("Fixture{APP_BUNDLE_EXTENSION}"));
         write_bundle(
             &app,
-            "<key>CFBundleIdentifier</key><string>test.look.localized-name</string>
+            "<key>CFBundleIdentifier</key><string>test.lumio.localized-name</string>
 <key>CFBundleDisplayName</key><string>English Fixture</string>",
             Some(LOCALIZED_FIXTURE_NAME),
         );
@@ -327,7 +327,7 @@ mod tests {
         let app = dir.path().join(format!("Fixture{APP_BUNDLE_EXTENSION}"));
         write_bundle(
             &app,
-            "<key>CFBundleIdentifier</key><string>test.look.blank-display-name</string>
+            "<key>CFBundleIdentifier</key><string>test.lumio.blank-display-name</string>
 <key>CFBundleDisplayName</key><string></string>
 <key>CFBundleName</key><string>Real Name</string>",
             None,
@@ -348,8 +348,8 @@ mod tests {
 
         static CATALOG: &[SettingsCatalogEntry] = &[SettingsCatalogEntry {
             title: "Fixture Pane",
-            target: "test.look.settings-fixture",
-            candidate_id_suffix: "test.look.settings-fixture",
+            target: "test.lumio.settings-fixture",
+            candidate_id_suffix: "test.lumio.settings-fixture",
             aliases: "settings fixture",
         }];
 
@@ -357,7 +357,7 @@ mod tests {
         write_bundle(
             &dir.path()
                 .join(format!("Fixture{SETTINGS_BUNDLE_EXTENSION}")),
-            "<key>CFBundleIdentifier</key><string>test.look.settings-fixture</string>
+            "<key>CFBundleIdentifier</key><string>test.lumio.settings-fixture</string>
 <key>CFBundleDisplayName</key><string>Fixture Pane</string>",
             Some(LOCALIZED_FIXTURE_NAME),
         );
@@ -365,7 +365,7 @@ mod tests {
         write_bundle(
             &dir.path()
                 .join(format!("Unlisted{SETTINGS_BUNDLE_EXTENSION}")),
-            "<key>CFBundleIdentifier</key><string>test.look.unlisted</string>
+            "<key>CFBundleIdentifier</key><string>test.lumio.unlisted</string>
 <key>CFBundleDisplayName</key><string>Unlisted Pane</string>",
             Some("Unlisted Localized"),
         );
@@ -375,7 +375,7 @@ mod tests {
 
         assert_eq!(titles.len(), 1);
         assert_eq!(
-            titles.get("test.look.settings-fixture").map(String::as_str),
+            titles.get("test.lumio.settings-fixture").map(String::as_str),
             Some(LOCALIZED_FIXTURE_NAME)
         );
     }
@@ -405,7 +405,7 @@ mod tests {
             write_bundle(
                 &app,
                 &format!(
-                    "<key>CFBundleIdentifier</key><string>test.look.batch{index}</string>
+                    "<key>CFBundleIdentifier</key><string>test.lumio.batch{index}</string>
 <key>CFBundleDisplayName</key><string>English {index}</string>"
                 ),
                 Some(&format!("{LOCALIZED_FIXTURE_NAME}{index}")),

@@ -1,16 +1,16 @@
 [package]
-name = "look-perf-tools"
+name = "lumio-perf-tools"
 edition = "2024"
 license = "GPL-3.0-or-later"
-authors = ["kunkka19xx <nobita079x@gmail.com>"]
+authors = ["cavaldos"]
 version = "0.1.0"
 publish = false
-description = "Perf and stress benches for look's index refresh / watcher path. Not shipped in any app bundle."
+description = "Perf and stress benches for lumio's index refresh / watcher path. Not shipped in any app bundle."
 
 [dependencies]
-look-engine = { path = "../../core/engine" }
-look-matching = { path = "../../core/matching" }
-look-storage = { path = "../../core/storage" }
+lumio-engine = { path = "../../core/engine" }
+lumio-matching = { path = "../../core/matching" }
+lumio-storage = { path = "../../core/storage" }
 notify = "6"
 
 [[bin]]

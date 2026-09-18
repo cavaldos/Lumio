@@ -1,6 +1,6 @@
 use crate::runtime_config::{is_debug_enabled, log_debug};
 use crate::state::{cstr_to_string, store_json_allocation, with_engine};
-use look_engine::LaunchResult;
+use lumio_engine::LaunchResult;
 use serde::Serialize;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -19,7 +19,7 @@ pub struct FfiSearchResult {
 struct FfiSearchPayload<'a> {
     query: &'a str,
     count: usize,
-    results: Vec<look_engine::LaunchResult>,
+    results: Vec<lumio_engine::LaunchResult>,
     /// File recall only: which fallback produced the results when the strict
     /// query matched nothing ("window" | "terms" | "window_terms"), so the
     /// shell can label them instead of silently showing something broader.
@@ -74,7 +74,7 @@ impl SearchError {
     }
 }
 
-pub(crate) fn look_search_count_impl(query_len: u32) -> FfiSearchResult {
+pub(crate) fn lumio_search_count_impl(query_len: u32) -> FfiSearchResult {
     let len = query_len.min(MAX_SEARCH_COUNT_QUERY_LEN);
     let query = "x".repeat(len as usize);
     let results = with_engine(|engine| engine.search(&query, DEFAULT_SEARCH_LIMIT as usize));
@@ -83,7 +83,7 @@ pub(crate) fn look_search_count_impl(query_len: u32) -> FfiSearchResult {
     }
 }
 
-pub(crate) fn look_search_json_impl(query: *const c_char, limit: u32) -> *mut c_char {
+pub(crate) fn lumio_search_json_impl(query: *const c_char, limit: u32) -> *mut c_char {
     let query = cstr_to_string(query);
     let max = normalized_limit(limit);
     let started_at = Instant::now();
@@ -105,7 +105,7 @@ pub(crate) fn look_search_json_impl(query: *const c_char, limit: u32) -> *mut c_
 
 /// A parse with terms and nothing else was triggered by a bare "file" or
 /// "download" word. Kept for the unit tests below.
-fn is_weak_empty_recall(filter: &look_engine::FileFilter, results: &[LaunchResult]) -> bool {
+fn is_weak_empty_recall(filter: &lumio_engine::FileFilter, results: &[LaunchResult]) -> bool {
     results.is_empty()
         && !filter.terms.trim().is_empty()
         && filter.categories.is_empty()
@@ -114,15 +114,15 @@ fn is_weak_empty_recall(filter: &look_engine::FileFilter, results: &[LaunchResul
         && filter.end.is_none()
 }
 
-fn relaxed_code(relaxation: Option<look_engine::FileSearchRelaxation>) -> Option<&'static str> {
+fn relaxed_code(relaxation: Option<lumio_engine::FileSearchRelaxation>) -> Option<&'static str> {
     relaxation.map(|r| match r {
-        look_engine::FileSearchRelaxation::WidenedWindow => "window",
-        look_engine::FileSearchRelaxation::DroppedTerms => "terms",
-        look_engine::FileSearchRelaxation::DroppedTermsWidenedWindow => "window_terms",
+        lumio_engine::FileSearchRelaxation::WidenedWindow => "window",
+        lumio_engine::FileSearchRelaxation::DroppedTerms => "terms",
+        lumio_engine::FileSearchRelaxation::DroppedTermsWidenedWindow => "window_terms",
     })
 }
 
-pub(crate) fn look_search_json_compact_impl(query: *const c_char, limit: u32) -> *mut c_char {
+pub(crate) fn lumio_search_json_compact_impl(query: *const c_char, limit: u32) -> *mut c_char {
     let query = cstr_to_string(query);
     let max = normalized_limit(limit);
     let started_at = Instant::now();
@@ -191,7 +191,7 @@ fn normalized_limit(limit: u32) -> u32 {
 
 fn serialize_full_payload(
     query: &str,
-    results: Vec<look_engine::LaunchResult>,
+    results: Vec<lumio_engine::LaunchResult>,
     relaxed: Option<&'static str>,
 ) -> CString {
     let result_count = results.len();
@@ -239,8 +239,8 @@ fn search_error_json_compact(err: SearchError) -> String {
 #[cfg(test)]
 mod tests {
     use super::is_weak_empty_recall;
-    use look_engine::{FileFilter, LaunchResult};
-    use look_indexing::{Candidate, CandidateKind};
+    use lumio_engine::{FileFilter, LaunchResult};
+    use lumio_indexing::{Candidate, CandidateKind};
 
     fn result() -> LaunchResult {
         LaunchResult::from((

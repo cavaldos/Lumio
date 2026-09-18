@@ -33,19 +33,19 @@ pub(crate) fn is_debug_enabled() -> bool {
 
 pub(crate) fn log_debug(message: &str) {
     if current_log_level() >= LogLevel::Debug {
-        eprintln!("[look][debug] {message}");
+        eprintln!("[lumio][debug] {message}");
     }
 }
 
 pub(crate) fn log_info(message: &str) {
     if current_log_level() >= LogLevel::Info {
-        eprintln!("[look][info] {message}");
+        eprintln!("[lumio][info] {message}");
     }
 }
 
 pub(crate) fn log_error(message: &str) {
     if current_log_level() >= LogLevel::Error {
-        eprintln!("[look][error] {message}");
+        eprintln!("[lumio][error] {message}");
     }
 }
 
@@ -65,7 +65,7 @@ fn runtime_config() -> &'static Mutex<RuntimeConfig> {
 
 fn load_runtime_config() -> RuntimeConfig {
     let mut from_file: HashMap<String, String> = HashMap::new();
-    if let Some(path) = look_engine::config_path::current().map(|resolved| resolved.path)
+    if let Some(path) = lumio_engine::config_path::current().map(|resolved| resolved.path)
         && let Ok(contents) = std::fs::read_to_string(path)
     {
         for raw_line in contents.lines() {
@@ -81,7 +81,7 @@ fn load_runtime_config() -> RuntimeConfig {
         }
     }
 
-    let log_level = env::var("LOOK_LOG_LEVEL")
+    let log_level = env::var("LUMIO_LOG_LEVEL")
         .ok()
         .and_then(|v| parse_log_level(&v))
         .or_else(|| {

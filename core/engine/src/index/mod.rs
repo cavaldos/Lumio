@@ -4,7 +4,7 @@ mod apps;
 mod files;
 mod settings;
 
-use look_indexing::{Candidate, CandidateIdKind};
+use lumio_indexing::{Candidate, CandidateIdKind};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread;
@@ -56,7 +56,7 @@ pub fn discover_candidates_stream_scoped(
         if let Some(handle) = files_handle
             && let Err(err) = handle.join()
         {
-            eprintln!("look index: file worker panicked: {err:?}");
+            eprintln!("lumio index: file worker panicked: {err:?}");
         }
     });
 
@@ -73,7 +73,7 @@ impl CandidateDiscoveryStream {
 
     pub fn finish(self) {
         if let Err(err) = self.producer_handle.join() {
-            eprintln!("look index: producer worker panicked: {err:?}");
+            eprintln!("lumio index: producer worker panicked: {err:?}");
         }
     }
 }
@@ -90,7 +90,7 @@ pub fn discover_candidates(config: &RuntimeConfig) -> Vec<Candidate> {
     }
 
     if let Err(err) = producer_handle.join() {
-        eprintln!("look index: producer worker panicked: {err:?}");
+        eprintln!("lumio index: producer worker panicked: {err:?}");
     }
 
     out

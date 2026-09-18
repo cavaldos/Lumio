@@ -31,7 +31,7 @@ assignees: ""
 ## Environment
 
 - macOS version:
-- look version or commit SHA:
+- lumio version or commit SHA:
 - install method: (Xcode run / zip install)
 - architecture: (arm64 / x86_64)
 

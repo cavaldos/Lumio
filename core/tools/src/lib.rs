@@ -1,7 +1,7 @@
 //! Preferred tools: how to drive the tools a user named, and how an action plus
 //! an object become one thing the platform can launch.
 //!
-//! The user declares nouns in `~/.look/config` (`terminal = ghostty`); this
+//! The user declares nouns in `~/.lumio/config` (`terminal = ghostty`); this
 //! crate owns the verbs. Nothing here reads a command string out of config, by
 //! design: that is what a source block is for. See `specs/preferred-tools.md`.
 
@@ -24,7 +24,7 @@ pub use resolved::{
     KIND_UNAVAILABLE, Resolved, resolve,
 };
 
-/// The tool keys read from `~/.look/config`, as constants so the config parser,
+/// The tool keys read from `~/.lumio/config`, as constants so the config parser,
 /// the catalog, and the "which key to set" message cannot drift apart.
 pub mod key {
     pub const TEXT_EDITOR: &str = "text_editor";

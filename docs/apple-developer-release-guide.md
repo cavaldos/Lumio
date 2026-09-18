@@ -1,6 +1,6 @@
-# Apple Developer Release Guide (look)
+# Apple Developer Release Guide (lumio)
 
-Use this guide after joining Apple Developer to ship signed + notarized macOS releases for `look`.
+Use this guide after joining Apple Developer to ship signed + notarized macOS releases for `lumio`.
 
 ## Goal
 
@@ -89,7 +89,7 @@ How to create app-specific password:
 1. Open `https://appleid.apple.com` and sign in.
 2. Go to `Sign-In and Security`.
 3. Under `App-Specific Passwords`, click `Generate`.
-4. Create one (for example label: `look-notary-gha`).
+4. Create one (for example label: `lumio-notary-gha`).
 5. Copy it immediately and save as `APPLE_NOTARY_APP_PASSWORD`.
 
 How to find Team ID (`APPLE_NOTARY_TEAM_ID`):
@@ -128,7 +128,7 @@ Quick notes:
    ```bash
    ./scripts/release.sh v1.0.0
    ```
-2. Confirm the GitHub Release shows `Look-1.0.0-macOS.zip`.
+2. Confirm the GitHub Release shows `Lumio-1.0.0-macOS.zip`.
 
 Note: CI signs ad-hoc only. Developer ID signing + notarization below is a
 manual post-step on your Mac until/unless it is wired back into CI.
@@ -141,7 +141,7 @@ Tag and push:
 ./scripts/release.sh vX.Y.Z
 ```
 
-The workflow publishes `Look-X.Y.Z-macOS.zip` to the GitHub Release with
+The workflow publishes `Lumio-X.Y.Z-macOS.zip` to the GitHub Release with
 auto-generated notes.
 
 ## 7) (Optional) Sign + notarize the zip after CI
@@ -154,8 +154,8 @@ auto-generated notes.
 Install released app and validate:
 
 ```bash
-spctl -a -vv "/Applications/Look.app"
-codesign --verify --deep --strict --verbose=2 "/Applications/Look.app"
+spctl -a -vv "/Applications/Lumio.app"
+codesign --verify --deep --strict --verbose=2 "/Applications/Lumio.app"
 ```
 
 Expected: accepted/signed/notarized app launches without bypass flow.

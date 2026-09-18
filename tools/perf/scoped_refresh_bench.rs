@@ -6,11 +6,11 @@
 //! Run with:
 //!   cargo run --release --bin scoped_refresh_bench --manifest-path tools/perf/Cargo.toml
 //!
-//! Uses a throwaway temp database (does not touch your real `~/.local/share/look/look.db`).
+//! Uses a throwaway temp database (does not touch your real `~/.local/share/lumio/lumio.db`).
 //! Each mode is run twice - the first run includes the SQLite WAL bootstrap and
 //! initial inserts, the second is the "warm" path the watcher actually exercises.
-use look_engine::{BootstrapScope, QueryEngine};
-use look_storage::SqliteStore;
+use lumio_engine::{BootstrapScope, QueryEngine};
+use lumio_storage::SqliteStore;
 use std::env;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -81,5 +81,5 @@ fn fmt(d: Duration) -> String {
 
 fn temp_db_path() -> PathBuf {
     let base = env::temp_dir();
-    base.join(format!("look-scoped-bench-{}.db", std::process::id()))
+    base.join(format!("lumio-scoped-bench-{}.db", std::process::id()))
 }

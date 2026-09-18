@@ -6,9 +6,9 @@ use crate::scoring::{
     is_system_settings_candidate, kind_bias, looks_like_settings_query, path_depth_penalty,
     path_match_score, push_top_k, query_kind_penalty_with_settings_flag,
 };
-use look_indexing::{Candidate, CandidateKind};
-use look_matching::{fuzzy_quality_bonus_prepared, fuzzy_score_prepared, prepare_query};
-use look_ranking::rank_score;
+use lumio_indexing::{Candidate, CandidateKind};
+use lumio_matching::{fuzzy_quality_bonus_prepared, fuzzy_score_prepared, prepare_query};
+use lumio_ranking::rank_score;
 use regex::RegexBuilder;
 use std::collections::BinaryHeap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -225,7 +225,7 @@ impl QueryEngine {
             if *kind != CandidateKind::File && *kind != CandidateKind::Folder {
                 continue;
             }
-            // Recency blends "opened through Look" (last_used) with "appeared/
+            // Recency blends "opened through Lumio" (last_used) with "appeared/
             // changed on disk" (fs_modified) so freshly downloaded/captured files
             // surface even before the user opens them. Items with neither are out.
             let recency = match (
@@ -498,7 +498,7 @@ fn location_folder(loc: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::QueryEngine;
-    use look_indexing::{Candidate, CandidateKind};
+    use lumio_indexing::{Candidate, CandidateKind};
 
     fn recent_engine() -> QueryEngine {
         let mut older = Candidate::new("file:old", CandidateKind::File, "old.txt", "/x/old.txt");

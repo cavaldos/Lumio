@@ -1,7 +1,7 @@
 use crate::index::SETTINGS_CANDIDATE_ID_PREFIX;
 use crate::platform;
 use crate::platform::SettingsCatalogEntry;
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::{Candidate, CandidateKind};
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -20,7 +20,7 @@ pub fn discover_system_settings_entries(
 
         // Windows extras: classic .cpl / .msc / .exe applets that Settings
         // doesn't cover (env vars, Device Manager, Services, Registry, Task
-        // Manager, …). Paths use the `look-cmd://` scheme so the Tauri launcher
+        // Manager, …). Paths use the `lumio-cmd://` scheme so the Tauri launcher
         // knows to spawn them via Command::new rather than ShellExecute.
         #[cfg(target_os = "windows")]
         emit_windows_control_panel_entries(&tx);
@@ -144,7 +144,7 @@ fn is_valid_candidate_id_suffix(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use look_indexing::CandidateIdKind;
+    use lumio_indexing::CandidateIdKind;
     use std::collections::HashSet;
 
     #[test]
@@ -315,9 +315,9 @@ mod tests {
         for candidate in discovered {
             assert_eq!(candidate.kind, CandidateKind::App);
             assert!(candidate.id.starts_with(CandidateIdKind::PREFIX_SETTING));
-            // Windows Control Panel entries use look-cmd:// instead of ms-settings:.
+            // Windows Control Panel entries use lumio-cmd:// instead of ms-settings:.
             let path_ok = candidate.path.starts_with(settings_scheme)
-                || candidate.path.starts_with("look-cmd://");
+                || candidate.path.starts_with("lumio-cmd://");
             assert!(path_ok, "unexpected path scheme: {}", candidate.path);
             assert!(
                 candidate

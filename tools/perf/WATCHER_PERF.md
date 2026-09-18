@@ -51,8 +51,8 @@ Two refinements landed after the initial scoped refresh:
 - `SqliteStore::is_demo_seeded()` - one `COUNT(*)` instead of loading every row to
   check if the table is just the demo seed (`core/engine/src/lib.rs:135` previously
   did `load_candidates(None)` for that check).
-- `RuntimeConfig::load_cached()` - skips re-reading `~/.look/config` on every
-  refresh; the linows `reload_config` command and FFI `look_reload_config`
+- `RuntimeConfig::load_cached()` - skips re-reading `~/.lumio/config` on every
+  refresh; the linows `reload_config` command and FFI `lumio_reload_config`
   drop the cache so user edits still take effect.
 
 The savings (~1.25 ms per call) apply to every bootstrap call regardless of
@@ -157,7 +157,7 @@ From `real_fs_stress`. A live `notify::RecommendedWatcher` watches a tempdir;
 a separate producer thread does real `fs::write` / `fs::rename` / `fs::remove`
 on the same tempdir for 30 seconds. The watcher runs the same decision logic
 as `state.rs` (debounce, cooldown, noise filter, scope split). The engine
-points at a throwaway DB and a throwaway `LOOK_CONFIG_PATH`, so the user's
+points at a throwaway DB and a throwaway `LUMIO_CONFIG_PATH`, so the user's
 live index is never touched.
 
 Producer mix per 30 s run: ~10 legit file saves, ~30 vim-swap dances (noisy),
@@ -214,7 +214,7 @@ What this proves about the live policy (vs the simulator's predictions):
   machine snapshot. On a machine with 10× more indexed files, multiply the
   `cpu_ms` columns by ~10. The **ratio** between BEFORE and AFTER stays the
   same because the policy differences are call-count, not per-call cost.
-- Both benches use a throwaway temp DB; your live `~/.local/share/look/look.db`
+- Both benches use a throwaway temp DB; your live `~/.local/share/lumio/lumio.db`
   is never touched.
 - The 10 s cooldown can be re-tuned via `WATCHER_REFRESH_COOLDOWN_MS` in
   `state.rs`. Larger values cap CPU more aggressively at the cost of

@@ -3,7 +3,7 @@ use std::sync::mpsc;
 
 pub fn discover_installed_apps(
     config: &RuntimeConfig,
-    tx: mpsc::SyncSender<look_indexing::Candidate>,
+    tx: mpsc::SyncSender<lumio_indexing::Candidate>,
 ) {
     #[cfg(target_os = "windows")]
     {

@@ -4,8 +4,8 @@ This directory is the canonical location for the native macOS launcher shell.
 
 Xcode project and app source now live here:
 
-- `apps/macos/LauncherApp/look-app.xcodeproj`
-- `apps/macos/LauncherApp/look-app/`
+- `apps/macos/LauncherApp/lumio-app.xcodeproj`
+- `apps/macos/LauncherApp/lumio-app/`
 
 Planned shell responsibilities:
 

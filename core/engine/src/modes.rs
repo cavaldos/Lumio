@@ -1,5 +1,5 @@
-//! Launch modes: the names a command line or a URL uses to open Look already in
-//! a particular mode (`lookapp clipboard`).
+//! Launch modes: the names a command line or a URL uses to open Lumio already in
+//! a particular mode (`lumio clipboard`).
 //!
 //! One rule for every row: the query is `prefix` followed by the term. Adding a
 //! mode is adding a row; a shell that needs a `match` over mode names has
@@ -145,7 +145,7 @@ pub fn resolve(name: &str) -> Option<&'static Mode> {
     })
 }
 
-/// A term from the `look://` scheme is literal search text and nothing else: no
+/// A term from the `lumio://` scheme is literal search text and nothing else: no
 /// command panel (`:`), no quote to re-target the prefix.
 /// The URL is reachable from content the user did not write; argv is not, and
 /// is not filtered by this.
@@ -230,7 +230,7 @@ where
         .collect();
 
     // Before any flag parsing, so the rest is the term verbatim:
-    // `lookapp kill chrome` has to keep its term.
+    // `lumio kill chrome` has to keep its term.
     if let Some(first) = args.first()
         && let Some(mode) = resolve(first)
     {
@@ -426,7 +426,7 @@ mod tests {
 
     /// Every WM autostart line in the README depends on this.
     #[test]
-    fn an_unrecognised_bare_word_still_just_opens_look() {
+    fn an_unrecognised_bare_word_still_just_opens_lumio() {
         assert_eq!(parse(&["clipbaord"]), Launch::Normal);
         assert_eq!(parse(&[]), Launch::Normal);
         assert_eq!(parse(&["--some-future-flag"]), Launch::Normal);
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(parse(&["--query", ":kill chrome"]), shown(":kill chrome"));
     }
 
-    /// `lookapp kill chrome` used to lose trailing args, which is exactly the
+    /// `lumio kill chrome` used to lose trailing args, which is exactly the
     /// kind of term the free-text modes exist for.
     #[test]
     fn a_term_keeps_its_hyphenated_arguments() {
@@ -513,7 +513,7 @@ mod tests {
     /// hands over a `Vec<String>` including argv[0], hence the skip.
     #[test]
     fn the_iterator_shapes_the_shells_use_all_compile() {
-        let forwarded: Vec<String> = vec!["lookapp".into(), "clipboard".into(), "pass".into()];
+        let forwarded: Vec<String> = vec!["lumio".into(), "clipboard".into(), "pass".into()];
         assert_eq!(
             parse_args(forwarded.iter().skip(1)),
             shown("c\"pass"),

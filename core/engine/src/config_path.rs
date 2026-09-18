@@ -1,6 +1,6 @@
-//! Where the config file lives, and the one-time move into `~/.look/`.
+//! Where the config file lives, and the one-time move into `~/.lumio/`.
 //!
-//! Look reads AND writes this file (the app upserts the `ui_*` keys), so every
+//! Lumio reads AND writes this file (the app upserts the `ui_*` keys), so every
 //! caller must agree on the answer. Three implementations resolve it today (this
 //! one, the macOS `ThemeStore`, and the linows config module), and if they ever
 //! disagree the app reads one file and saves to another, which looks like
@@ -12,30 +12,30 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Overrides everything, for tests and for people who keep dotfiles elsewhere.
-pub const ENV_CONFIG_PATH: &str = "LOOK_CONFIG_PATH";
+pub const ENV_CONFIG_PATH: &str = "LUMIO_CONFIG_PATH";
 
 /// The home-relative locations, newest first. A dev build keeps its own pair so
-/// running Look Dev never edits the settings of the installed copy.
-const CONFIG_DIR: &str = ".look";
+/// running Lumio Dev never edits the settings of the installed copy.
+const CONFIG_DIR: &str = ".lumio";
 const CONFIG_NAME: &str = "config";
 const DEV_CONFIG_NAME: &str = "config.dev";
-const LEGACY_CONFIG_NAME: &str = ".look.config";
+const LEGACY_CONFIG_NAME: &str = ".lumio.config";
 
 /// Prepended to the legacy file once its contents have been copied across, so
 /// someone who edits it out of habit is told why nothing happened. Doubles as
 /// the "already moved" flag: a deliberate delete of the new file must not be
 /// silently undone by copying the old one back.
-const MOVED_NOTICE_PREFIX: &str = "# Moved to ~/.look/";
+const MOVED_NOTICE_PREFIX: &str = "# Moved to ~/.lumio/";
 
 /// What resolution found, so a caller can report it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConfig {
     pub path: PathBuf,
-    /// True when the legacy file was copied into `~/.look/` by this call.
+    /// True when the legacy file was copied into `~/.lumio/` by this call.
     pub migrated: bool,
 }
 
-/// The home Look resolves its paths against, for callers needing one for
+/// The home Lumio resolves its paths against, for callers needing one for
 /// something other than the config. Same answer as `current`.
 pub fn home() -> Option<String> {
     crate::config::user_home_dir()
@@ -57,7 +57,7 @@ pub fn current() -> Option<ResolvedConfig> {
     crate::config::user_home_dir().map(|home| resolve_home(Path::new(&home)))
 }
 
-/// The config file to read and write. `$LOOK_CONFIG_PATH` overrides everything;
+/// The config file to read and write. `$LUMIO_CONFIG_PATH` overrides everything;
 /// otherwise this is `resolve_home`.
 pub fn resolve(home: &Path) -> ResolvedConfig {
     match overridden() {
@@ -69,9 +69,9 @@ pub fn resolve(home: &Path) -> ResolvedConfig {
     }
 }
 
-/// `$LOOK_CONFIG_PATH`, when it names anything. Set but empty would resolve to
+/// `$LUMIO_CONFIG_PATH`, when it names anything. Set but empty would resolve to
 /// wherever the app was launched from. Ensured like every other answer: an
-/// override into a folder that does not exist yet is a path Look cannot write.
+/// override into a folder that does not exist yet is a path Lumio cannot write.
 fn overridden() -> Option<PathBuf> {
     let custom = std::env::var(ENV_CONFIG_PATH).ok()?;
     let trimmed = custom.trim();
@@ -82,7 +82,7 @@ fn overridden() -> Option<PathBuf> {
 }
 
 /// Resolution against a home directory, ignoring the environment. Split out so
-/// the move can be tested without an ambient `$LOOK_CONFIG_PATH` deciding the
+/// the move can be tested without an ambient `$LUMIO_CONFIG_PATH` deciding the
 /// answer for every case.
 pub fn resolve_home(home: &Path) -> ResolvedConfig {
     resolve_home_variant(home, false)
@@ -91,7 +91,7 @@ pub fn resolve_home(home: &Path) -> ResolvedConfig {
 /// `dev` selects the file a development build uses, so running it never edits
 /// the installed copy's settings.
 ///
-/// The dev file is never migrated: it belongs to whoever is working on Look and
+/// The dev file is never migrated: it belongs to whoever is working on Lumio and
 /// is created by hand, so a released build has nothing to move and no business
 /// touching it.
 pub fn resolve_home_variant(home: &Path, dev: bool) -> ResolvedConfig {
@@ -112,7 +112,7 @@ pub fn resolve_home_variant(home: &Path, dev: bool) -> ResolvedConfig {
 
     let legacy = home.join(LEGACY_CONFIG_NAME);
     if !legacy.exists() {
-        // A fresh install: nothing to migrate, and `~/.look/` may not exist
+        // A fresh install: nothing to migrate, and `~/.lumio/` may not exist
         // yet. Every caller here goes on to WRITE this path, so the directory
         // has to be there or the default config is silently never created and
         // settings never persist.
@@ -180,7 +180,7 @@ fn migrate(legacy: &Path, current: &Path, name: &str) -> Result<(), NotMigrated>
     if let Some(parent) = current.parent() {
         fs::create_dir_all(parent).map_err(|_| NotMigrated::KeepLegacy)?;
     }
-    // Create-new rather than write: two Look processes can resolve at the same
+    // Create-new rather than write: two Lumio processes can resolve at the same
     // moment, and the loser must not land a half-read copy on top of the
     // winner's whole one.
     let mut file = fs::OpenOptions::new()
@@ -193,7 +193,7 @@ fn migrate(legacy: &Path, current: &Path, name: &str) -> Result<(), NotMigrated>
         })?;
     file.write_all(contents.as_bytes())
         .map_err(|_| NotMigrated::KeepLegacy)?;
-    let notice = format!("{MOVED_NOTICE_PREFIX}{name} - Look no longer reads this file.");
+    let notice = format!("{MOVED_NOTICE_PREFIX}{name} - Lumio no longer reads this file.");
     fs::write(legacy, format!("{notice}\n\n{contents}")).map_err(|_| NotMigrated::KeepLegacy)
 }
 
@@ -206,7 +206,7 @@ mod tests {
     impl TempHome {
         fn new(label: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
-                "look-config-path-{label}-{}-{:?}",
+                "lumio-config-path-{label}-{}-{:?}",
                 std::process::id(),
                 std::thread::current().id()
             ));
@@ -290,7 +290,7 @@ mod tests {
         // Copying would turn a dotfile-repo symlink into a plain file and
         // silently stop the user's repo edits from applying.
         let home = TempHome::new("symlink");
-        let real = home.0.join("dotfiles-look.config");
+        let real = home.0.join("dotfiles-lumio.config");
         fs::write(&real, "ui_theme=linked\n").unwrap();
         std::os::unix::fs::symlink(&real, home.legacy()).unwrap();
 

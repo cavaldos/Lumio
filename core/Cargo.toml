@@ -18,5 +18,5 @@ resolver = "2"
 rust-version = "1.88"
 edition = "2024"
 license = "GPL-3.0-or-later"
-authors = ["kunkka19xx <nobita079x@gmail.com>"]
+authors = ["cavaldos"]
 version = "0.1.0"

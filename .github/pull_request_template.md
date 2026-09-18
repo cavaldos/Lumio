@@ -19,7 +19,7 @@
   - [ ] `cargo test --manifest-path bridge/ffi/Cargo.toml`
 
 - `apps/macos`
-  - [ ] macOS app (if `apps/macos/**` touched): `xcodebuild -project "apps/macos/LauncherApp/look-app.xcodeproj" -scheme "Look" -configuration Debug -sdk macosx build`
+  - [ ] macOS app (if `apps/macos/**` touched): `xcodebuild -project "apps/macos/LauncherApp/lumio-app.xcodeproj" -scheme "Lumio" -configuration Debug -sdk macosx build`
   - [ ] Manual verification completed (if UI/behavior changed)
 
 ## Screenshots / Recordings (if UI changed)

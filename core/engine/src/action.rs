@@ -1,4 +1,4 @@
-use look_indexing::UsageAction;
+use lumio_indexing::UsageAction;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 

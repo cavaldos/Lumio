@@ -8,13 +8,13 @@
 //!     RAII slot guard),
 //!   • spawns a producer worker that performs real file create/rename/remove
 //!     operations,
-//!   • points the engine at a throwaway DB via `LOOK_DB_PATH` and a custom
-//!     `LOOK_CONFIG_PATH` so the bench never touches your live index,
+//!   • points the engine at a throwaway DB via `LUMIO_DB_PATH` and a custom
+//!     `LUMIO_CONFIG_PATH` so the bench never touches your live index,
 //!   • reports counters at the end.
 //!
 //! Run with:
 //!   cargo run --release --bin real_fs_stress --manifest-path tools/perf/Cargo.toml
-use look_engine::{BootstrapScope, QueryEngine};
+use lumio_engine::{BootstrapScope, QueryEngine};
 use notify::event::ModifyKind;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::env;
@@ -31,11 +31,11 @@ const DEBOUNCE_MS: u128 = 2_000;
 const COOLDOWN_MS: u64 = 10_000;
 
 fn main() {
-    let tempdir = env::temp_dir().join(format!("look-real-fs-stress-{}", std::process::id()));
+    let tempdir = env::temp_dir().join(format!("lumio-real-fs-stress-{}", std::process::id()));
     let apps_root = tempdir.join("apps");
     let files_root = tempdir.join("files");
-    let db_path = tempdir.join("look.db");
-    let config_path = tempdir.join("look.config");
+    let db_path = tempdir.join("lumio.db");
+    let config_path = tempdir.join("lumio.config");
 
     fs::create_dir_all(&apps_root).expect("mkdir apps");
     fs::create_dir_all(&files_root).expect("mkdir files");
@@ -45,8 +45,8 @@ fn main() {
     // bench's bootstrap doesn't crawl the user's real `~/Documents`.
     write_config(&config_path, &apps_root, &files_root);
     unsafe {
-        env::set_var("LOOK_CONFIG_PATH", &config_path);
-        env::set_var("LOOK_DB_PATH", &db_path);
+        env::set_var("LUMIO_CONFIG_PATH", &config_path);
+        env::set_var("LUMIO_DB_PATH", &db_path);
     }
 
     // Seed the database with one full bootstrap so subsequent scoped refreshes
@@ -318,7 +318,7 @@ fn write_config(path: &Path, apps_root: &Path, files_root: &Path) {
 }
 
 fn load_count(db_path: &Path) -> usize {
-    look_storage::SqliteStore::open(db_path)
+    lumio_storage::SqliteStore::open(db_path)
         .and_then(|s| s.load_candidates(None))
         .map(|v| v.len())
         .unwrap_or(0)

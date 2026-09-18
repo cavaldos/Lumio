@@ -1,5 +1,5 @@
 [package]
-name = "look-storage"
+name = "lumio-storage"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true
@@ -7,5 +7,5 @@ authors.workspace = true
 version = "0.1.0"
 
 [dependencies]
-look-indexing = { path = "../indexing" }
+lumio-indexing = { path = "../indexing" }
 rusqlite = { version = "0.40", features = ["bundled"] }

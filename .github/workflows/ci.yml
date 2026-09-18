@@ -197,7 +197,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: look-rust-artifacts
+          name: lumio-rust-artifacts
           path: |
             core/target/release
             bridge/ffi/target/release
@@ -218,5 +218,5 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build Look app (Debug)
-        run: xcodebuild -project "apps/macos/LauncherApp/look-app.xcodeproj" -scheme "Look" -configuration Debug -destination "platform=macOS" build
+      - name: Build Lumio app (Debug)
+        run: xcodebuild -project "apps/macos/LauncherApp/lumio-app.xcodeproj" -scheme "Lumio" -configuration Debug -destination "platform=macOS" build

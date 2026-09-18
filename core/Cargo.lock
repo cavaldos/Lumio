@@ -229,7 +229,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
-name = "look-answers"
+name = "lumio-answers"
 version = "0.1.0"
 dependencies = [
  "regex",
@@ -238,16 +238,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "look-engine"
+name = "lumio-engine"
 version = "0.1.0"
 dependencies = [
  "globset",
  "ignore",
- "look-indexing",
- "look-matching",
- "look-ranking",
- "look-storage",
- "look-tools",
+ "lumio-indexing",
+ "lumio-matching",
+ "lumio-ranking",
+ "lumio-storage",
+ "lumio-tools",
  "objc2",
  "objc2-foundation",
  "regex",
@@ -259,28 +259,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "look-indexing"
+name = "lumio-indexing"
 version = "0.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "look-lunar"
+name = "lumio-lunar"
 version = "0.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "look-matching"
+name = "lumio-matching"
 version = "0.1.0"
 dependencies = [
  "unicode-normalization",
 ]
 
 [[package]]
-name = "look-netspeed"
+name = "lumio-netspeed"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -288,22 +288,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "look-ranking"
+name = "lumio-ranking"
 version = "0.1.0"
 dependencies = [
- "look-indexing",
+ "lumio-indexing",
 ]
 
 [[package]]
-name = "look-storage"
+name = "lumio-storage"
 version = "0.1.0"
 dependencies = [
- "look-indexing",
+ "lumio-indexing",
  "rusqlite",
 ]
 
 [[package]]
-name = "look-tools"
+name = "lumio-tools"
 version = "0.1.0"
 dependencies = [
  "serde",

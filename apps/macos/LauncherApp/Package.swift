@@ -12,7 +12,7 @@ let package = Package(
     targets: [
         .target(
             name: "LauncherLogic",
-            path: "look-app",
+            path: "lumio-app",
             sources: [
                 "Support/Launcher/HintText.swift",
                 "Support/AppConstants.swift",

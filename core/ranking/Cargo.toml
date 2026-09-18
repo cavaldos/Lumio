@@ -1,5 +1,5 @@
 [package]
-name = "look-ranking"
+name = "lumio-ranking"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true
@@ -7,4 +7,4 @@ authors.workspace = true
 version = "0.1.0"
 
 [dependencies]
-look-indexing = { path = "../indexing" }
+lumio-indexing = { path = "../indexing" }

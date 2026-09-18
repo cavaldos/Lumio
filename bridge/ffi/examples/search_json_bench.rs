@@ -1,4 +1,4 @@
-use look_ffi::{look_free_cstring, look_search_json, look_search_json_compact};
+use lumio_ffi::{lumio_free_cstring, lumio_search_json, lumio_search_json_compact};
 use std::ffi::{CStr, CString};
 use std::hint::black_box;
 use std::time::Instant;
@@ -18,12 +18,12 @@ fn main() {
     let iterations = 300usize;
 
     let full = bench("full_json", iterations, || unsafe {
-        let ptr = look_search_json(query.as_ptr(), limit);
+        let ptr = lumio_search_json(query.as_ptr(), limit);
         consume_and_free(ptr)
     });
 
     let compact = bench("compact_json", iterations, || unsafe {
-        let ptr = look_search_json_compact(query.as_ptr(), limit);
+        let ptr = lumio_search_json_compact(query.as_ptr(), limit);
         consume_and_free(ptr)
     });
 
@@ -72,7 +72,7 @@ unsafe fn consume_and_free(ptr: *mut i8) -> usize {
     }
 
     let raw = unsafe { CStr::from_ptr(ptr) }.to_bytes().len();
-    look_free_cstring(ptr);
+    lumio_free_cstring(ptr);
     raw
 }
 

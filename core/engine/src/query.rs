@@ -1,5 +1,5 @@
 use crate::normalize::normalize_for_search;
-use look_indexing::CandidateKind;
+use lumio_indexing::CandidateKind;
 
 // Query prefixes: leading letter(s) matched case-insensitively, trailing `"`
 // exactly (see `strip_query_prefix`). `rc"` must be checked before `r"` - see

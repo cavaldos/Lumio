@@ -1,4 +1,4 @@
-use look_indexing::Candidate;
+use lumio_indexing::Candidate;
 
 const USAGE_LOG_SCALE: f64 = 5.0;
 
@@ -29,7 +29,7 @@ pub fn rank_score(base_score: i64, query: &str, candidate: &Candidate, title_low
 #[cfg(test)]
 mod tests {
     use super::*;
-    use look_indexing::CandidateKind;
+    use lumio_indexing::CandidateKind;
 
     fn test_candidate(title: &str, use_count: u64, last_used: Option<i64>) -> Candidate {
         Candidate {

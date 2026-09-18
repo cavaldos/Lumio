@@ -1,4 +1,4 @@
-# look Contributor License Agreement
+# Lumio Contributor License Agreement
 
 **Individual Contributor License Agreement ("Agreement")**
 
@@ -6,7 +6,7 @@ This document is adapted from the [Apache Software Foundation Individual
 Contributor License Agreement v2.0](https://www.apache.org/licenses/icla.pdf).
 The legal terms follow the Apache original closely. The entity receiving the
 grant is Hao Nguyen (GitHub: [@kunkka19xx](https://github.com/kunkka19xx)),
-maintainer of the `look` project (the "Maintainer").
+maintainer of the `Lumio` project (the "Maintainer").
 
 ## What this means
 

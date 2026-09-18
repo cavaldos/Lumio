@@ -4,13 +4,13 @@
 > [Substage](https://selkie.design/substage/), a natural-language command bar
 > for Finder selections.
 
-Substage overlaps Look on purpose-built ground: instant actions that bypass the
+Substage overlaps Lumio on purpose-built ground: instant actions that bypass the
 model for common cases, and safety over ambition. Those parts confirm the
-existing doctrine rather than teaching it. Four things it does that Look does
+existing doctrine rather than teaching it. Four things it does that Lumio does
 not, ordered by value.
 
-**One thing Look must not copy**, stated once here because it shapes all four:
-Substage has a model WRITE a shell command that the user audits. Look's
+**One thing Lumio must not copy**, stated once here because it shapes all four:
+Substage has a model WRITE a shell command that the user audits. Lumio's
 contract (`ai-architecture.md` §2) is the opposite - the model is "just another
 parser" that "can never reach an execution path the deterministic parser
 cannot".
@@ -21,7 +21,7 @@ Every item below keeps generation out of the execution path.
 
 ## 1. Predict what `/shell` will do, before it does it
 
-**The gap.** `/shell` is the one thing Look does that mutates anything, reaches
+**The gap.** `/shell` is the one thing Lumio does that mutates anything, reaches
 the network, and asks nobody. Everything else destructive either previews and
 confirms (calendar tools, Empty Trash) or is recoverable by design (`Cmd+D`
 moves a file to the Trash unconfirmed, because the Trash is the undo).
@@ -32,7 +32,7 @@ understanding, and it says nothing about `rm -rf`, `curl | sh`, `> file`, or
 
 **What to take.** Substage's headline is a prediction that CATEGORISES an
 operation: what will be "created, changed, moved, deleted, or sent over the
-network". The network category earns its place because Look is otherwise
+network". The network category earns its place because Lumio is otherwise
 precise about which features touch the network - web answers, suggestions, and
 the speed test do; local search, indexing, and the AI action tiers do not. A
 shell command is the one path where the user cannot tell which it is.
@@ -78,7 +78,7 @@ Enter still runs it. The preview informs; it never blocks.
 
 **Steps.** (1) `core/shell` with a fixture corpus asserting effects AND
 `unparsed` - a convert, an `rm -rf` with a variable, a piped installer, a `git
-push`, a heredoc. (2) `look_shell_predict_json`. (3) The preview block in the
+push`, a heredoc. (2) `lumio_shell_predict_json`. (3) The preview block in the
 `/shell` panel. (4) `features.md`, `user-guide.md`, and a line in
 `ai-architecture.md` saying where this sits (it is not a ladder tier -
 `/shell` is command mode, not AI mode).
@@ -91,10 +91,10 @@ are unknown, stop.
 
 ## 2. Take the target from the OS, not from the query
 
-**The gap.** Substage acts on whatever is selected in Finder. Look's text-ops
+**The gap.** Substage acts on whatever is selected in Finder. Lumio's text-ops
 need `Cmd+P` picks or an `@`-mention first, so "summarize this" with a file
 already selected in Finder does nothing until the user re-selects it inside
-Look.
+Lumio.
 
 **Design.** A new rung on the ladder `TextOpSource.resolve` already implements,
 below the explicit ones so nothing changes for anyone using them:
@@ -109,7 +109,7 @@ entry in `PermissionItem.all`.
 
 **Two rules.**
 
-- **Read on demand, never poll.** Look asks Finder what is selected at the
+- **Read on demand, never poll.** Lumio asks Finder what is selected at the
   moment a text-op needs a target. A background watcher of what the user has
   selected is surveillance, not a feature.
 - **Say where the target came from.** The bar shows `from Finder: report.pdf`,
@@ -128,7 +128,7 @@ selection changes; using it for anything but text-ops and file ops.
 ## 3. Replay a command onto whatever is picked now
 
 **Mostly already true.** Substage's up arrow replays a command against
-different files. Look resolves the target at SUBMIT, not at recall:
+different files. Lumio resolves the target at SUBMIT, not at recall:
 `ActionController.textOpSource()` runs inside the route dispatch, so `Opt+Up` to
 "summarize", then picking another file, already transforms the new one. The
 `@`-token is consumed out of the recalled text (`MentionQuery.consume`), so
@@ -154,7 +154,7 @@ target safe.
 ## 4. Rules: teach it your shorthand
 
 **The gap.** Substage lets a user teach it "shorthand, folders, formats, and
-conventions you use every day". Look's `memory` stores durable FACTS for chat
+conventions you use every day". Lumio's `memory` stores durable FACTS for chat
 context, but nothing the deterministic tiers read. So "my exports folder" means
 nothing to the file tier, and every user's vocabulary is the one the lexicon
 shipped with.
@@ -189,8 +189,8 @@ values - that is generation again, and item 1's reasoning applies.
 
 ## Suggested order
 
-1. **`/shell` prediction** - the biggest safety gap in Look today, and a
-   differentiator Look has already earned by making the no-network promise.
+1. **`/shell` prediction** - the biggest safety gap in Lumio today, and a
+   differentiator Lumio has already earned by making the no-network promise.
 2. **Target visibility** (item 3) - one line of UI, and a prerequisite for
    making item 2 safe.
 3. **Finder selection** - removes a whole step from text-ops; costs a grant.

@@ -1,5 +1,5 @@
 [package]
-name = "look-indexing"
+name = "lumio-indexing"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true

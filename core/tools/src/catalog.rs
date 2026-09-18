@@ -1,4 +1,4 @@
-//! What Look knows about the tools a user can name.
+//! What Lumio knows about the tools a user can name.
 //!
 //! An exceptions list, not an inventory (`specs/preferred-tools.md` §4). `-e` is
 //! the xterm convention and the fallback, and a working directory is composed
@@ -339,7 +339,7 @@ mod tests {
     }
 
     /// A terminal is neither: it hosts an editor rather than being one, and a
-    /// name reaching `edit` under an editor key is a misconfiguration Look can
+    /// name reaching `edit` under an editor key is a misconfiguration Lumio can
     /// name instead of launching something that exits on its own argument.
     #[test]
     fn a_terminal_is_told_apart_from_both_kinds_of_editor() {
@@ -364,7 +364,7 @@ mod tests {
     }
 
     /// Every GUI editor rides the fallback, including ones that did not exist
-    /// when this was written: a new editor ships and Look supports it without a
+    /// when this was written: a new editor ships and Lumio supports it without a
     /// release. `emacs` is deliberately GUI, since `emacs <path>` starts the GUI
     /// build and wanting `emacs -nw` is declaring a command, not a tool.
     #[test]

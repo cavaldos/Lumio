@@ -5,14 +5,14 @@ import XCTest
 final class RevealTargetLogicTests: XCTestCase {
     func testAnExistingFilesystemPathIsSelectedInTheFileViewer() {
         XCTAssertEqual(
-            RevealTargetLogic.plan(for: "/tmp/look/a.txt", exists: true),
+            RevealTargetLogic.plan(for: "/tmp/lumio/a.txt", exists: true),
             .selectInFileViewer
         )
     }
 
     func testAMissingFilesystemPathIsUnavailable() {
         XCTAssertEqual(
-            RevealTargetLogic.plan(for: "/tmp/look/gone.txt", exists: false),
+            RevealTargetLogic.plan(for: "/tmp/lumio/gone.txt", exists: false),
             .unavailable
         )
     }

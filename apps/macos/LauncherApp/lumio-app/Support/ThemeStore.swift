@@ -1,0 +1,1007 @@
+import Foundation
+import Combine
+import SwiftUI
+import AppKit
+import ServiceManagement
+
+final class ThemeStore: ObservableObject {
+    // Shared instance so AppDelegate (which hosts ContentView in an
+    // AppKit-owned window) and the App scene's `.commands` (zoom, theme)
+    // operate on the same store. See AppDelegate.makeLauncherWindow().
+    static let shared = ThemeStore()
+
+    @Published private(set) var backgroundImageURL: URL?
+    @Published private(set) var backgroundImage: NSImage?
+    @Published var uiScale: CGFloat = 1.0
+
+    @Published var settings: ThemeSettings {
+        didSet {
+            save()
+            if oldValue.backgroundImagePath != settings.backgroundImagePath
+                || oldValue.backgroundImageBookmark != settings.backgroundImageBookmark
+            {
+                refreshBackgroundImageURL()
+            }
+        }
+    }
+
+    @Published private(set) var excludedFolderPaths: [String] = []
+    @Published private(set) var fileScanRoots: [String] = []
+    @Published private(set) var extraFileScanRoots: [String] = []
+
+    enum AddExtraScanRootError: Error {
+        case notDirectory
+        case alreadyIncluded
+        case overlapsExistingRoot(String)
+        case riskySystemRoot
+
+        var message: String {
+            switch self {
+            case .notDirectory:
+                return "Please select a directory"
+            case .alreadyIncluded:
+                return "Directory is already covered by scan roots"
+            case let .overlapsExistingRoot(path):
+                return "Overlaps with existing root: \(path)"
+            case .riskySystemRoot:
+                return "Refusing risky system root (/, /System, /Library, /private)"
+            }
+        }
+    }
+
+    private let defaultsKey = "lumio.theme.settings"
+    private let cachedFontFamilies: [String] = NSFontManager.shared.availableFontFamilies.sorted {
+        $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
+
+    /// Full font list for the user-friendly Settings picker.
+    var availableFontFamilies: [String] { cachedFontFamilies }
+
+    /// Picker options: every installed family, plus `current` when it names a
+    /// font this machine no longer has (same pattern as blur-material options).
+    /// Keeps the Picker selection non-blank instead of silently dropping it.
+    func fontFamilyOptions(including current: String) -> [String] {
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !cachedFontFamilies.contains(trimmed) else {
+            return cachedFontFamilies
+        }
+        return [trimmed] + cachedFontFamilies
+    }
+    private var scopedBackgroundURL: URL?
+
+    init() {
+        Self.ensureDefaultConfigFileExists(at: Self.configPath())
+
+        settings = Self.loadThemeSettings(from: UserDefaults.standard.data(forKey: defaultsKey))
+
+        applyThemeOverridesFromConfigFile()
+        migrateLegacyInnerGapDefault()
+        _ = applyLaunchAtLoginSetting()
+
+        refreshBackgroundImageURL()
+    }
+
+    func reset() {
+        settings = .default
+        applyThemeOverridesFromConfigFile()
+    }
+
+    struct ConfigReloadResult {
+        let loadedTheme: String
+        let warnings: [String]
+    }
+
+    func reloadFromConfig() -> ConfigReloadResult {
+        Self.ensureDefaultConfigFileExists(at: Self.configPath())
+
+        var warnings: [String] = []
+        let configPath = Self.configPath()
+
+        // First, scan raw config for invalid values before applying
+        if let raw = try? String(contentsOf: configPath, encoding: .utf8) {
+            for line in raw.split(whereSeparator: \ .isNewline) {
+                // Stripped as the apply pass strips it below: a trailing
+                // `# note` would fail to parse here and be clamped there, silently.
+                let stripped = ConfigFileLines.stripComment(String(line))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard stripped.firstIndex(of: "=") != nil else { continue }
+
+                let parts = stripped.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+                let key = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                switch key {
+                case "ui_tint_red", "ui_tint_green", "ui_tint_blue", "ui_tint_opacity", "ui_font_opacity", "ui_border_opacity":
+                    if let parsed = Double(value), parsed < 0 || parsed > 1 {
+                        warnings.append("\(key)=\(value) invalid (expected 0-1)")
+                    }
+                case "ui_font_size":
+                    if let parsed = Double(value), parsed <= 0 {
+                        warnings.append("\(key)=\(value) invalid (must be > 0)")
+                    }
+                case "inner_gap":
+                    appendRangeWarning(&warnings, key: key, value: value, range: AppConstants.ThemeUI.innerGapRange)
+                case "ui_surface_radius":
+                    appendRangeWarning(&warnings, key: key, value: value, range: AppConstants.ThemeUI.surfaceRadiusRange)
+                case "file_scan_depth":
+                    if let parsed = Int(value), parsed < AppConstants.FileScan.minDepth || parsed > AppConstants.FileScan.maxDepth {
+                        warnings.append("\(key)=\(value) invalid (must be \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth))")
+                    }
+                case "file_scan_limit":
+                    if let parsed = Int(value), parsed < AppConstants.FileScan.minLimit || parsed > AppConstants.FileScan.maxLimit {
+                        warnings.append("\(key)=\(value) invalid (must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit))")
+                    }
+                case "ui_background_image":
+                    if !value.isEmpty {
+                        let url = URL(fileURLWithPath: value)
+                        if !FileManager.default.fileExists(atPath: url.path) {
+                            warnings.append("background image not found: \(value)")
+                        }
+                    }
+                case "ui_theme":
+                    // Only validated here; applyThemeOverridesFromConfigFile applies it.
+                    if !value.isEmpty, BuiltinThemePreset.preset(forThemeName: value) == nil {
+                        warnings.append("theme '\(value)' not found")
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        // Save original values before parsing
+        let originalTintRed = settings.tintRed
+        let originalTintGreen = settings.tintGreen
+        let originalTintBlue = settings.tintBlue
+        let originalTintOpacity = settings.tintOpacity
+        let originalFontSize = settings.fontSize
+        let originalInnerGap = settings.innerGap
+        let originalSurfaceRadius = settings.surfaceRadius
+
+        // Apply config
+        applyThemeOverridesFromConfigFile()
+
+        // If any were invalid, reset to defaults
+        if warnings.contains(where: { $0.hasPrefix("ui_tint_red") }) {
+            settings.tintRed = originalTintRed
+        }
+        if warnings.contains(where: { $0.hasPrefix("ui_tint_green") }) {
+            settings.tintGreen = originalTintGreen
+        }
+        if warnings.contains(where: { $0.hasPrefix("ui_tint_blue") }) {
+            settings.tintBlue = originalTintBlue
+        }
+        if warnings.contains(where: { $0.hasPrefix("ui_tint_opacity") }) {
+            settings.tintOpacity = originalTintOpacity
+        }
+        if warnings.contains(where: { $0.hasPrefix("ui_font_size") }) {
+            settings.fontSize = originalFontSize
+        }
+        if warnings.contains(where: { $0.hasPrefix("inner_gap") }) {
+            settings.innerGap = originalInnerGap
+        }
+        if warnings.contains(where: { $0.hasPrefix("ui_surface_radius") }) {
+            settings.surfaceRadius = originalSurfaceRadius
+        }
+
+        _ = applyLaunchAtLoginSetting()
+
+        let resultTheme = detectBuiltinTheme(for: settings)
+        return ConfigReloadResult(loadedTheme: resultTheme.title, warnings: warnings)
+    }
+
+    func saveCurrentConfigToFile() -> Bool {
+        let path = Self.configPath()
+        Self.ensureDefaultConfigFileExists(at: path)
+
+        // A failed read must not fall through to an empty parse. The upserts below only
+        // know this store's own keys, so saving on top of nothing would write those back
+        // and drop every other setting, comment, and blank line in the file. An
+        // unreadable config (bad permissions, not valid UTF-8) is a reason to fail the
+        // save, not to rewrite the file from scratch.
+        guard let raw = try? String(contentsOf: path, encoding: .utf8) else {
+            return false
+        }
+        var lines = ConfigFileLines.parse(raw)
+
+        ConfigFileLines.upsert(&lines, key: "ui_theme", value: savedThemeName())
+        ConfigFileLines.upsert(&lines, key: "ui_tint_red", value: String(format: "%.2f", settings.tintRed))
+        ConfigFileLines.upsert(&lines, key: "ui_tint_green", value: String(format: "%.2f", settings.tintGreen))
+        ConfigFileLines.upsert(&lines, key: "ui_tint_blue", value: String(format: "%.2f", settings.tintBlue))
+        ConfigFileLines.upsert(&lines, key: "ui_tint_opacity", value: String(format: "%.2f", settings.tintOpacity))
+        ConfigFileLines.upsert(&lines, key: "ui_blur_material", value: settings.blurMaterial.rawValue)
+        ConfigFileLines.upsert(&lines, key: "ui_blur_opacity", value: String(format: "%.2f", settings.blurOpacity))
+        ConfigFileLines.upsert(&lines, key: "ui_font_name", value: settings.fontName)
+        ConfigFileLines.upsert(&lines, key: "ui_font_size", value: String(format: "%.0f", settings.fontSize))
+        ConfigFileLines.upsert(&lines, key: "ui_font_red", value: String(format: "%.2f", settings.fontRed))
+        ConfigFileLines.upsert(&lines, key: "ui_font_green", value: String(format: "%.2f", settings.fontGreen))
+        ConfigFileLines.upsert(&lines, key: "ui_font_blue", value: String(format: "%.2f", settings.fontBlue))
+        ConfigFileLines.upsert(&lines, key: "ui_font_opacity", value: String(format: "%.2f", settings.fontOpacity))
+        ConfigFileLines.upsert(&lines, key: "ui_border_thickness", value: String(format: "%.2f", settings.borderThickness))
+        ConfigFileLines.upsert(&lines, key: "ui_border_red", value: String(format: "%.2f", settings.borderRed))
+        ConfigFileLines.upsert(&lines, key: "ui_border_green", value: String(format: "%.2f", settings.borderGreen))
+        ConfigFileLines.upsert(&lines, key: "ui_border_blue", value: String(format: "%.2f", settings.borderBlue))
+        ConfigFileLines.upsert(&lines, key: "ui_border_opacity", value: String(format: "%.2f", settings.borderOpacity))
+        ConfigFileLines.upsert(&lines, key: "file_scan_depth", value: String(settings.fileScanDepth))
+        ConfigFileLines.upsert(&lines, key: "file_scan_limit", value: String(settings.fileScanLimit))
+        ConfigFileLines.upsert(
+            &lines,
+            key: "lazy_indexing_enabled",
+            value: settings.lazyIndexingEnabled ? "true" : "false"
+        )
+        ConfigFileLines.upsert(
+            &lines,
+            key: "file_exclude_paths",
+            value: ConfigFileLines.renderList(excludedFolderPaths)
+        )
+        ConfigFileLines.upsert(
+            &lines,
+            key: "file_scan_extra_roots",
+            value: ConfigFileLines.renderList(extraFileScanRoots)
+        )
+        ConfigFileLines.upsert(&lines, key: "backend_log_level", value: settings.backendLogLevel.rawValue)
+        ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
+
+        // Background image
+        if let bgPath = settings.backgroundImagePath, !bgPath.isEmpty {
+            ConfigFileLines.upsert(&lines, key: "ui_background_image", value: bgPath)
+            ConfigFileLines.upsert(&lines, key: "ui_background_image_mode", value: settings.backgroundImageMode.rawValue)
+            ConfigFileLines.upsert(&lines, key: "ui_background_image_opacity", value: String(format: "%.2f", settings.backgroundImageOpacity))
+            ConfigFileLines.upsert(&lines, key: "ui_background_image_blur", value: String(format: "%.1f", settings.backgroundImageBlur))
+        } else {
+            ConfigFileLines.remove(&lines, key: "ui_background_image")
+            ConfigFileLines.remove(&lines, key: "ui_background_image_mode")
+            ConfigFileLines.remove(&lines, key: "ui_background_image_opacity")
+            ConfigFileLines.remove(&lines, key: "ui_background_image_blur")
+        }
+
+        // Settings blur multiplier
+        ConfigFileLines.upsert(&lines, key: "settings_blur_multiplier", value: String(format: "%.2f", settings.settingsBlurMultiplier))
+
+        // Running apps switcher
+        ConfigFileLines.upsert(&lines, key: "running_apps_placement", value: settings.runningAppsPlacement.rawValue)
+        ConfigFileLines.upsert(&lines, key: "inner_gap", value: String(format: "%.0f", settings.innerGap))
+        ConfigFileLines.upsert(
+            &lines,
+            key: "ui_surface_radius",
+            value: String(format: "%.2f", settings.surfaceRadius)
+        )
+
+        do {
+            try ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)
+            _ = applyLaunchAtLoginSetting()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func regenerateFreshConfigFile() -> Bool {
+        let path = Self.configPath()
+        if FileManager.default.fileExists(atPath: path.path) {
+            do {
+                try FileManager.default.removeItem(at: path)
+            } catch {
+                return false
+            }
+        }
+
+        Self.ensureDefaultConfigFileExists(at: path)
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            return false
+        }
+
+        settings = .default
+        applyThemeOverridesFromConfigFile()
+        _ = applyLaunchAtLoginSetting()
+        return true
+    }
+
+    func zoomIn() {
+        uiScale = min(1.8, uiScale + 0.1)
+    }
+
+    func zoomOut() {
+        uiScale = max(0.7, uiScale - 0.1)
+    }
+
+    func resetZoom() {
+        uiScale = 1.0
+    }
+
+    func uiFont(size: CGFloat? = nil, weight: Font.Weight = .regular) -> Font {
+        let baseSize = size ?? CGFloat(settings.fontSize)
+        let resolvedSize = max(8, baseSize * uiScale)
+        let resolvedName = settings.fontName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !resolvedName.isEmpty, let fontName = resolveUsableFontName(resolvedName) {
+            return .custom(fontName, size: resolvedSize).weight(weight)
+        }
+
+        return .system(size: resolvedSize, weight: weight)
+    }
+
+    /// The AppKit twin of `uiFont`, for NSView-backed inputs (the smooth-caret
+    /// fields). Same family / size / scale resolution so the search and command
+    /// bars render in the user's theme font instead of the system default.
+    func uiNSFont(size: CGFloat? = nil, weight: NSFont.Weight = .regular) -> NSFont {
+        let baseSize = size ?? CGFloat(settings.fontSize)
+        let resolvedSize = max(8, baseSize * uiScale)
+        let resolvedName = settings.fontName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !resolvedName.isEmpty,
+           let fontName = resolveUsableFontName(resolvedName),
+           let custom = NSFont(name: fontName, size: resolvedSize) {
+            return custom
+        }
+
+        return .systemFont(ofSize: resolvedSize, weight: weight)
+    }
+
+    func setBackgroundImage(url: URL?) {
+        guard let url else {
+            settings.backgroundImagePath = nil
+            settings.backgroundImageBookmark = nil
+            return
+        }
+
+        let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        settings.backgroundImagePath = url.path
+        settings.backgroundImageBookmark = bookmark
+    }
+
+    func addExcludedFolderPath(url: URL) {
+        let normalizedPath = normalizeExcludedFolderPath(url.path)
+        guard !normalizedPath.isEmpty else {
+            return
+        }
+        if excludedFolderPaths.contains(normalizedPath) {
+            return
+        }
+        excludedFolderPaths.append(normalizedPath)
+        excludedFolderPaths.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    func removeExcludedFolderPath(_ path: String) {
+        let normalizedPath = normalizeExcludedFolderPath(path)
+        excludedFolderPaths.removeAll { $0 == normalizedPath }
+    }
+
+    @discardableResult
+    func addExtraFileScanRoot(url: URL) -> AddExtraScanRootError? {
+        let normalizedPath = normalizeFileScanRootPath(url.path)
+        guard !normalizedPath.isEmpty else {
+            return .notDirectory
+        }
+
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: normalizedPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return .notDirectory
+        }
+
+        if isRiskyRoot(normalizedPath) {
+            return .riskySystemRoot
+        }
+
+        if fileScanRoots.contains(where: { pathContains($0, normalizedPath) || pathContains(normalizedPath, $0) }) {
+            return .alreadyIncluded
+        }
+
+        if let overlap = extraFileScanRoots.first(where: { pathContains($0, normalizedPath) || pathContains(normalizedPath, $0) }) {
+            return .overlapsExistingRoot(overlap)
+        }
+
+        extraFileScanRoots.append(normalizedPath)
+        extraFileScanRoots.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        return nil
+    }
+
+    func removeExtraFileScanRoot(_ path: String) {
+        let normalizedPath = normalizeFileScanRootPath(path)
+        extraFileScanRoots.removeAll { $0 == normalizedPath }
+    }
+
+    deinit {
+        scopedBackgroundURL?.stopAccessingSecurityScopedResource()
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder().encode(settings) else { return }
+        UserDefaults.standard.set(data, forKey: defaultsKey)
+    }
+
+    /// The theme the user chose, kept even once they tune values away from it.
+    /// Dropping it on divergence left `activeAppearanceStyle()` nil, so one
+    /// slider silently re-derived the whole palette. Only Custom clears it.
+    private func savedThemeName() -> String {
+        settings.themeName
+    }
+
+    private func applyThemeOverridesFromConfigFile() {
+        guard let raw = try? String(contentsOf: Self.configPath(), encoding: .utf8) else {
+            return
+        }
+
+        // Config file parsing with graceful fallback:
+        // Invalid values are silently ignored and default values are used instead.
+        // This ensures the app remains functional even with corrupted config.
+
+        excludedFolderPaths = []
+        fileScanRoots = defaultFileScanRoots()
+        extraFileScanRoots = []
+
+        // Base, not override: the ui_* keys below win. Applied last, it threw
+        // away tuned values on every load. Accepted cost: a hand-written
+        // `ui_theme` no longer beats ui_* keys already in the file.
+        if let themeValue = ConfigFileLines.keyValues(raw)["ui_theme"],
+           let preset = BuiltinThemePreset.preset(forThemeName: themeValue) {
+            applyBuiltinTheme(preset)
+        }
+
+        for line in raw.split(whereSeparator: \ .isNewline) {
+            let stripped = ConfigFileLines.stripComment(String(line)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if stripped.isEmpty {
+                continue
+            }
+
+            guard let splitPoint = stripped.firstIndex(of: "=") else {
+                continue
+            }
+
+            let key = stripped[..<splitPoint].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = stripped[stripped.index(after: splitPoint)...].trimmingCharacters(in: .whitespacesAndNewlines)
+
+            switch key {
+            case "ui_theme":
+                // Empty is Custom, and must clear a preset the file no longer
+                // names - the ui_* keys below are then the whole theme.
+                settings.themeName = value
+            case "ui_tint_red":
+                if let parsed = parseUnitDouble(value) {
+                    settings.tintRed = parsed
+                }
+            case "ui_tint_green":
+                if let parsed = parseUnitDouble(value) {
+                    settings.tintGreen = parsed
+                }
+            case "ui_tint_blue":
+                if let parsed = parseUnitDouble(value) {
+                    settings.tintBlue = parsed
+                }
+            case "ui_tint_opacity":
+                if let parsed = parseUnitDouble(value) {
+                    settings.tintOpacity = parsed
+                }
+            case "ui_blur_material":
+                if let material = parseBlurMaterial(value) {
+                    settings.blurMaterial = material
+                }
+            case "ui_blur_opacity":
+                if let parsed = parseUnitDouble(value) {
+                    settings.blurOpacity = parsed
+                }
+            case "ui_font_name":
+                if !value.isEmpty {
+                    settings.fontName = value
+                }
+            case "ui_font_size":
+                if let parsed = parsePositiveDouble(value) {
+                    settings.fontSize = parsed
+                }
+            case "ui_font_red":
+                if let parsed = parseUnitDouble(value) {
+                    settings.fontRed = parsed
+                }
+            case "ui_font_green":
+                if let parsed = parseUnitDouble(value) {
+                    settings.fontGreen = parsed
+                }
+            case "ui_font_blue":
+                if let parsed = parseUnitDouble(value) {
+                    settings.fontBlue = parsed
+                }
+            case "ui_font_opacity":
+                if let parsed = parseUnitDouble(value) {
+                    settings.fontOpacity = parsed
+                }
+            case "ui_border_thickness":
+                if let parsed = parsePositiveDouble(value) {
+                    settings.borderThickness = parsed
+                }
+            case "ui_border_red":
+                if let parsed = parseUnitDouble(value) {
+                    settings.borderRed = parsed
+                }
+            case "ui_border_green":
+                if let parsed = parseUnitDouble(value) {
+                    settings.borderGreen = parsed
+                }
+            case "ui_border_blue":
+                if let parsed = parseUnitDouble(value) {
+                    settings.borderBlue = parsed
+                }
+            case "ui_border_opacity":
+                if let parsed = parseUnitDouble(value) {
+                    settings.borderOpacity = parsed
+                }
+            case "inner_gap":
+                if let parsed = Double(value) {
+                    settings.innerGap = clamped(parsed, to: AppConstants.ThemeUI.innerGapRange)
+                }
+            case "ui_surface_radius":
+                // Clamped rather than parsePositiveDouble: 0 squares the corners
+                // and is a value the slider offers, which `> 0` would drop.
+                if let parsed = Double(value) {
+                    settings.surfaceRadius = clamped(parsed, to: AppConstants.ThemeUI.surfaceRadiusRange)
+                }
+            case "file_scan_depth":
+                if let parsed = parsePositiveInt(value) {
+                    settings.fileScanDepth = parsed
+                }
+            case "file_scan_limit":
+                if let parsed = parsePositiveInt(value) {
+                    settings.fileScanLimit = parsed
+                }
+            case "lazy_indexing_enabled":
+                if let parsed = parseBool(value) {
+                    settings.lazyIndexingEnabled = parsed
+                }
+            case "file_exclude_paths":
+                excludedFolderPaths = parseExcludedFolderPaths(value)
+            case "file_scan_roots":
+                let parsed = parseFileScanRootPaths(value)
+                if !parsed.isEmpty {
+                    fileScanRoots = parsed
+                }
+            case "file_scan_extra_roots":
+                extraFileScanRoots = parseFileScanRootPaths(value)
+            case "backend_log_level":
+                if let parsed = parseBackendLogLevel(value) {
+                    settings.backendLogLevel = parsed
+                }
+            case "launch_at_login":
+                if let parsed = parseBool(value) {
+                    settings.launchAtLogin = parsed
+                }
+            case "ui_background_image":
+                if !value.isEmpty {
+                    settings.backgroundImagePath = value
+                }
+            case "ui_background_image_mode":
+                if let mode = BackgroundImageMode(rawValue: value.lowercased()) {
+                    settings.backgroundImageMode = mode
+                }
+            case "ui_background_image_opacity":
+                if let parsed = parseUnitDouble(value) {
+                    settings.backgroundImageOpacity = parsed
+                }
+            case "ui_background_image_blur":
+                if let parsed = parsePositiveDouble(value) {
+                    settings.backgroundImageBlur = parsed
+                }
+            case "settings_blur_multiplier":
+                if let parsed = parseUnitDouble(value) {
+                    settings.settingsBlurMultiplier = parsed
+                }
+            case "running_apps_placement":
+                // The setting is now a simple on/off (running apps render inside
+                // the search bar, not as a placed floating strip). Legacy values
+                // top/right/bottom all mean "on" - normalize them to `.right`
+                // (canonical on) so the stored config converges on the new model
+                // on next save. Unknown/empty values fall back to off.
+                if let placement = RunningAppsPlacement(rawValue: value.lowercased()) {
+                    settings.runningAppsPlacement = placement == .none ? .none : .right
+                } else {
+                    settings.runningAppsPlacement = .none
+                }
+            default:
+                continue
+            }
+        }
+
+        // Keeps the Settings picker in step when the config file is what changed.
+        settings.uiTheme = detectBuiltinTheme(for: settings)
+    }
+
+    private static func configPath() -> URL {
+        URL(fileURLWithPath: ConfigPathResolver.resolvedPath())
+    }
+
+    /// Writes the default config when there is none, and otherwise undoes the damage
+    /// left by builds that duplicated their own section header on every save. Runs at
+    /// launch and on reload, so an affected config heals without the user having to go
+    /// and save something.
+    ///
+    /// A config that does not carry the damage is left byte-identical, not merely
+    /// equivalent: rewriting it would reformat a layout the user chose, and would bump
+    /// the mtime and wake the config watcher on every launch.
+    private static func ensureDefaultConfigFileExists(at path: URL) {
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            try? defaultConfigContents.write(to: path, atomically: true, encoding: .utf8)
+            return
+        }
+
+        guard let raw = try? String(contentsOf: path, encoding: .utf8),
+              let repaired = ConfigFileLines.repairingLegacyDamage(raw)
+        else {
+            return
+        }
+
+        try? repaired.write(to: path, atomically: true, encoding: .utf8)
+    }
+
+    /// One-time carry from the old `inner_gap=7` default (floating tiles) to the
+    /// macOS-style `0` (one continuous panel). Changing the default only fixed
+    /// fresh installs: every existing config still pins 7, and the file wins on
+    /// each launch, so those stayed split. An untouched 7 means "never chose",
+    /// so move it to 0 once — in memory and in the active file. Re-setting 7
+    /// afterwards sticks (flagged, never re-runs).
+    private func migrateLegacyInnerGapDefault() {
+        let flagKey = "lumio.migratedInnerGap7To0.v1"
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return }
+        guard settings.innerGap == 7 else {
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+        settings.innerGap = 0
+        let path = Self.configPath()
+        guard let raw = try? String(contentsOf: path, encoding: .utf8) else { return }
+        guard ConfigFileLines.keyValues(raw)["inner_gap"] != nil else {
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+        var lines = ConfigFileLines.parse(raw)
+        ConfigFileLines.upsert(&lines, key: "inner_gap", value: "0")
+        if (try? ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)) != nil {
+            UserDefaults.standard.set(true, forKey: flagKey)
+        }
+    }
+
+    private func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    private func appendRangeWarning(
+        _ warnings: inout [String],
+        key: String,
+        value: String,
+        range: ClosedRange<Double>
+    ) {
+        guard let parsed = Double(value), !range.contains(parsed) else { return }
+        warnings.append(
+            "\(key)=\(value) invalid (expected \(formatted(range.lowerBound))-\(formatted(range.upperBound)))")
+    }
+
+    /// Drops the decimals a whole bound does not need, so a warning reads
+    /// "0-24" rather than "0.0-24.0".
+    private func formatted(_ bound: Double) -> String {
+        bound == bound.rounded() ? String(Int(bound)) : String(bound)
+    }
+
+    private func parseUnitDouble(_ value: String) -> Double? {
+        guard let parsed = Double(value), (0...1).contains(parsed) else {
+            return nil
+        }
+        return parsed
+    }
+
+    private func parsePositiveDouble(_ value: String) -> Double? {
+        guard let parsed = Double(value), parsed > 0 else {
+            return nil
+        }
+        return parsed
+    }
+
+    private func parsePositiveInt(_ value: String) -> Int? {
+        guard let parsed = Int(value), parsed > 0 else {
+            return nil
+        }
+        return parsed
+    }
+
+    private func parseBool(_ value: String) -> Bool? {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return nil
+        }
+    }
+
+    private func parseBackendLogLevel(_ value: String) -> BackendLogLevel? {
+        BackendLogLevel(rawValue: value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    private func parseBlurMaterial(_ value: String) -> LauncherBlurMaterial? {
+        switch value.lowercased() {
+        case "hudwindow", "high_contrast", "high-contrast":
+            return .hudWindow
+        case "sidebar", "soft":
+            return .sidebar
+        case "menu", "balanced":
+            return .menu
+        case "underwindowbackground", "under_window_background", "subtle":
+            return .underWindowBackground
+        default:
+            return LauncherBlurMaterial(rawValue: value)
+        }
+    }
+
+    private func parseExcludedFolderPaths(_ value: String) -> [String] {
+        var seen = Set<String>()
+        var paths: [String] = []
+        for token in ConfigFileLines.parseList(value) {
+            let normalized = normalizeExcludedFolderPath(token)
+            if normalized.isEmpty || seen.contains(normalized) {
+                continue
+            }
+            seen.insert(normalized)
+            paths.append(normalized)
+        }
+        return paths.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func normalizeExcludedFolderPath(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return ""
+        }
+        let expanded = expandConfigLikePath(trimmed)
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    private func parseFileScanRootPaths(_ value: String) -> [String] {
+        var seen = Set<String>()
+        var paths: [String] = []
+        for token in ConfigFileLines.parseList(value) {
+            let normalized = normalizeFileScanRootPath(token)
+            if normalized.isEmpty || seen.contains(normalized) {
+                continue
+            }
+            seen.insert(normalized)
+            paths.append(normalized)
+        }
+        return paths.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func normalizeFileScanRootPath(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return ""
+        }
+        let expanded = expandConfigLikePath(trimmed)
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    private func defaultFileScanRoots() -> [String] {
+        let home = NSHomeDirectory()
+        let defaults = ["Desktop", "Documents", "Downloads"]
+        return defaults.map { URL(fileURLWithPath: home).appendingPathComponent($0).standardizedFileURL.path }
+    }
+
+    private func isRiskyRoot(_ path: String) -> Bool {
+        let riskyRoots = ["/", "/System", "/Library", "/private"]
+        return riskyRoots.contains(where: { $0 == path })
+    }
+
+    private func pathContains(_ candidateRoot: String, _ path: String) -> Bool {
+        let root = URL(fileURLWithPath: candidateRoot).standardizedFileURL.path
+        let target = URL(fileURLWithPath: path).standardizedFileURL.path
+        if root == target {
+            return true
+        }
+        let normalizedRoot = root.hasSuffix("/") ? root : root + "/"
+        return target.hasPrefix(normalizedRoot)
+    }
+
+    private func expandConfigLikePath(_ value: String) -> String {
+        let home = NSHomeDirectory()
+        if value == "~" {
+            return home
+        }
+        if value.hasPrefix("~/") {
+            let relative = value.dropFirst(2)
+            return home + "/" + relative
+        }
+        if value.hasPrefix("/") {
+            return value
+        }
+        return home + "/" + value
+    }
+
+    private func resolveUsableFontName(_ input: String) -> String? {
+        if let exact = NSFont(name: input, size: 12) {
+            return exact.fontName
+        }
+
+        let manager = NSFontManager.shared
+        if let members = manager.availableMembers(ofFontFamily: input),
+            let postscriptName = extractPostScriptName(from: members)
+        {
+            return postscriptName
+        }
+
+        let lowercasedInput = input.lowercased()
+        for family in NSFontManager.shared.availableFontFamilies {
+            if family.lowercased() == lowercasedInput,
+                let members = manager.availableMembers(ofFontFamily: family),
+                let postscriptName = extractPostScriptName(from: members)
+            {
+                return postscriptName
+            }
+        }
+
+        return nil
+    }
+
+    private func extractPostScriptName(from members: [[Any]]) -> String? {
+        guard let firstMember = members.first,
+            let postScript = firstMember.first as? String,
+            !postScript.isEmpty
+        else {
+            return nil
+        }
+        return postScript
+    }
+
+    private static let defaultConfigContents = """
+# lumio configuration
+# Generated on first launch. Edit values and press Cmd+Shift+; to reload.
+
+# Backend indexing
+app_scan_roots=/Applications,/System/Applications,/System/Applications/Utilities,/System/Library/CoreServices/Applications,/System/Library/CoreServices/Finder.app/Contents/Applications
+app_scan_depth=3
+app_exclude_paths=
+app_exclude_names=
+file_scan_roots=Desktop,Documents,Downloads
+file_scan_extra_roots=
+file_scan_depth=4
+file_scan_limit=8000
+file_exclude_paths=
+ignored_patterns_sample=
+# File ignore patterns. Gitignore-style path globs: *, **, ?, [abc].
+# Format: ignored_patterns_<group>=Pattern1|Pattern2|Pattern3
+# macOS/Linux usually use ~/... or /... ; on Windows, C:\\... is the safest documented form and ~ expands to your home dir.
+# ignored_patterns_browser=~/AppData/Local/BraveSoftware/**/*.log|~/AppData/Local/Google/Chrome/**/*.tmp
+# ignored_patterns_sqlite=~/Documents/git/project/**/*.db-wal|~/Documents/git/project/**/*.db-shm
+# ignored_patterns_temp=~/Downloads/*.tmp|~/Downloads/**/*.part
+lazy_indexing_enabled=true
+backend_log_level=error
+launch_at_login=true
+skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv
+
+# UI theme
+# Preset: catppuccin, tokyoNight, rosePine, gruvbox, dracula, kanagawa, kindle,
+# liquid (liquid needs macOS 26; it falls back to the classic surface below that).
+# A preset supplies base values; the ui_* keys below override it. The name stays
+# recorded as you tune, until you pick Custom. Empty = only the keys below.
+ui_theme=
+ui_tint_red=0.08
+ui_tint_green=0.10
+ui_tint_blue=0.12
+ui_tint_opacity=0.55
+ui_blur_material=hudWindow
+ui_blur_opacity=0.95
+ui_font_name=SF Pro Text
+ui_font_size=14
+ui_font_red=0.96
+ui_font_green=0.96
+ui_font_blue=0.98
+ui_font_opacity=0.96
+ui_border_thickness=1.0
+ui_border_red=1.0
+ui_border_green=1.0
+ui_border_blue=1.0
+ui_border_opacity=0.12
+
+# Running apps switcher: none, top, right, bottom
+running_apps_placement=right
+
+# Inner gap (points, 0-24) between the three home panes; 0 = classic flat layout
+inner_gap=0
+ui_surface_radius=1.50
+
+# Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3
+alias_note=Notion|Obsidian|Notes|Apple Notes|Bear|Logseq
+alias_code=Visual Studio Code|VSCode|Cursor|Windsurf|IntelliJ IDEA|PyCharm|WebStorm|Neovim|Xcode|Zed
+alias_term=Terminal|iTerm|iTerm2|Ghostty|WezTerm|Alacritty|Kitty|Warp
+alias_chat=Slack|Discord|Telegram|Messages
+alias_music=Spotify|Apple Music|Music
+alias_brow=Safari|Arc|Google Chrome|Chrome|Firefox|Brave
+"""
+
+    private static func loadThemeSettings(from data: Data?) -> ThemeSettings {
+        guard let data else {
+            return .default
+        }
+
+        let decoder = JSONDecoder()
+        if let decoded = try? decoder.decode(ThemeSettings.self, from: data) {
+            return decoded
+        }
+
+        // Backfill keys added after the first release so existing UserDefaults blobs
+        // (which won't contain new non-optional Codable properties) still decode
+        // instead of falling back to .default and wiping the user's customizations.
+        guard
+            var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            return .default
+        }
+
+        if object["lazyIndexingEnabled"] == nil {
+            object["lazyIndexingEnabled"] = true
+        }
+        if object["runningAppsPlacement"] == nil {
+            object["runningAppsPlacement"] = ThemeSettings.default.runningAppsPlacement.rawValue
+        }
+        if object["innerGap"] == nil {
+            object["innerGap"] = ThemeSettings.default.innerGap
+        }
+        if object["surfaceRadius"] == nil {
+            object["surfaceRadius"] = ThemeSettings.default.surfaceRadius
+        }
+
+        guard
+            let migratedData = try? JSONSerialization.data(withJSONObject: object),
+            let migrated = try? decoder.decode(ThemeSettings.self, from: migratedData)
+        else {
+            return .default
+        }
+        return migrated
+    }
+
+    private func refreshBackgroundImageURL() {
+        scopedBackgroundURL?.stopAccessingSecurityScopedResource()
+        scopedBackgroundURL = nil
+        backgroundImageURL = nil
+        backgroundImage = nil
+
+        if let bookmark = settings.backgroundImageBookmark {
+            var isStale = false
+            if let resolved = try? URL(
+                resolvingBookmarkData: bookmark,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                _ = resolved.startAccessingSecurityScopedResource()
+                scopedBackgroundURL = resolved
+                backgroundImageURL = resolved
+                backgroundImage = NSImage(contentsOf: resolved)
+                return
+            }
+        }
+
+        if let path = settings.backgroundImagePath {
+            let url = URL(fileURLWithPath: path)
+            backgroundImageURL = url
+            backgroundImage = NSImage(contentsOf: url)
+        }
+    }
+
+    private func applyLaunchAtLoginSetting() -> Bool {
+        if #available(macOS 13.0, *) {
+            do {
+                if settings.launchAtLogin {
+                    if SMAppService.mainApp.status != .enabled {
+                        try SMAppService.mainApp.register()
+                    }
+                } else if SMAppService.mainApp.status == .enabled {
+                    try SMAppService.mainApp.unregister()
+                }
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        return false
+    }
+}

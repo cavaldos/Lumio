@@ -1,124 +1,92 @@
-# look
+# Lumio
 
-<img src="assets/icon.png" alt="look icon" width="96" />
+<img src="assets/icon.png" alt="Lumio icon" width="96" />
 
 A keyboard-first, local-first launcher for macOS. Open apps, files, folders, clipboard history, and quick commands without leaving the keyboard.
 
-[![Install](https://img.shields.io/badge/install-555)](#install)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#macos)
-[![Latest release](https://img.shields.io/github/v/release/kunkka19xx/look)](https://github.com/kunkka19xx/look/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/kunkka19xx/look/total)](https://github.com/kunkka19xx/look/releases)
+[![Latest release](https://img.shields.io/github/v/release/cavaldos/Lumio)](https://github.com/cavaldos/Lumio/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/cavaldos/Lumio/total)](https://github.com/cavaldos/Lumio/releases)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 
-📘 [Docs](https://noah-code.com/docs/look) · 🎬 [Demo video](https://www.youtube.com/watch?v=NBB5bmjnLFU) · 📖 [User guide](docs/user-guide.md)
-
-https://github.com/user-attachments/assets/167b028b-04b2-4c62-ba93-c2321482ac94
+🎬 [Demo video](https://www.youtube.com/watch?v=NBB5bmjnLFU) · 📖 [User guide](docs/user-guide.md)
 
 Results land as fast as you can type. A Rust core under a native SwiftUI app, riding the system WebView instead of shipping a browser like Electron does. No background daemons. Your index, clipboard, and history stay on your machine; no telemetry.
 
-<details>
-<summary><b>How it compares</b></summary>
-
-|                 | **look**                | Spotlight  | Raycast            | Alfred       |
-| --------------- | ----------------------- | ---------- | ------------------ | ------------ |
-| Platform        | macOS                   | macOS only | macOS · Win (beta) | macOS only   |
-| Open source     | ✅ GPLv3                | ❌         | ❌                 | ❌           | ✅         | ✅         |
-| Local-first     | ✅                      | ✅         | ❌ cloud sync      | ✅           | ✅         | ✅         |
-| No Electron     | ✅                      | ✅         | ❌                 | ✅           | ✅         | ✅         |
-| No plugin store | ✅                      | ✅         | ❌                 | ❌ Powerpack | ✅         | ✅         |
-
-</details>
-
-> If this is useful, ⭐ star the repo - it's the single biggest signal that helps the project keep shipping.
+> If this is useful, ⭐ star the repo — it's the single biggest signal that helps the project keep shipping.
 
 ## Install
 
-### macOS
-
-Download `Look-<version>-macOS.zip` from the [latest release](https://github.com/kunkka19xx/look/releases/latest), unzip, and move `Look.app` to `/Applications`.
+Download `Lumio-<version>-macOS.zip` from the [latest release](https://github.com/cavaldos/Lumio/releases/latest), unzip, and move `Lumio.app` to `/Applications`.
 
 Or via curl:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kunkka19xx/look/main/scripts/install-look.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cavaldos/Lumio/main/scripts/install-lumio.sh | bash
 ```
 
-Then bind `Cmd+Space` to Look (disable Spotlight's shortcut in `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`).
+Then bind `Cmd+Space` to Lumio (disable Spotlight's shortcut in `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`).
 
 <details>
-<summary>Other install options (pin version, update/uninstall)</summary>
-
-Update: download the newer zip from the [latest release](https://github.com/kunkka19xx/look/releases/latest) and replace `Look.app`, or re-run the curl installer.
-
-Uninstall:
+<summary>Pin a version, update, uninstall</summary>
 
 ```bash
-rm -rf "/Applications/Look.app"
+# pin a specific version
+curl -fsSL https://raw.githubusercontent.com/cavaldos/Lumio/main/scripts/install-lumio.sh | bash -s -- --version <version>
+
+# update: download the newer zip and replace Lumio.app, or re-run the installer
+
+# uninstall
+rm -rf "/Applications/Lumio.app"
 ```
 
-Pin a specific version or repo fork:
+If Lumio is fully quit and Spotlight is still unbound, relaunch via:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kunkka19xx/look/main/scripts/install-look.sh | bash -s -- --version <version> --repo kunkka19xx/look
-```
-
-Direct URL:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kunkka19xx/look/main/scripts/install-look.sh | bash -s -- --url "https://github.com/kunkka19xx/look/releases/download/v<version>/Look-<version>-macOS.zip"
-```
-
-CLI naming note: macOS ships `/usr/bin/look`, so terminal command examples use `lookapp`.
-
-If Look is fully quit and Spotlight is still unbound, relaunch from Launchpad, or via:
-
-```bash
-open "/Applications/Look.app"
+open "/Applications/Lumio.app"
 ```
 
 </details>
 
-## Essential shortcuts
+## Shortcuts
 
-| Action                                                                 | Shortcut         |
-| ---------------------------------------------------------------------- | ---------------- |
-| Toggle launcher                                                        | `Cmd+Space`      |
-| Open / run                                                             | `Enter`          |
-| Web search                                                             | `Cmd+Enter`      |
-| Reveal in Finder                                                       | `Cmd+F`          |
-| Edit selected file/folder in your editor                               | `Cmd+E`          |
-| Open a terminal there                                                  | `Cmd+T`          |
-| Action menu for the selected row                                       | `Cmd+K`          |
-| Move to Trash (or empty the Trash folder)                              | `Cmd+D`          |
+| Action | Shortcut |
+| ------ | -------- |
+| Toggle launcher | `Cmd+Space` |
+| Open / run | `Enter` |
+| Web search | `Cmd+Enter` |
+| Reveal in Finder | `Cmd+F` |
+| Edit in your editor | `Cmd+E` |
+| Open a terminal there | `Cmd+T` |
+| Action menu | `Cmd+K` |
+| Move to Trash | `Cmd+D` |
 | Command mode (`speed`, `kill`) | `Cmd+/` |
-| Settings                                                               | `Cmd+Shift+,`    |
-| Back / hide                                                            | `Escape`         |
-| Switch to running app N (home screen)                                  | `Cmd+1`..`Cmd+9` |
-| Hide selected app from Look                                            | `Cmd+Shift+H`    |
+| Settings | `Cmd+Shift+,` |
+| Back / hide | `Escape` |
+| Switch to running app N | `Cmd+1`..`Cmd+9` |
+| Hide selected app from Lumio | `Cmd+Shift+H` |
 
-`Cmd+E` and `Cmd+T` need a tool named in `~/.look/config` (`text_editor`, `code_editor`, `terminal`), and `file_manager` retargets `Cmd+F`. Declare nothing and each falls back to the system default: see [Preferred tools](docs/user-guide.md#preferred-tools).
+`Cmd+E` and `Cmd+T` need a tool named in `~/.lumio/config` (`text_editor`, `code_editor`, `terminal`), and `file_manager` retargets `Cmd+F`. Declare nothing and each falls back to the system default — see [Preferred tools](docs/user-guide.md#preferred-tools).
 
 Full reference: [docs/user-guide.md](docs/user-guide.md).
 
 ## Themes
 
 Built-in: Catppuccin, Tokyo Night, Rose Pine, Gruvbox, Dracula, Kanagawa, Kindle, Liquid, plus Custom.
-Kindle is the one light preset - paper, ink, and a serif face.
+Kindle is the one light preset — paper, ink, and a serif face.
 Liquid renders on macOS 26's Liquid Glass and is hidden on older releases.
 Switch in `Settings > Appearance`.
 
-## Documentation
+## Docs
 
-- 📘 [Docs site](https://noah-code.com/docs/look) - hosted, searchable user guide and reference
-- [User guide (in-repo)](docs/user-guide.md) - full feature reference, shortcuts, configuration, permissions, troubleshooting
-- [Architecture](docs/architecture.md) - how the Swift app + Rust core fit together
-- [Features](docs/features.md) - what's shipped, what's planned
-- [Contributing](CONTRIBUTING.md) - how to contribute
-- [Development](DEVELOPMENT.md) - building locally, repo layout, release process
+- [User guide](docs/user-guide.md) — features, shortcuts, configuration, permissions, troubleshooting
+- [Architecture](docs/architecture.md) — how the Swift app + Rust core fit together
+- [Features](docs/features.md) — what's shipped, what's planned
+- [Contributing](CONTRIBUTING.md) — how to contribute
+- [Development](DEVELOPMENT.md) — building locally, repo layout, release process
 
 ## License
 
-Copyright (C) 2026 kunkka19xx
+Copyright (C) 2026 cavaldos
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -127,4 +95,4 @@ version. See [LICENSE](LICENSE) for the full text.
 
 ## Contributors
 
-Thanks to everyone who has contributed - see the [contributor graph](https://github.com/kunkka19xx/look/graphs/contributors).
+Thanks to everyone who has contributed — see the [contributor graph](https://github.com/cavaldos/Lumio/graphs/contributors).

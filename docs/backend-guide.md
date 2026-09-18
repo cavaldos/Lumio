@@ -46,8 +46,8 @@ Use this guide when you are changing:
 
 ### `core/todo`
 
-- `core/todo/src/lib.rs`: `TodoStore` (open/list/save/prune) over the `todo_tasks` table in the app's `look.db`; the JSON task shape is pinned by tests since both app shells decode it.
-- `core/todo/examples/seed.rs`: seeds demo task history into a database (`dev` target by default: the `look.dev.db` file that dev builds read automatically).
+- `core/todo/src/lib.rs`: `TodoStore` (open/list/save/prune) over the `todo_tasks` table in the app's `lumio.db`; the JSON task shape is pinned by tests since both app shells decode it.
+- `core/todo/examples/seed.rs`: seeds demo task history into a database (`dev` target by default: the `lumio.dev.db` file that dev builds read automatically).
 
 ### `bridge/ffi`
 
@@ -56,7 +56,7 @@ Use this guide when you are changing:
 - `bridge/ffi/src/search_api.rs`: search endpoints.
 - `bridge/ffi/src/usage_api.rs`: usage recording endpoint.
 - `bridge/ffi/src/translate_api.rs`: translation endpoint + typed errors.
-- `bridge/ffi/src/answers_api.rs`: instant/web answer endpoints (C ABI over `look_answers`).
+- `bridge/ffi/src/answers_api.rs`: instant/web answer endpoints (C ABI over `lumio_answers`).
 - `bridge/ffi/src/seed_api.rs`: seed externally-discovered candidates (e.g. Windows UWP apps) into storage.
 - `bridge/ffi/src/todo_api.rs`: todo list/save endpoints (JSON over C ABI, backed by `core/todo`).
 - `bridge/ffi/src/runtime_config.rs`: config loading + runtime toggles.
@@ -85,12 +85,12 @@ Use this guide when you are changing:
 
 1. Add/update endpoint in `bridge/ffi/src/*_api.rs`.
 2. Keep error payloads structured and stable.
-3. Ensure string allocation/free paths remain balanced (`look_free_cstring`).
+3. Ensure string allocation/free paths remain balanced (`lumio_free_cstring`).
 4. Coordinate corresponding Swift bridge updates.
 
 ## Runtime config keys (backend-relevant)
 
-Runtime file: `~/.look/config` (or `LOOK_CONFIG_PATH`).
+Runtime file: `~/.lumio/config` (or `LUMIO_CONFIG_PATH`).
 
 - `app_scan_roots`, `app_scan_depth`, `app_exclude_paths`, `app_exclude_names`
 - `file_scan_roots`, `file_scan_extra_roots`, `file_scan_depth` (default: 4, range: 1-12), `file_scan_limit` (default: 4000, range: 500-50000), `file_exclude_paths`

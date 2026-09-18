@@ -1,6 +1,6 @@
 use crate::config::*;
-use look_indexing::CandidateIdKind;
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::CandidateIdKind;
+use lumio_indexing::{Candidate, CandidateKind};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 

@@ -118,9 +118,9 @@ impl Unavailable {
     /// Shown as-is, so both shells word it the same way.
     pub fn message(&self) -> String {
         match self {
-            Unavailable::NotDeclared { key } => format!("Set {key} in your Look config"),
+            Unavailable::NotDeclared { key } => format!("Set {key} in your Lumio config"),
             Unavailable::TerminalRequired { tool, key } => {
-                format!("{tool} runs in a terminal; set {key} in your Look config")
+                format!("{tool} runs in a terminal; set {key} in your Lumio config")
             }
             Unavailable::NotAnEditor { tool, key } => {
                 format!("{tool} is a terminal; set {key} to the editor it should run")
@@ -142,7 +142,7 @@ impl Unavailable {
     }
 }
 
-/// What Look can do to a row through a declared tool. Ids are shared so every
+/// What Lumio can do to a row through a declared tool. Ids are shared so every
 /// shell names the same action the same way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -433,24 +433,24 @@ mod tests {
         assert_eq!(
             terminal_here(
                 &tools(None, None, Some("wt")),
-                &Target::Folder("C:/look".into())
+                &Target::Folder("C:/lumio".into())
             ),
             Ok(Launch::Argv {
                 tool: "wt".into(),
-                args: vec!["-d".into(), "C:\\look".into()],
-                cwd: "C:\\look".into(),
+                args: vec!["-d".into(), "C:\\lumio".into()],
+                cwd: "C:\\lumio".into(),
             })
         );
         // A file row opens its parent, the same as everywhere else.
         assert_eq!(
             terminal_here(
                 &tools(None, None, Some("cmd")),
-                &Target::File("C:/look/a.txt".into())
+                &Target::File("C:/lumio/a.txt".into())
             ),
             Ok(Launch::Argv {
                 tool: "cmd".into(),
                 args: Vec::new(),
-                cwd: "C:\\look".into(),
+                cwd: "C:\\lumio".into(),
             })
         );
     }
@@ -470,17 +470,17 @@ mod tests {
         assert_eq!(
             edit(
                 &tools(Some("nvim"), None, Some("wt")),
-                &Target::File("C:/look/a.txt".into())
+                &Target::File("C:/lumio/a.txt".into())
             ),
             Ok(Launch::Argv {
                 tool: "wt".into(),
                 args: vec![
                     "-d".into(),
-                    "C:\\look".into(),
+                    "C:\\lumio".into(),
                     "nvim".into(),
-                    "C:\\look\\a.txt".into()
+                    "C:\\lumio\\a.txt".into()
                 ],
-                cwd: "C:\\look".into(),
+                cwd: "C:\\lumio".into(),
             })
         );
         // cmd takes no argv for a command, and says so rather than opening a
@@ -600,11 +600,11 @@ mod tests {
         assert_eq!(
             edit(
                 &tools(None, Some("zed"), None),
-                &Target::Folder("/tmp/look".into())
+                &Target::Folder("/tmp/lumio".into())
             ),
             Ok(Launch::Application {
                 tool: "zed".into(),
-                path: "/tmp/look".into()
+                path: "/tmp/lumio".into()
             })
         );
     }
@@ -669,8 +669,8 @@ mod tests {
     #[test]
     fn every_target_resolves_to_a_usable_directory() {
         let cases = [
-            (Target::Folder("/tmp/look".into()), "/tmp/look"),
-            (Target::File("/tmp/look/a.txt".into()), "/tmp/look"),
+            (Target::Folder("/tmp/lumio".into()), "/tmp/lumio"),
+            (Target::File("/tmp/lumio/a.txt".into()), "/tmp/lumio"),
             (Target::File("a.txt".into()), CURRENT_DIR),
             (Target::File("/".into()), CURRENT_DIR),
         ];
@@ -701,14 +701,14 @@ mod tests {
             (
                 "a file opens its folder",
                 Some("nautilus"),
-                Target::File("/tmp/look/a.txt".into()),
-                app("/tmp/look"),
+                Target::File("/tmp/lumio/a.txt".into()),
+                app("/tmp/lumio"),
             ),
             (
                 "a folder is its own",
                 Some("nautilus"),
-                Target::Folder("/tmp/look".into()),
-                app("/tmp/look"),
+                Target::Folder("/tmp/lumio".into()),
+                app("/tmp/lumio"),
             ),
         ];
 
@@ -807,10 +807,10 @@ mod tests {
     #[test]
     fn a_terminal_on_a_file_row_opens_its_parent() {
         let declared = tools(None, None, Some("alacritty"));
-        let target = Target::File("/tmp/look/a.txt".into());
+        let target = Target::File("/tmp/lumio/a.txt".into());
         let command = shell_command(terminal_here(&declared, &target));
 
-        assert!(command.contains("/tmp/look"), "got: {command}");
+        assert!(command.contains("/tmp/lumio"), "got: {command}");
         assert!(!command.contains("a.txt"), "got: {command}");
     }
 
@@ -836,7 +836,7 @@ mod tests {
     #[test]
     fn resolve_dispatches_to_the_same_result_as_the_direct_call() {
         let declared = tools(None, Some("zed"), Some("alacritty"));
-        let target = Target::Folder("/tmp/look".into());
+        let target = Target::Folder("/tmp/lumio".into());
 
         assert_eq!(
             Action::Edit.resolve(&declared, &target),

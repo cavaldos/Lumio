@@ -1,5 +1,5 @@
 [package]
-name = "look-engine"
+name = "lumio-engine"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true
@@ -7,11 +7,11 @@ authors.workspace = true
 version = "0.1.0"
 
 [dependencies]
-look-indexing = { path = "../indexing" }
-look-matching = { path = "../matching" }
-look-ranking = { path = "../ranking" }
-look-storage = { path = "../storage" }
-look-tools = { path = "../tools" }
+lumio-indexing = { path = "../indexing" }
+lumio-matching = { path = "../matching" }
+lumio-ranking = { path = "../ranking" }
+lumio-storage = { path = "../storage" }
+lumio-tools = { path = "../tools" }
 ignore = "0.4"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

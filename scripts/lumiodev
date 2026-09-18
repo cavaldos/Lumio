@@ -1,0 +1,27 @@
+#!/bin/sh
+# lumiodev - the dev build's handle, the way `lumio` is the installed one's.
+# `lumio` symlinks into /Applications/Lumio.app, so it always runs the release
+# binary no matter what you just built. Installed by `make app-install-dev`.
+#
+#   lumiodev                 launch it with the dev config
+#   lumiodev clipboard       open it in a mode
+#   lumiodev --list-modes
+set -eu
+
+APP="${LUMIO_DEV_APP:-/Applications/Lumio Dev.app}"
+CONFIG="${LUMIO_DEV_CONFIG:-$HOME/.lumio/config.dev}"
+
+if [ ! -d "$APP" ]; then
+    echo "lumiodev: $APP is not installed. Run: make app-install-dev" >&2
+    exit 3
+fi
+
+# `-u LUMIO_DB_PATH` matches DEV_OPEN_ENV in scripts/Makefile.mac: an inherited
+# path would point the dev build at the release database.
+if [ "$#" -eq 0 ]; then
+    exec env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$CONFIG" open -a "$APP"
+fi
+
+# The binary, not `open --args`: LaunchServices would activate the running
+# instance instead of starting a process that can read the arguments.
+exec env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$CONFIG" "$APP/Contents/MacOS/Lumio" "$@"

@@ -1,7 +1,7 @@
 use crate::runtime_config::{log_debug, log_error};
 use crate::state::{cstr_to_string, default_db_path, store_json_allocation, with_engine_mut};
-use look_indexing::{CandidateIdKind, UsageAction};
-use look_storage::SqliteStore;
+use lumio_indexing::{CandidateIdKind, UsageAction};
+use lumio_storage::SqliteStore;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,11 +49,11 @@ impl UsageRecordError {
     }
 }
 
-pub(crate) fn look_record_usage_impl(candidate_id: *const c_char, action: *const c_char) -> bool {
+pub(crate) fn lumio_record_usage_impl(candidate_id: *const c_char, action: *const c_char) -> bool {
     validate_and_record_usage(candidate_id, action).is_ok()
 }
 
-pub(crate) fn look_record_usage_json_impl(
+pub(crate) fn lumio_record_usage_json_impl(
     candidate_id: *const c_char,
     action: *const c_char,
 ) -> *mut c_char {
@@ -150,13 +150,13 @@ mod tests {
     fn a_drilled_row_records_nothing_and_reports_no_failure() {
         let id = CString::new("src:scripts:|projects/animate|build").unwrap();
         let action = CString::new(UsageAction::EXECUTE).unwrap();
-        assert!(look_record_usage_impl(id.as_ptr(), action.as_ptr()));
+        assert!(lumio_record_usage_impl(id.as_ptr(), action.as_ptr()));
     }
 
     #[test]
     fn an_id_that_belongs_to_nothing_is_still_refused() {
         let id = CString::new("not-a-candidate-id").unwrap();
         let action = CString::new(UsageAction::EXECUTE).unwrap();
-        assert!(!look_record_usage_impl(id.as_ptr(), action.as_ptr()));
+        assert!(!lumio_record_usage_impl(id.as_ptr(), action.as_ptr()));
     }
 }

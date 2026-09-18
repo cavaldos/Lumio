@@ -1,6 +1,6 @@
-use look_engine::QueryEngine;
-use look_matching::{fuzzy_score, fuzzy_score_prepared, prepare_query};
-use look_storage::SqliteStore;
+use lumio_engine::QueryEngine;
+use lumio_matching::{fuzzy_score, fuzzy_score_prepared, prepare_query};
+use lumio_storage::SqliteStore;
 use std::env;
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -140,7 +140,7 @@ fn main() {
         ),
     ];
 
-    println!("# look benchmark");
+    println!("# lumio benchmark");
     println!("db_path={}", db_path.display());
     println!("candidate_count={candidate_count}");
     println!(
@@ -345,7 +345,7 @@ fn throughput_per_second(count: usize, duration: Duration) -> f64 {
 }
 
 fn default_db_path() -> PathBuf {
-    if let Ok(custom) = env::var("LOOK_DB_PATH")
+    if let Ok(custom) = env::var("LUMIO_DB_PATH")
         && !custom.trim().is_empty()
     {
         return PathBuf::from(custom);
@@ -355,6 +355,6 @@ fn default_db_path() -> PathBuf {
     PathBuf::from(home)
         .join("Library")
         .join("Application Support")
-        .join("look")
-        .join("look.db")
+        .join("lumio")
+        .join("lumio.db")
 }

@@ -80,7 +80,7 @@ final class PDFExtractionTests: XCTestCase {
     }
 
     /// A PDF with no text layer is a SCAN, not an empty file, and the message
-    /// has to say so or the user thinks look is broken instead of reaching for
+    /// has to say so or the user thinks lumio is broken instead of reaching for
     /// OCR.
     func testAPageWithNoTextReportsNoTextLayer() throws {
         let path = try writePDF(text: "")

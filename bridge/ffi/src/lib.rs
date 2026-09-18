@@ -20,67 +20,67 @@ mod translate_api;
 mod url_history_api;
 mod usage_api;
 
-use look_engine::QueryEngine;
+use lumio_engine::QueryEngine;
 use search_api::FfiSearchResult;
 use std::os::raw::c_char;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_search_count(query_len: u32) -> FfiSearchResult {
+pub extern "C" fn lumio_search_count(query_len: u32) -> FfiSearchResult {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::look_search_count_impl(query_len)
+        search_api::lumio_search_count_impl(query_len)
     }))
     .unwrap_or(FfiSearchResult { count: 0 })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_search_json(query: *const c_char, limit: u32) -> *mut c_char {
+pub extern "C" fn lumio_search_json(query: *const c_char, limit: u32) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::look_search_json_impl(query, limit)
+        search_api::lumio_search_json_impl(query, limit)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_search_json_compact(query: *const c_char, limit: u32) -> *mut c_char {
+pub extern "C" fn lumio_search_json_compact(query: *const c_char, limit: u32) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::look_search_json_compact_impl(query, limit)
+        search_api::lumio_search_json_compact_impl(query, limit)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
-/// Natural-language file recall over Look's own index. Returns the same JSON as
-/// `look_search_json`, or null when the query is not a file-recall query. Free
-/// with `look_free_cstring`.
+/// Natural-language file recall over Lumio's own index. Returns the same JSON as
+/// `lumio_search_json`, or null when the query is not a file-recall query. Free
+/// with `lumio_free_cstring`.
 
 /// File recall from structured params JSON `{terms?, types?, when?, location?}`
-/// (the model's `recall` step). Same payload shape as `look_search_files_json`;
-/// null when the params are unusable. Free with `look_free_cstring`.
+/// (the model's `recall` step). Same payload shape as `lumio_search_files_json`;
+/// null when the params are unusable. Free with `lumio_free_cstring`.
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_record_usage(candidate_id: *const c_char, action: *const c_char) -> bool {
+pub extern "C" fn lumio_record_usage(candidate_id: *const c_char, action: *const c_char) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        usage_api::look_record_usage_impl(candidate_id, action)
+        usage_api::lumio_record_usage_impl(candidate_id, action)
     }))
     .unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_record_usage_json(
+pub extern "C" fn lumio_record_usage_json(
     candidate_id: *const c_char,
     action: *const c_char,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        usage_api::look_record_usage_json_impl(candidate_id, action)
+        usage_api::lumio_record_usage_json_impl(candidate_id, action)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_reload_config() -> bool {
+pub extern "C" fn lumio_reload_config() -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // Drop the engine's cached `~/.look/config` before anything below reads
+        // Drop the engine's cached `~/.lumio/config` before anything below reads
         // RuntimeConfig - otherwise the reload would see stale roots/limits.
-        look_engine::config::RuntimeConfig::invalidate_cache();
+        lumio_engine::config::RuntimeConfig::invalidate_cache();
         runtime_config::reload_runtime_config();
         state::restart_index_watchers();
         let path = state::default_db_path();
@@ -96,15 +96,15 @@ pub extern "C" fn look_reload_config() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_seed_uwp_apps_json(json: *const c_char) -> bool {
+pub extern "C" fn lumio_seed_uwp_apps_json(json: *const c_char) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        seed_api::look_seed_uwp_apps_json_impl(json)
+        seed_api::lumio_seed_uwp_apps_json_impl(json)
     }))
     .unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_request_index_refresh() -> bool {
+pub extern "C" fn lumio_request_index_refresh() -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         state::request_background_index_refresh()
     }))
@@ -112,48 +112,48 @@ pub extern "C" fn look_request_index_refresh() -> bool {
 }
 
 /// The launch-mode table as `--list-modes` prints it. Free with
-/// `look_free_cstring`.
+/// `lumio_free_cstring`.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_modes_list_text() -> *mut c_char {
-    std::panic::catch_unwind(modes_api::look_modes_list_text_impl).unwrap_or(std::ptr::null_mut())
+pub extern "C" fn lumio_modes_list_text() -> *mut c_char {
+    std::panic::catch_unwind(modes_api::lumio_modes_list_text_impl).unwrap_or(std::ptr::null_mut())
 }
 
 /// Parse argv (a JSON array of strings, program name already dropped) into
 /// `{"kind":"normal"|"query"|"list_modes"|"unknown_mode", ...}`. Free with
-/// `look_free_cstring`.
+/// `lumio_free_cstring`.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_modes_parse_json(argv_json: *const c_char) -> *mut c_char {
+pub extern "C" fn lumio_modes_parse_json(argv_json: *const c_char) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        modes_api::look_modes_parse_json_impl(argv_json)
+        modes_api::lumio_modes_parse_json_impl(argv_json)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 /// Lunar date JSON (`{day, month, year, leap}`) for a Gregorian `(year, month,
-/// day)` at UTC offset `tz` hours. Free the result with `look_free_cstring`.
+/// day)` at UTC offset `tz` hours. Free the result with `lumio_free_cstring`.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_lunar_date_json(year: i64, month: i64, day: i64, tz: f64) -> *mut c_char {
+pub extern "C" fn lumio_lunar_date_json(year: i64, month: i64, day: i64, tz: f64) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        lunar_api::look_lunar_date_json_impl(year, month, day, tz)
+        lunar_api::lumio_lunar_date_json_impl(year, month, day, tz)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 /// The call request in `query` (`{"name":"mom","modality":null}`), or the
 /// literal `null` for an ordinary search. Tier-1 grammar, cheap enough to call
-/// on every keystroke. Free the result with `look_free_cstring`.
+/// on every keystroke. Free the result with `lumio_free_cstring`.
 
 /// The modality a bare "call" means (a `Modality` id). Free with
-/// `look_free_cstring`.
+/// `lumio_free_cstring`.
 
 /// The URL that dials `handle` with `modality` (a `Modality` id such as
 /// `face_time_audio`). Null when the modality is unknown. Free the result with
-/// `look_free_cstring`.
+/// `lumio_free_cstring`.
 
 /// The join request in `query` (`{}` for a bare "join", `{"name": "..."}` when
 /// it names a meeting), or the literal `null` for an ordinary search. Tier-1
 /// grammar, cheap enough to call on every keystroke. Free the result with
-/// `look_free_cstring`.
+/// `lumio_free_cstring`.
 
 /// What a `join` found in the events the shell fetched.
 ///
@@ -161,40 +161,40 @@ pub extern "C" fn look_lunar_date_json(year: i64, month: i64, day: i64, tz: f64)
 /// notes?, allDay?}`. `name` narrows to meetings whose title carries those
 /// words; pass an empty string for "whatever is next". Returns
 /// `{"meetings":[...],"withoutLink":[...]}`, the second list naming events that
-/// matched but carry no join link. Free the result with `look_free_cstring`.
+/// matched but carry no join link. Free the result with `lumio_free_cstring`.
 
 /// A full speed test as JSON (`{"ok":true,"reading":{...}}` or
 /// `{"ok":false,"error":"..."}`). Blocks for 15 seconds and up, so call it off
-/// the UI thread. Free the result with `look_free_cstring`.
+/// the UI thread. Free the result with `lumio_free_cstring`.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_netspeed_run_json() -> *mut c_char {
+pub extern "C" fn lumio_netspeed_run_json() -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        netspeed_api::look_netspeed_run_json_impl,
+        netspeed_api::lumio_netspeed_run_json_impl,
     ))
     .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_free_cstring(ptr: *mut c_char) {
+pub extern "C" fn lumio_free_cstring(ptr: *mut c_char) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         state::free_json_allocation(ptr)
     }));
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_translate_json(
+pub extern "C" fn lumio_translate_json(
     text: *const c_char,
     target_lang: *const c_char,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        translate_api::look_translate_json_impl(text, target_lang)
+        translate_api::lumio_translate_json_impl(text, target_lang)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 /// Resolves a shared instant answer (currency/weather/crypto) for `query`,
 /// returning an owned JSON C string - an `Answer` object on a hit, or the JSON
-/// literal `null` otherwise. Free the result with `look_free_cstring`.
+/// literal `null` otherwise. Free the result with `lumio_free_cstring`.
 
 /// `{id, name, steps}` for the user-declared block a candidate id belongs to,
 /// so the panel can show what Enter will perform. `null` when the row is not a
@@ -221,7 +221,7 @@ pub extern "C" fn look_translate_json(
 /// so pass the row's id, title and ancestors: its verb expands like every other
 /// command it declares.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_tool_action_json(
+pub extern "C" fn lumio_tool_action_json(
     action: *const c_char,
     candidate_id: *const c_char,
     row_title: *const c_char,
@@ -230,7 +230,7 @@ pub extern "C" fn look_tool_action_json(
     ancestors_json: *const c_char,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tools_api::look_tool_action_json_impl(
+        tools_api::lumio_tool_action_json_impl(
             action,
             candidate_id,
             row_title,
@@ -246,7 +246,7 @@ pub extern "C" fn look_tool_action_json(
 /// detached, and come back as `{"kind":"performed"}` or `{"kind":"failed"}`; an
 /// `application` result is handed back for the shell to launch itself.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_perform_tool_action_json(
+pub extern "C" fn lumio_perform_tool_action_json(
     action: *const c_char,
     candidate_id: *const c_char,
     row_title: *const c_char,
@@ -255,7 +255,7 @@ pub extern "C" fn look_perform_tool_action_json(
     ancestors_json: *const c_char,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tools_api::look_perform_tool_action_json_impl(
+        tools_api::lumio_perform_tool_action_json_impl(
             action,
             candidate_id,
             row_title,
@@ -267,11 +267,11 @@ pub extern "C" fn look_perform_tool_action_json(
     .unwrap_or(std::ptr::null_mut())
 }
 
-/// Every action id `look_tool_action_json` accepts, as a JSON array.
+/// Every action id `lumio_tool_action_json` accepts, as a JSON array.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_tool_actions_json() -> *mut c_char {
+pub extern "C" fn lumio_tool_actions_json() -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        tools_api::look_tool_actions_json_impl,
+        tools_api::lumio_tool_actions_json_impl,
     ))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -280,7 +280,7 @@ pub extern "C" fn look_tool_actions_json() -> *mut c_char {
 /// keeps its own pair so it never edits the installed copy's settings. Plain
 /// path string, not JSON.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_config_path(dev: bool) -> *mut c_char {
+pub extern "C" fn lumio_config_path(dev: bool) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
@@ -290,7 +290,7 @@ pub extern "C" fn look_config_path(dev: bool) -> *mut c_char {
         let Some(home) = home else {
             return crate::state::json_cstring_or_null(None);
         };
-        let resolved = look_engine::config_path::resolve_home_variant(&home, dev);
+        let resolved = lumio_engine::config_path::resolve_home_variant(&home, dev);
         crate::state::json_cstring_or_null(Some(
             resolved.path.to_string_lossy().into_owned(),
         ))
@@ -302,36 +302,36 @@ pub extern "C" fn look_config_path(dev: bool) -> *mut c_char {
 /// by the caller). Returns `matching_api::NO_MATCH` (`i64::MIN`) on no match, so
 /// callers reproduce the linows ranking without porting the algorithm.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_fuzzy_score(query: *const c_char, title: *const c_char) -> i64 {
+pub extern "C" fn lumio_fuzzy_score(query: *const c_char, title: *const c_char) -> i64 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        matching_api::look_fuzzy_score_impl(query, title)
+        matching_api::lumio_fuzzy_score_impl(query, title)
     }))
     .unwrap_or(matching_api::NO_MATCH)
 }
 
 /// URL classification JSON for `query` (a `UrlMatch` object or `null`).
 #[unsafe(no_mangle)]
-pub extern "C" fn look_classify_url_json(query: *const c_char) -> *mut c_char {
+pub extern "C" fn lumio_classify_url_json(query: *const c_char) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        answers_api::look_classify_url_json_impl(query)
+        answers_api::lumio_classify_url_json_impl(query)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 /// Records that `url` was opened through the launcher. Returns false on failure.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_record_url_hit(url: *const c_char) -> bool {
+pub extern "C" fn lumio_record_url_hit(url: *const c_char) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        url_history_api::look_record_url_hit_impl(url)
+        url_history_api::lumio_record_url_hit_impl(url)
     }))
     .unwrap_or(false)
 }
 
 /// JSON array of up to `limit` remembered URLs matching `query` (or `[]`).
 #[unsafe(no_mangle)]
-pub extern "C" fn look_recent_urls_json(query: *const c_char, limit: u32) -> *mut c_char {
+pub extern "C" fn lumio_recent_urls_json(query: *const c_char, limit: u32) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        url_history_api::look_recent_urls_json_impl(query, limit)
+        url_history_api::lumio_recent_urls_json_impl(query, limit)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -340,12 +340,12 @@ pub extern "C" fn look_recent_urls_json(query: *const c_char, limit: u32) -> *mu
 /// must not call this for concealed or transient clips (password managers,
 /// one-time secrets): only it can see the pasteboard markers that say so.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_record(
+pub extern "C" fn lumio_clipboard_record(
     content: *const c_char,
     app_bundle_id: *const c_char,
 ) -> i64 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        clipboard_api::look_clipboard_record_impl(content, app_bundle_id)
+        clipboard_api::lumio_clipboard_record_impl(content, app_bundle_id)
     }))
     .unwrap_or(0)
 }
@@ -353,13 +353,13 @@ pub extern "C" fn look_clipboard_record(
 /// Remembers a copied image, returning its row id (0 on failure). The bytes are
 /// the shell's to write, under `image_hash`. Same concealed-clip rule as above.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_record_image(
+pub extern "C" fn lumio_clipboard_record_image(
     label: *const c_char,
     image_hash: *const c_char,
     app_bundle_id: *const c_char,
 ) -> i64 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        clipboard_api::look_clipboard_record_image_impl(label, image_hash, app_bundle_id)
+        clipboard_api::lumio_clipboard_record_image_impl(label, image_hash, app_bundle_id)
     }))
     .unwrap_or(0)
 }
@@ -367,38 +367,38 @@ pub extern "C" fn look_clipboard_record_image(
 /// Where image clips keep their bytes. Each file's name starts with the hash of
 /// the row that owns it; anything not backed by a row is swept.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_images_dir() -> *mut c_char {
-    std::panic::catch_unwind(clipboard_api::look_clipboard_images_dir_impl)
+pub extern "C" fn lumio_clipboard_images_dir() -> *mut c_char {
+    std::panic::catch_unwind(clipboard_api::lumio_clipboard_images_dir_impl)
         .unwrap_or(std::ptr::null_mut())
 }
 
 /// JSON array of up to `limit` remembered clips of `kind` matching `query`
 /// (or `[]`).
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_list_json(
+pub extern "C" fn lumio_clipboard_list_json(
     kind: *const c_char,
     query: *const c_char,
     limit: u32,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        clipboard_api::look_clipboard_list_json_impl(kind, query, limit)
+        clipboard_api::lumio_clipboard_list_json_impl(kind, query, limit)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_delete(id: i64) -> bool {
+pub extern "C" fn lumio_clipboard_delete(id: i64) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        clipboard_api::look_clipboard_delete_impl(id)
+        clipboard_api::lumio_clipboard_delete_impl(id)
     }))
     .unwrap_or(false)
 }
 
 /// Forgets every remembered clip, returning how many were removed.
 #[unsafe(no_mangle)]
-pub extern "C" fn look_clipboard_clear() -> u32 {
+pub extern "C" fn lumio_clipboard_clear() -> u32 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        clipboard_api::look_clipboard_clear_impl,
+        clipboard_api::lumio_clipboard_clear_impl,
     ))
     .unwrap_or(0)
 }
@@ -407,24 +407,24 @@ pub extern "C" fn look_clipboard_clear() -> u32 {
 
 /// The empty-state launchpad layout as `{columns, rows, tiles}` (or `[]`).
 /// The layout is fixed and input-free, so this takes no arguments. Free the
-/// result with `look_free_cstring`.
+/// result with `lumio_free_cstring`.
 
-/// JSON array of strings describing anything wrong with `~/.look/super-actions.toml`
-/// (or `[]`). Free the result with `look_free_cstring`.
+/// JSON array of strings describing anything wrong with `~/.lumio/super-actions.toml`
+/// (or `[]`). Free the result with `lumio_free_cstring`.
 
-/// Free with `look_free_cstring`.
+/// Free with `lumio_free_cstring`.
 
-/// Spawns and blocks: call off the UI thread. Free with `look_free_cstring`.
+/// Spawns and blocks: call off the UI thread. Free with `lumio_free_cstring`.
 
-/// Returns `{"error": ...}`. Free with `look_free_cstring`.
+/// Returns `{"error": ...}`. Free with `lumio_free_cstring`.
 
 /// Definitional entity JSON for `query` (a JSON string or `null`).
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use look_indexing::{Candidate, CandidateKind};
-    use look_storage::SqliteStore;
+    use lumio_indexing::{Candidate, CandidateKind};
+    use lumio_storage::SqliteStore;
     use std::env;
     use std::ffi::{CStr, CString};
     use std::fs;
@@ -437,7 +437,7 @@ mod tests {
     static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
     /// Config the whole binary runs against, so no test reads the developer's
-    /// real `~/.look/config`.
+    /// real `~/.lumio/config`.
     const TEST_CONFIG: &str =
         "lazy_indexing_enabled=true\nfile_scan_roots=\nfile_scan_extra_roots=\napp_scan_roots=\n";
 
@@ -456,7 +456,7 @@ mod tests {
             let path = test_config_path();
             fs::write(&path, TEST_CONFIG).expect("write test config");
             unsafe {
-                env::set_var("LOOK_CONFIG_PATH", path.as_os_str());
+                env::set_var("LUMIO_CONFIG_PATH", path.as_os_str());
             }
             Mutex::new(())
         })
@@ -465,7 +465,7 @@ mod tests {
     /// Fixed, unlike the database path: it is published to the environment once
     /// and so cannot change between tests.
     fn test_config_path() -> PathBuf {
-        env::temp_dir().join("look-ffi-config-smoke.config")
+        env::temp_dir().join("lumio-ffi-config-smoke.config")
     }
 
     #[test]
@@ -488,9 +488,9 @@ mod tests {
             .expect("insert smoke candidate");
 
         state::set_db_path_for_test(&db_path);
-        assert!(look_reload_config());
+        assert!(lumio_reload_config());
 
-        // `look_reload_config` starts filesystem watchers on the real scan
+        // `lumio_reload_config` starts filesystem watchers on the real scan
         // roots. Any event under them marks the index dirty, which lets a
         // background refresh fire - and that refresh runs DETACHED, reads the
         // database path late, and rebuilds `candidates` in this test's scratch
@@ -500,13 +500,13 @@ mod tests {
         state::wait_for_index_refresh_for_test();
 
         let query = CString::new("smoke").expect("query cstring");
-        let ptr = look_search_json(query.as_ptr(), 10);
+        let ptr = lumio_search_json(query.as_ptr(), 10);
         assert!(!ptr.is_null());
 
         let raw = unsafe { CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(ptr);
+        lumio_free_cstring(ptr);
 
         let payload: serde_json::Value = serde_json::from_str(&raw).expect("valid search payload");
 
@@ -531,12 +531,12 @@ mod tests {
                 .expect("reinsert smoke candidate");
             state::refresh_engine_cache();
 
-            let retry_ptr = look_search_json(query.as_ptr(), 10);
+            let retry_ptr = lumio_search_json(query.as_ptr(), 10);
             assert!(!retry_ptr.is_null());
             let retry_raw = unsafe { CStr::from_ptr(retry_ptr) }
                 .to_string_lossy()
                 .into_owned();
-            look_free_cstring(retry_ptr);
+            lumio_free_cstring(retry_ptr);
             let retry_payload: serde_json::Value =
                 serde_json::from_str(&retry_raw).expect("valid retry payload");
             has_smoke = retry_payload
@@ -552,18 +552,18 @@ mod tests {
         }
         assert!(has_smoke);
 
-        let compact_ptr = look_search_json_compact(query.as_ptr(), 10);
+        let compact_ptr = lumio_search_json_compact(query.as_ptr(), 10);
         assert!(!compact_ptr.is_null());
         let compact_raw = unsafe { CStr::from_ptr(compact_ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(compact_ptr);
+        lumio_free_cstring(compact_ptr);
         let compact_payload: serde_json::Value =
             serde_json::from_str(&compact_raw).expect("valid compact payload");
         assert!(compact_payload.get("query").is_none());
         assert!(compact_payload.get("results").is_some());
 
-        // The subject below is `look_record_usage`; that the candidate exists is
+        // The subject below is `lumio_record_usage`; that the candidate exists is
         // its PRECONDITION, so it is re-established here rather than assumed to
         // have survived. `usage_events` has a foreign key onto `candidates`, and
         // an index refresh - which runs detached and reads the database path
@@ -577,14 +577,14 @@ mod tests {
 
         let id = CString::new("app:smoke.test").expect("id cstring");
         let action = CString::new("open").expect("action cstring");
-        assert!(look_record_usage(id.as_ptr(), action.as_ptr()));
+        assert!(lumio_record_usage(id.as_ptr(), action.as_ptr()));
 
-        let usage_ptr = look_record_usage_json(id.as_ptr(), action.as_ptr());
+        let usage_ptr = lumio_record_usage_json(id.as_ptr(), action.as_ptr());
         assert!(!usage_ptr.is_null());
         let usage_raw = unsafe { CStr::from_ptr(usage_ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(usage_ptr);
+        lumio_free_cstring(usage_ptr);
         let usage_payload: serde_json::Value =
             serde_json::from_str(&usage_raw).expect("valid usage payload");
         assert_eq!(
@@ -593,13 +593,13 @@ mod tests {
         );
 
         let empty = CString::new("").expect("empty cstring");
-        assert!(!look_record_usage(empty.as_ptr(), action.as_ptr()));
-        let invalid_ptr = look_record_usage_json(empty.as_ptr(), action.as_ptr());
+        assert!(!lumio_record_usage(empty.as_ptr(), action.as_ptr()));
+        let invalid_ptr = lumio_record_usage_json(empty.as_ptr(), action.as_ptr());
         assert!(!invalid_ptr.is_null());
         let invalid_raw = unsafe { CStr::from_ptr(invalid_ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(invalid_ptr);
+        lumio_free_cstring(invalid_ptr);
         let invalid_payload: serde_json::Value =
             serde_json::from_str(&invalid_raw).expect("valid invalid-usage payload");
         assert_eq!(
@@ -615,12 +615,12 @@ mod tests {
         );
 
         let bad_action = CString::new("not_a_usage_action").expect("bad action");
-        let bad_action_ptr = look_record_usage_json(id.as_ptr(), bad_action.as_ptr());
+        let bad_action_ptr = lumio_record_usage_json(id.as_ptr(), bad_action.as_ptr());
         assert!(!bad_action_ptr.is_null());
         let bad_action_raw = unsafe { CStr::from_ptr(bad_action_ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(bad_action_ptr);
+        lumio_free_cstring(bad_action_ptr);
         let bad_action_payload: serde_json::Value =
             serde_json::from_str(&bad_action_raw).expect("valid bad-action payload");
         assert_eq!(
@@ -666,7 +666,7 @@ mod tests {
         let _ = fs::remove_file(&db_path);
         state::set_db_path_for_test(&db_path);
 
-        assert!(look_reload_config());
+        assert!(lumio_reload_config());
 
         crate::state::stop_index_watchers_for_test();
         thread::sleep(Duration::from_millis(50));
@@ -674,7 +674,7 @@ mod tests {
         crate::state::mark_index_dirty();
         let mut refresh_triggered = false;
         for _ in 0..20 {
-            if look_request_index_refresh() {
+            if lumio_request_index_refresh() {
                 refresh_triggered = true;
                 break;
             }
@@ -695,7 +695,7 @@ mod tests {
 
         let text = CString::new("hello").expect("text cstring");
         let bad_lang = CString::new("invalid_lang!").expect("bad lang cstring");
-        let bad_lang_ptr = look_translate_json(text.as_ptr(), bad_lang.as_ptr());
+        let bad_lang_ptr = lumio_translate_json(text.as_ptr(), bad_lang.as_ptr());
         let bad_lang_payload = json_from_ptr(bad_lang_ptr);
         assert_eq!(
             bad_lang_payload
@@ -707,7 +707,7 @@ mod tests {
 
         let empty = CString::new("").expect("empty cstring");
         let lang = CString::new("en").expect("lang cstring");
-        let empty_ptr = look_translate_json(empty.as_ptr(), lang.as_ptr());
+        let empty_ptr = lumio_translate_json(empty.as_ptr(), lang.as_ptr());
         let empty_payload = json_from_ptr(empty_ptr);
         assert_eq!(
             empty_payload
@@ -726,7 +726,7 @@ mod tests {
         let raw = unsafe { CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(ptr);
+        lumio_free_cstring(ptr);
         serde_json::from_str(&raw).expect("valid json payload")
     }
 
@@ -735,7 +735,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        env::temp_dir().join(format!("look-ffi-smoke-{nanos}.db"))
+        env::temp_dir().join(format!("lumio-ffi-smoke-{nanos}.db"))
     }
 
     #[test]
@@ -751,7 +751,7 @@ mod tests {
         let _ = fs::remove_file(&db_path);
 
         state::set_db_path_for_test(&db_path);
-        assert!(look_reload_config());
+        assert!(lumio_reload_config());
         // The reload restarts the watchers and can spawn a refresh of its own,
         // neither wanted while this seeds and prunes the same database.
         state::stop_index_watchers_for_test();
@@ -765,7 +765,7 @@ mod tests {
             ]"#,
         )
         .expect("seed json");
-        assert!(look_seed_uwp_apps_json(json.as_ptr()));
+        assert!(lumio_seed_uwp_apps_json(json.as_ptr()));
 
         // Round-trip via sqlite - make sure the rows actually persisted with the right shape.
         let stored = SqliteStore::open(&db_path)
@@ -787,12 +787,12 @@ mod tests {
         // Search has to surface the seeded entry - without this, the user can't find Terminal
         // via the launcher even though it sits in the DB.
         let query = CString::new("terminal").expect("query");
-        let ptr = look_search_json(query.as_ptr(), 10);
+        let ptr = lumio_search_json(query.as_ptr(), 10);
         assert!(!ptr.is_null());
         let raw = unsafe { CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        look_free_cstring(ptr);
+        lumio_free_cstring(ptr);
         let payload: serde_json::Value = serde_json::from_str(&raw).expect("valid search payload");
         let has_terminal = payload
             .get("results")
@@ -814,8 +814,8 @@ mod tests {
         // Re-seeding must be idempotent and preserve use_count after a launch.
         let id = CString::new("app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App").expect("id");
         let action = CString::new("open_app").expect("action");
-        assert!(look_record_usage(id.as_ptr(), action.as_ptr()));
-        assert!(look_seed_uwp_apps_json(json.as_ptr())); // second seed
+        assert!(lumio_record_usage(id.as_ptr(), action.as_ptr()));
+        assert!(lumio_seed_uwp_apps_json(json.as_ptr())); // second seed
         let after = SqliteStore::open(&db_path)
             .expect("reopen")
             .load_candidates(None)
@@ -837,7 +837,7 @@ mod tests {
             r#"[{"aumid": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App", "title": "Terminal"}]"#,
         )
         .expect("seed json terminal only");
-        assert!(look_seed_uwp_apps_json(json_terminal_only.as_ptr()));
+        assert!(lumio_seed_uwp_apps_json(json_terminal_only.as_ptr()));
 
         let after_prune = SqliteStore::open(&db_path)
             .expect("reopen for prune check")

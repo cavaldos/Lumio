@@ -1,6 +1,6 @@
 # Feature Status
 
-This document tracks what `look` supports today and what is planned next.
+This document tracks what `lumio` supports today and what is planned next.
 
 ## Product pillars
 
@@ -15,7 +15,7 @@ This document tracks what `look` supports today and what is planned next.
 ### Core search and launch
 
 - app/file/folder search from one input (macOS)
-- scoped query prefixes: `a"`, `f"`, `d"`, `r"`, and `rc"` (recent files/folders, newest first - blends opened-through-Look with recently added/changed on disk)
+- scoped query prefixes: `a"`, `f"`, `d"`, `r"`, and `rc"` (recent files/folders, newest first - blends opened-through-Lumio with recently added/changed on disk)
 - path-fragment friendly matching (slash-biased queries)
 - URL-like queries (no prefix): typing a URL offers an **Open in browser** row (structural URLs rank first, a bare `host.tld` after local results); opened URLs return as frecency-ranked **Recently opened** rows
 - open with `Enter`, reveal in Finder with `Cmd+F`
@@ -24,7 +24,7 @@ This document tracks what `look` supports today and what is planned next.
 - move selected file/folder (or all picked items) to the Trash with `Cmd+D` - recoverable, no confirmation
 - pinned **Trash** quick folder (type `trash`): `Enter` opens it in Finder, its preview shows the item count, and `Cmd+D` empties it via Finder (confirmed, since it's permanent)
 - preview pane: text/image file previews, plus folder previews listing the immediate children (folders first, capped at 30, click to open)
-- hide the selected app from Look with `Cmd+Shift+H` so it stops appearing in results
+- hide the selected app from Lumio with `Cmd+Shift+H` so it stops appearing in results
 
 ### Clipboard and translation
 
@@ -48,14 +48,14 @@ This document tracks what `look` supports today and what is planned next.
 - badge labels follow an ergonomic outer-first layout: with N running apps we consume the easiest-to-reach keys first (`1, 2, 3, 9, 8` before `4`, then `7`, then `6`, then `5`). 5 running apps → badges `1, 2, 3, 8, 9`; 9 running apps → all of `1`..`9`
 - focus paths: `NSRunningApplication.activate()` with Dock-style reopen for windowless apps
 - click on an icon also switches; hover shows app name + shortcut tooltip; active app has an accent ring
-- toggled on/off via `Settings > Appearance > Running Apps`. Persisted as `running_apps_placement` in `~/.look/config` (`none` = off, any other value = on). The window is a single fixed size and never resizes for the row
+- toggled on/off via `Settings > Appearance > Running Apps`. Persisted as `running_apps_placement` in `~/.lumio/config` (`none` = off, any other value = on). The window is a single fixed size and never resizes for the row
 - off hides the row and disables the activation shortcut
 
 ### Preferred tools and row actions
 
-- `Cmd+K` on a file, folder, or app row opens an action menu listing what Look can do to it (open, edit, terminal here, reveal, copy path), each with its chord and the declared tool's name
-- **Edit** (`Cmd+E`) and **Open terminal here** (`Cmd+T`) act through tools named in `~/.look/config`: `text_editor`, `code_editor`, `terminal`, `file_manager`
-- a value is a tool name, never a command with its own arguments; Look owns how each tool is driven, including running a terminal editor inside the declared terminal
+- `Cmd+K` on a file, folder, or app row opens an action menu listing what Lumio can do to it (open, edit, terminal here, reveal, copy path), each with its chord and the declared tool's name
+- **Edit** (`Cmd+E`) and **Open terminal here** (`Cmd+T`) act through tools named in `~/.lumio/config`: `text_editor`, `code_editor`, `terminal`, `file_manager`
+- a value is a tool name, never a command with its own arguments; Lumio owns how each tool is driven, including running a terminal editor inside the declared terminal
 - `text_editor` on a file row, `code_editor` on a folder row; declaring only one of the two covers both
 - terminal here opens the folder itself, or a file's parent; app rows get neither verb, reveal still applies
 - `file_manager` retargets `Cmd+F` to the containing folder; left undeclared, the platform's own manager selects the file itself
@@ -66,10 +66,10 @@ This document tracks what `look` supports today and what is planned next.
 ### Settings and runtime config
 
 - in-app settings panel (`Cmd+Shift+,`)
-- local config file `~/.look/config`
+- local config file `~/.lumio/config`
 - runtime reload (`Cmd+Shift+;`)
 - 9 built-in theme presets (Catppuccin, Tokyo Night, Rose Pine, Gruvbox, Dracula, Kanagawa, Kindle, Liquid, Custom)
-- query alias presets in `~/.look/config` for app + System Settings intent expansion (`alias_note`, `alias_code`, `alias_term`, `alias_chat`, `alias_music`, `alias_brow`)
+- query alias presets in `~/.lumio/config` for app + System Settings intent expansion (`alias_note`, `alias_code`, `alias_term`, `alias_chat`, `alias_music`, `alias_brow`)
 - in-app config reset (`Settings > Advanced > Create Fresh Config`) with confirmation popup
 - semantic color system with auto-derived text colors in Custom mode
 - indexing, UI, privacy/logging, launch-at-login controls

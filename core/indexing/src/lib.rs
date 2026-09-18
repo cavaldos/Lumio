@@ -240,7 +240,7 @@ mod id_tests {
         );
         let there = CandidateIdKind::source_row_candidate_id(
             "scripts",
-            &[("projects".into(), "look".into())],
+            &[("projects".into(), "lumio".into())],
             "build",
         );
         assert_ne!(here, there, "ranking is keyed on the ancestor path");
@@ -404,7 +404,7 @@ pub struct Candidate {
     pub last_used_at_unix_s: Option<i64>,
     /// Filesystem modification time (Unix seconds), captured at index time.
     /// Lets the "recent" view surface freshly downloaded/created files the user
-    /// hasn't opened through Look yet. `None` for app/settings candidates.
+    /// hasn't opened through Lumio yet. `None` for app/settings candidates.
     pub fs_modified_at_unix_s: Option<i64>,
     /// What to draw this row as, when it asked for something. Only a declared
     /// source sets it; everything else takes its icon from the kind or the path.

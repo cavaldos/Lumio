@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/macos/LauncherApp"
-SCHEME="Look"
+SCHEME="Lumio"
 CONFIGURATION="Release"
 
 VERSION="${1:-}"
@@ -14,8 +14,8 @@ fi
 BUILD_DIR="$ROOT_DIR/.build/release-macos"
 OUT_DIR="$ROOT_DIR/dist"
 DERIVED_DATA="$BUILD_DIR/DerivedData"
-APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/Look.app"
-ZIP_NAME="Look-${VERSION}-macOS.zip"
+APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/Lumio.app"
+ZIP_NAME="Lumio-${VERSION}-macOS.zip"
 ZIP_PATH="$OUT_DIR/$ZIP_NAME"
 
 echo "[1/4] Cleaning previous release artifacts"
@@ -24,7 +24,7 @@ mkdir -p "$BUILD_DIR" "$OUT_DIR"
 
 echo "[2/4] Building macOS app ($CONFIGURATION)"
 xcodebuild \
-  -project "$APP_DIR/look-app.xcodeproj" \
+  -project "$APP_DIR/lumio-app.xcodeproj" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
   -derivedDataPath "$DERIVED_DATA" \

@@ -1,5 +1,5 @@
 [package]
-name = "look-matching"
+name = "lumio-matching"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true

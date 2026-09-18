@@ -1,6 +1,6 @@
 use crate::runtime_config::{log_error, log_info};
-use look_engine::QueryEngine;
-use look_engine::config::RuntimeConfig;
+use lumio_engine::QueryEngine;
+use lumio_engine::config::RuntimeConfig;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ enum WatcherMessage {
     Stop,
 }
 
-/// Scratch database the tests point at, in place of writing `LOOK_DB_PATH`.
+/// Scratch database the tests point at, in place of writing `LUMIO_DB_PATH`.
 /// The suite shares one process and engine threads resolve the path while other
 /// tests are switching databases, so `set_var` there races those readers, which
 /// is the reason it is unsafe.
@@ -61,7 +61,7 @@ pub(crate) fn default_db_path() -> PathBuf {
         return path;
     }
 
-    if let Ok(custom) = env::var("LOOK_DB_PATH")
+    if let Ok(custom) = env::var("LUMIO_DB_PATH")
         && !custom.trim().is_empty()
     {
         return PathBuf::from(custom);
@@ -80,8 +80,8 @@ fn legacy_default_db_path() -> PathBuf {
     PathBuf::from(home)
         .join("Library")
         .join("Application Support")
-        .join("look")
-        .join("look.db")
+        .join("lumio")
+        .join("lumio.db")
 }
 
 #[cfg(target_os = "windows")]
@@ -89,7 +89,7 @@ fn windows_default_db_path() -> Option<PathBuf> {
     env::var("LOCALAPPDATA")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .map(|base| PathBuf::from(base).join("look").join("look.db"))
+        .map(|base| PathBuf::from(base).join("lumio").join("lumio.db"))
 }
 
 pub(crate) fn with_engine<T>(f: impl FnOnce(&QueryEngine) -> T) -> T {
@@ -596,7 +596,7 @@ mod tests {
         let path_str = path.to_string_lossy();
         assert!(path_str.contains("Library"));
         assert!(path_str.contains("Application Support"));
-        assert!(path_str.ends_with("look.db"));
+        assert!(path_str.ends_with("lumio.db"));
     }
 
     #[cfg(target_os = "windows")]
@@ -605,8 +605,8 @@ mod tests {
         let path = super::windows_default_db_path();
         if let Some(path) = path {
             let path_str = path.to_string_lossy().to_ascii_lowercase();
-            assert!(path_str.contains("look"));
-            assert!(path_str.ends_with("look.db"));
+            assert!(path_str.contains("lumio"));
+            assert!(path_str.ends_with("lumio.db"));
         }
     }
 }

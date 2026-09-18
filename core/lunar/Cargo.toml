@@ -1,5 +1,5 @@
 [package]
-name = "look-lunar"
+name = "lumio-lunar"
 edition = "2024"
 rust-version.workspace = true
 license.workspace = true

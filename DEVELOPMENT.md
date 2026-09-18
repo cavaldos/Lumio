@@ -1,6 +1,6 @@
 # Development
 
-Guide for building Look locally and contributing to the project.
+Guide for building Lumio locally and contributing to the project.
 
 ## Repository layout
 
@@ -62,32 +62,32 @@ make app-run
 `make app-run` behavior:
 
 - builds a local Debug app bundle with Xcode
-- stops any running `Look` process (including a release-installed instance)
-- launches with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`
+- stops any running `Lumio` process (including a release-installed instance)
+- launches with `LUMIO_CONFIG_PATH=$HOME/.lumio/config.dev`
 - shows a red `TEST APP` badge so the dev run is visually distinct
 
-Install a side-by-side test build (`Look Dev`) without replacing the normal install:
+Install a side-by-side test build (`Lumio Dev`) without replacing the normal install:
 
 ```bash
 make app-run-dev
 ```
 
-`make app-run-dev` builds a local Debug bundle, installs `/Applications/Look Dev.app` with bundle id `noah-code.Look.Dev`, leaves the release `/Applications/Look.app` untouched, then launches `Look Dev` with `LOOK_CONFIG_PATH=$HOME/.look/config.dev`.
+`make app-run-dev` builds a local Debug bundle, installs `/Applications/Lumio Dev.app` with bundle id `noah-code.Lumio.Dev`, leaves the release `/Applications/Lumio.app` untouched, then launches `Lumio Dev` with `LUMIO_CONFIG_PATH=$HOME/.lumio/config.dev`.
 
-`lookapp` is a symlink to the **installed** app (`scripts/install-look.sh`), so it always runs the release binary no matter what you just built. `make app-install-dev` installs `lookdev` beside it as the same handle for the dev build:
+`lumio` is a symlink to the **installed** app (`scripts/install-lumio.sh`), so it always runs the release binary no matter what you just built. `make app-install-dev` installs `lumiodev` beside it as the same handle for the dev build:
 
 ```bash
-lookdev                 # launch it with the dev config
-lookdev clipboard       # open it in a mode
-lookdev --list-modes
+lumiodev                 # launch it with the dev config
+lumiodev clipboard       # open it in a mode
+lumiodev --list-modes
 ```
 
-Install it on its own with `make dev-cli`. It reads `LOOK_DEV_APP` and `LOOK_DEV_CONFIG` if you keep them elsewhere.
+Install it on its own with `make dev-cli`. It reads `LUMIO_DEV_APP` and `LUMIO_DEV_CONFIG` if you keep them elsewhere.
 
 Override the macOS dev config path:
 
 ```bash
-make app-run-dev DEV_CONFIG_PATH="$HOME/.look.qa.config"
+make app-run-dev DEV_CONFIG_PATH="$HOME/.lumio.qa.config"
 ```
 
 `make help` lists every target.
@@ -113,7 +113,7 @@ Benchmark snapshots land under [docs/bench-notes/](docs/bench-notes/). Add a new
 ## Releasing (maintainers)
 
 Every release is 1 command — version comes from the tag name, CI builds
-`Look-<version>-macOS.zip` on the GitHub Release:
+`Lumio-<version>-macOS.zip` on the GitHub Release:
 
 ```bash
 ./scripts/release.sh v1.0.0
@@ -126,7 +126,7 @@ version in Xcode — CI injects `MARKETING_VERSION` from the tag name.
 Local preflight (same checks `release.sh` runs):
 
 ```bash
-./scripts/ci-local.sh v1.0.0   # cargo tests + Release xcodebuild
+./scripts/test-ci-local.sh v1.0.0   # cargo tests + Release xcodebuild
 ./scripts/build-release.sh 1.0.0   # local zip into dist/ (no publish)
 ```
 

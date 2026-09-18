@@ -147,15 +147,15 @@ mod tests {
     #[test]
     fn a_listed_terminal_is_handed_the_directory_its_own_way() {
         let cases: &[(&str, &[&str])] = &[
-            ("wt", &["-d", "C:\\look"]),
-            ("alacritty", &["--working-directory", "C:\\look"]),
-            ("wezterm", &["start", "--cwd", "C:\\look"]),
-            ("pwsh", &["-WorkingDirectory", "C:\\look"]),
+            ("wt", &["-d", "C:\\lumio"]),
+            ("alacritty", &["--working-directory", "C:\\lumio"]),
+            ("wezterm", &["start", "--cwd", "C:\\lumio"]),
+            ("pwsh", &["-WorkingDirectory", "C:\\lumio"]),
         ];
 
         for (terminal, expected) in cases {
             assert_eq!(
-                argv(terminal, "C:\\look", &[]),
+                argv(terminal, "C:\\lumio", &[]),
                 owned(expected),
                 "{terminal}"
             );
@@ -168,7 +168,7 @@ mod tests {
     fn an_unlisted_terminal_relies_on_the_directory_it_is_started_in() {
         for terminal in ["cmd", "powershell", "conhost", "some-new-terminal"] {
             assert_eq!(
-                argv(terminal, "C:\\look", &[]),
+                argv(terminal, "C:\\lumio", &[]),
                 Some(Vec::new()),
                 "{terminal}"
             );
@@ -177,20 +177,20 @@ mod tests {
 
     #[test]
     fn a_command_follows_the_separator_its_terminal_documents() {
-        let editor = ["nvim", "C:\\look\\a.txt"];
+        let editor = ["nvim", "C:\\lumio\\a.txt"];
         assert_eq!(
-            argv("wt", "C:\\look", &editor),
-            owned(&["-d", "C:\\look", "nvim", "C:\\look\\a.txt"])
+            argv("wt", "C:\\lumio", &editor),
+            owned(&["-d", "C:\\lumio", "nvim", "C:\\lumio\\a.txt"])
         );
         assert_eq!(
-            argv("wezterm", "C:\\look", &editor),
+            argv("wezterm", "C:\\lumio", &editor),
             owned(&[
                 "start",
                 "--cwd",
-                "C:\\look",
+                "C:\\lumio",
                 "--",
                 "nvim",
-                "C:\\look\\a.txt"
+                "C:\\lumio\\a.txt"
             ])
         );
     }
@@ -199,18 +199,18 @@ mod tests {
     /// opening a window that ignores the editor the user asked for.
     #[test]
     fn a_terminal_with_no_way_to_run_one_refuses_the_command() {
-        assert_eq!(argv("pwsh", "C:\\look", &["nvim", "a.txt"]), None);
-        assert_eq!(argv("cmd", "C:\\look", &["nvim", "a.txt"]), None);
+        assert_eq!(argv("pwsh", "C:\\lumio", &["nvim", "a.txt"]), None);
+        assert_eq!(argv("cmd", "C:\\lumio", &["nvim", "a.txt"]), None);
         // The same terminal still opens in the directory on its own.
-        assert!(argv("cmd", "C:\\look", &[]).is_some());
+        assert!(argv("cmd", "C:\\lumio", &[]).is_some());
     }
 
     #[test]
     fn a_name_is_matched_however_it_was_spelled() {
         for spelling in ["WT", " wt.exe ", "C:\\Tools\\wt.exe", "C:/Tools/wt.EXE"] {
             assert_eq!(
-                argv(spelling, "C:\\look", &[]),
-                owned(&["-d", "C:\\look"]),
+                argv(spelling, "C:\\lumio", &[]),
+                owned(&["-d", "C:\\lumio"]),
                 "{spelling:?}"
             );
         }

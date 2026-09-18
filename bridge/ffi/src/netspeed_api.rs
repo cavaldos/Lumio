@@ -6,8 +6,8 @@ use std::os::raw::c_char;
 /// gets the shape it decodes rather than a null pointer.
 const FAILURE_JSON: &str = r#"{"ok":false,"error":"Speed test failed"}"#;
 
-pub(crate) fn look_netspeed_run_json_impl() -> *mut c_char {
-    let json = look_netspeed::run_json();
+pub(crate) fn lumio_netspeed_run_json_impl() -> *mut c_char {
+    let json = lumio_netspeed::run_json();
     let cstring = CString::new(json)
         .unwrap_or_else(|_| CString::new(FAILURE_JSON).expect("valid static json"));
     store_json_allocation(cstring)

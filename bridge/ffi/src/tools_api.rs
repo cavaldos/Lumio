@@ -1,12 +1,12 @@
-//! C-ABI wrapper over `look_tools` (preferred tools only, no source blocks).
+//! C-ABI wrapper over `lumio_tools` (preferred tools only, no source blocks).
 
-use look_engine::config::RuntimeConfig;
-use look_tools::{Action, Launch, Resolved, Target};
+use lumio_engine::config::RuntimeConfig;
+use lumio_tools::{Action, Launch, Resolved, Target};
 use std::os::raw::c_char;
 
 use crate::state::{cstr_to_string, json_cstring_or_null};
 
-pub(crate) fn look_tool_action_json_impl(
+pub(crate) fn lumio_tool_action_json_impl(
     action: *const c_char,
     _candidate_id: *const c_char,
     _row_title: *const c_char,
@@ -18,7 +18,7 @@ pub(crate) fn look_tool_action_json_impl(
     json_cstring_or_null(resolved.as_ref().and_then(json))
 }
 
-pub(crate) fn look_perform_tool_action_json_impl(
+pub(crate) fn lumio_perform_tool_action_json_impl(
     action: *const c_char,
     _candidate_id: *const c_char,
     _row_title: *const c_char,
@@ -37,7 +37,7 @@ fn resolve(
     action: *const c_char,
     path: *const c_char,
     is_dir: bool,
-) -> Option<Result<Launch, look_tools::Unavailable>> {
+) -> Option<Result<Launch, lumio_tools::Unavailable>> {
     let action = Action::from_id(&cstr_to_string(action))?;
     let path = cstr_to_string(path);
     if path.is_empty() {
@@ -71,7 +71,7 @@ fn performed(tool: &str, command: String) -> Resolved {
     }
 }
 
-pub(crate) fn look_tool_actions_json_impl() -> *mut c_char {
+pub(crate) fn lumio_tool_actions_json_impl() -> *mut c_char {
     let ids: Vec<&str> = Action::ALL.iter().map(|action| action.id()).collect();
     json_cstring_or_null(serde_json::to_string(&ids).ok())
 }

@@ -5,7 +5,7 @@ use crate::platform::paths::{
 };
 use globset::{GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::{Candidate, CandidateKind};
 use std::sync::mpsc;
 use std::time::UNIX_EPOCH;
 
@@ -199,12 +199,12 @@ mod tests {
     use super::{discover_local_files_and_folders, should_exclude_path};
     use crate::config::RuntimeConfig;
     use crate::platform::paths::compile_ignore_matcher;
-    use look_indexing::CandidateKind;
+    use lumio_indexing::CandidateKind;
     use std::sync::mpsc;
 
     fn temp_path(prefix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "look-files-test-{prefix}-{}-{}",
+            "lumio-files-test-{prefix}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

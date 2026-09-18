@@ -1,5 +1,5 @@
 #!/bin/bash
-# Step 1: tag + push to trigger CI (CI builds Look-<version>-macOS.zip on the GitHub Release).
+# Step 1: tag + push to trigger CI (CI builds Lumio-<version>-macOS.zip on the GitHub Release).
 # Usage: ./scripts/release.sh vX.Y.Z   (e.g. ./scripts/release.sh v1.0.0)
 set -e
 cd "$(dirname "$0")/.."
@@ -18,7 +18,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-./scripts/ci-local.sh "$TAG"
+./scripts/test-ci-local.sh "$TAG"
 
 git tag "$TAG"
 git push origin "$TAG"

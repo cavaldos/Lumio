@@ -1,11 +1,11 @@
-//! C-ABI wrappers over `look_storage`'s clipboard history. Mirrors
+//! C-ABI wrappers over `lumio_storage`'s clipboard history. Mirrors
 //! `url_history_api`; panic-safe at `lib.rs`.
 //!
 //! The concealed/transient gate is NOT here and cannot be: only the shell sees
 //! the pasteboard markers. This layer trusts what it is handed.
 
 use crate::state::{cstr_to_string, default_db_path, store_json_allocation};
-use look_storage::{CLIPBOARD_KIND_TEXT, ClipboardEntry, SqliteStore};
+use lumio_storage::{CLIPBOARD_KIND_TEXT, ClipboardEntry, SqliteStore};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -104,7 +104,7 @@ fn sweep_orphan_images() {
 
 /// Remembers a clip, returning its row id (0 on failure). The id is what lets
 /// the shell delete this clip later.
-pub(crate) fn look_clipboard_record_impl(
+pub(crate) fn lumio_clipboard_record_impl(
     content: *const c_char,
     app_bundle_id: *const c_char,
 ) -> i64 {
@@ -125,8 +125,8 @@ pub(crate) fn look_clipboard_record_impl(
 }
 
 /// Returns the row id (0 on failure). `image_hash` names the file the shell
-/// already wrote under `look_clipboard_images_dir`.
-pub(crate) fn look_clipboard_record_image_impl(
+/// already wrote under `lumio_clipboard_images_dir`.
+pub(crate) fn lumio_clipboard_record_image_impl(
     label: *const c_char,
     image_hash: *const c_char,
     app_bundle_id: *const c_char,
@@ -154,7 +154,7 @@ pub(crate) fn look_clipboard_record_image_impl(
 }
 
 /// Where the shell writes an image's bytes before recording its row.
-pub(crate) fn look_clipboard_images_dir_impl() -> *mut c_char {
+pub(crate) fn lumio_clipboard_images_dir_impl() -> *mut c_char {
     sweep_orphan_images();
     let path = image_dir().to_string_lossy().into_owned();
     let cstring = CString::new(path).unwrap_or_else(|_| CString::new("").expect("valid"));
@@ -163,7 +163,7 @@ pub(crate) fn look_clipboard_images_dir_impl() -> *mut c_char {
 
 /// JSON array of up to `limit` clips of `kind` matching `query` (newest first),
 /// or `[]`.
-pub(crate) fn look_clipboard_list_json_impl(
+pub(crate) fn lumio_clipboard_list_json_impl(
     kind: *const c_char,
     query: *const c_char,
     limit: u32,
@@ -191,7 +191,7 @@ pub(crate) fn look_clipboard_list_json_impl(
     store_json_allocation(cstring)
 }
 
-pub(crate) fn look_clipboard_delete_impl(id: i64) -> bool {
+pub(crate) fn lumio_clipboard_delete_impl(id: i64) -> bool {
     let deleted = store()
         .as_ref()
         .and_then(|(_, store)| store.delete_clipboard_entry(id).ok())
@@ -203,7 +203,7 @@ pub(crate) fn look_clipboard_delete_impl(id: i64) -> bool {
 }
 
 /// Forgets every clip, returning how many were removed.
-pub(crate) fn look_clipboard_clear_impl() -> u32 {
+pub(crate) fn lumio_clipboard_clear_impl() -> u32 {
     let removed = store()
         .as_ref()
         .and_then(|(_, store)| store.clear_clipboard_entries().ok())

@@ -1,4 +1,4 @@
-use look_indexing::{Candidate, CandidateKind};
+use lumio_indexing::{Candidate, CandidateKind};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -1802,7 +1802,7 @@ mod tests {
         /// Long enough to be blocked when released, far under the 5s timeout.
         const HOLD: std::time::Duration = std::time::Duration::from_millis(200);
 
-        let dir = std::env::temp_dir().join(format!("look-store-busy-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lumio-store-busy-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("contended.db");
         let _ = std::fs::remove_file(&path);

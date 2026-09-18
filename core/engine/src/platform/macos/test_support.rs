@@ -19,7 +19,7 @@ impl TempDir {
             .expect("system clock after Unix epoch")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "look-macos-{label}-{}-{unique}",
+            "lumio-macos-{label}-{}-{unique}",
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create temporary directory");

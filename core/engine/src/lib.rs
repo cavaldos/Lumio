@@ -15,9 +15,9 @@ pub use action::{ActionKind, LaunchAction};
 use config::RuntimeConfig;
 /// Re-exported so a shell can validate a usage verb without depending on the
 /// indexing crate for one enum.
-pub use look_indexing::UsageAction;
-use look_indexing::{Candidate, CandidateIdKind, CandidateKind};
-use look_storage::{SearchSettings, SqliteStore, StorageError};
+pub use lumio_indexing::UsageAction;
+use lumio_indexing::{Candidate, CandidateIdKind, CandidateKind};
+use lumio_storage::{SearchSettings, SqliteStore, StorageError};
 use normalize::normalize_for_search;
 pub use result::{LaunchResult, LaunchResultAction};
 use std::collections::HashMap;
@@ -102,7 +102,7 @@ impl QueryEngine {
     }
 
     /// Natural-language file recall: files/folders filtered by type, modified
-    /// time, and location, ranked most-recent-first. Runs against Look's own
+    /// time, and location, ranked most-recent-first. Runs against Lumio's own
     /// index (fast, no Spotlight); the shell parses the query into a `FileFilter`.
     /// An empty result relaxes the query progressively (see `relaxations`) so
     /// near-misses beat an empty panel; `relaxation` reports which fallback
@@ -280,7 +280,7 @@ impl QueryEngine {
         }
 
         if let Err(err) = producer_handle.join() {
-            eprintln!("look index: producer worker panicked: {err:?}");
+            eprintln!("lumio index: producer worker panicked: {err:?}");
         }
 
         // Stale-row sweep. The `ALL` branch keeps the "discovered something"

@@ -18,7 +18,7 @@
 //!   • non-recursive file watches (only top-level events arrive)
 //!   • 2 s debounce + 10 s cooldown
 //!   • scoped refresh: apps-only when only apps dirty, etc.
-use look_engine::{BootstrapScope, QueryEngine};
+use lumio_engine::{BootstrapScope, QueryEngine};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -361,5 +361,5 @@ fn deep_tree_scenario() -> Vec<SimEvent> {
 }
 
 fn temp_db_path() -> PathBuf {
-    env::temp_dir().join(format!("look-watcher-stress-{}.db", std::process::id()))
+    env::temp_dir().join(format!("lumio-watcher-stress-{}.db", std::process::id()))
 }
