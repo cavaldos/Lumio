@@ -1,10 +1,12 @@
 name: CI
 
+# No automatic triggers on purpose: pushing to main (or anywhere else) never
+# starts CI. The only pipeline entry point is ./scripts/release.sh vX.Y.Z,
+# which runs every check locally first (test-ci-local.sh: cargo tests +
+# Release xcodebuild) and then pushes the v* tag that starts release.yml.
+# workflow_dispatch stays as a manual escape hatch from the Actions tab.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
