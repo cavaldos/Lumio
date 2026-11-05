@@ -6,21 +6,44 @@ nonisolated private let hotkeyLog = Logger(subsystem: "noah-code.Lumio", categor
 
 @MainActor
 final class GlobalHotKeyManager {
+    /// One global shortcut: the Carbon id it registers under, its keys, and
+    /// the notification it posts when pressed.
+    nonisolated private struct Binding: Sendable {
+        let id: UInt32
+        let keyCode: UInt32
+        let carbonModifiers: UInt32
+        let modifierFlags: NSEvent.ModifierFlags
+        let notification: Notification.Name
+        let label: String
+    }
+
+    /// Option+Space toggles the launcher; Cmd+Shift+Space opens settings.
+    private static let bindings: [Binding] = [
+        Binding(
+            id: 1, keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(optionKey),
+            modifierFlags: [.option], notification: .lookToggleWindowRequested,
+            label: "Option+Space"),
+        Binding(
+            id: 2, keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey | shiftKey),
+            modifierFlags: [.command, .shift], notification: .lookToggleSettingsRequested,
+            label: "Cmd+Shift+Space"),
+    ]
+
     // nonisolated(unsafe) so the nonisolated deinit can release these
     // (they're Carbon/AppKit handles - not actually Sendable, but they're
     // only mutated from MainActor anyway).
-    nonisolated(unsafe) private var hotKeyRef: EventHotKeyRef?
+    nonisolated(unsafe) private var hotKeyRefs: [EventHotKeyRef] = []
     nonisolated(unsafe) private var eventHandler: EventHandlerRef?
     // Carbon's RegisterEventHotKey only fires when the registering app is
     // NOT the currently-active app. When Lumio is in the foreground (e.g.
-    // user has the launcher open and focused), Cmd+Space goes through
+    // user has the launcher open and focused), the shortcuts go through
     // the normal local event chain instead. Install a parallel local
-    // NSEvent monitor so the toggle works regardless of focus state.
+    // NSEvent monitor so they work regardless of focus state.
     nonisolated(unsafe) private var localMonitor: Any?
 
     // Defense-in-depth for one specific, rare failure: another app already
-    // owns Cmd+Space when Lumio launches, so RegisterEventHotKey returns -9878
-    // ("hotkey already in use") and the global toggle silently never works.
+    // owns one of the shortcuts when Lumio launches, so RegisterEventHotKey returns -9878
+    // ("hotkey already in use") and that shortcut silently never works.
     // Retry with backoff so a transient login-time conflict resolves on its own.
     //
     // NOTE: this is NOT what fixed "the launcher is invisible after a macOS
@@ -37,8 +60,8 @@ final class GlobalHotKeyManager {
     // deinit is nonisolated; unregister is MainActor. Inline the cleanup
     // here using nonisolated-safe API only.
     deinit {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
+        for ref in hotKeyRefs {
+            UnregisterEventHotKey(ref)
         }
         if let eventHandler {
             RemoveEventHandler(eventHandler)
@@ -53,22 +76,29 @@ final class GlobalHotKeyManager {
         retryWorkItem = nil
         unregister()
 
-        let hotKeyId = EventHotKeyID(signature: fourCharCode("LUMIO"), id: 1)
-        let modifiers = UInt32(cmdKey)
-        let keyCode = UInt32(kVK_Space)
+        var allRegistered = true
+        for binding in Self.bindings {
+            var ref: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                binding.keyCode,
+                binding.carbonModifiers,
+                EventHotKeyID(signature: fourCharCode("LUMIO"), id: binding.id),
+                GetEventDispatcherTarget(),
+                0,
+                &ref
+            )
+            hotkeyLog.notice(
+                "RegisterEventHotKey \(binding.label, privacy: .public) status=\(status) (noErr=0; -9878=hotkey already in use)"
+            )
+            if status == noErr, let ref {
+                hotKeyRefs.append(ref)
+            } else {
+                allRegistered = false
+            }
+        }
 
-        let registerStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            hotKeyId,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
-        hotkeyLog.notice("RegisterEventHotKey status=\(registerStatus) (noErr=0; -9878=hotkey already in use)")
-
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        if registerStatus == noErr {
+        if !hotKeyRefs.isEmpty {
+            var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
             InstallEventHandler(
                 GetEventDispatcherTarget(),
                 { _, event, _ in
@@ -82,13 +112,13 @@ final class GlobalHotKeyManager {
                         nil,
                         &hotKeyId
                     )
-                    guard status == noErr else { return noErr }
+                    guard status == noErr, hotKeyId.signature == fourCharCode("LUMIO") else { return noErr }
 
-                    if hotKeyId.signature == fourCharCode("LUMIO"), hotKeyId.id == 1 {
-                        hotkeyLog.notice("CARBON hotkey fired (app active=\(NSApp.isActive))")
-                        DispatchQueue.main.async {
-                            NotificationCenter.default.post(name: .lookToggleWindowRequested, object: nil)
-                        }
+                    let id = hotKeyId.id
+                    DispatchQueue.main.async {
+                        guard let binding = GlobalHotKeyManager.bindings.first(where: { $0.id == id }) else { return }
+                        hotkeyLog.notice("CARBON hotkey \(binding.label, privacy: .public) fired (app active=\(NSApp.isActive))")
+                        NotificationCenter.default.post(name: binding.notification, object: nil)
                     }
                     return noErr
                 },
@@ -97,22 +127,32 @@ final class GlobalHotKeyManager {
                 nil,
                 &eventHandler
             )
+        }
+
+        if allRegistered {
             retryAttempts = 0
         } else {
             scheduleRetry()
         }
 
         // Local monitor: foreground-focused complement to the global
-        // Carbon hotkey. Posts the same notification so the rest of the
+        // Carbon hotkeys. Posts the same notifications so the rest of the
         // app doesn't need to know which path delivered the event.
+        // Local monitors are always called on the main thread.
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let plainCmd = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
-            if plainCmd && event.keyCode == UInt16(kVK_Space) {
-                hotkeyLog.notice("LOCAL monitor fired (app active=\(NSApp.isActive))")
-                NotificationCenter.default.post(name: .lookToggleWindowRequested, object: nil)
-                return nil   // consume - don't let any field eat the space
+            let keyCode = UInt32(event.keyCode)
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let binding = Self.bindings.first(where: {
+                    keyCode == $0.keyCode && flags == $0.modifierFlags
+                }) else {
+                    return false
+                }
+                hotkeyLog.notice("LOCAL monitor \(binding.label, privacy: .public) fired (app active=\(NSApp.isActive))")
+                NotificationCenter.default.post(name: binding.notification, object: nil)
+                return true
             }
-            return event
+            return handled ? nil : event   // consume - don't let any field eat the space
         }
     }
 
@@ -134,10 +174,10 @@ final class GlobalHotKeyManager {
     }
 
     func unregister() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
+        for ref in hotKeyRefs {
+            UnregisterEventHotKey(ref)
         }
+        hotKeyRefs.removeAll()
 
         if let eventHandler {
             RemoveEventHandler(eventHandler)

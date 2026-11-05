@@ -69,7 +69,7 @@ struct ThemeSettingsView: View {
                     closeSettingsPanel()
                 }
                 .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                Text("Esc or Cmd+Shift+, to close")
+                Text("Esc or Cmd+Shift+Space to close")
                     .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
                     .foregroundStyle(themeStore.mutedTextColor())
             }

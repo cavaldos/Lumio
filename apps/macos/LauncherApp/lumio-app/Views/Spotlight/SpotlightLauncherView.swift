@@ -1,0 +1,1437 @@
+import AppKit
+import SwiftUI
+
+// macOS 26-style Spotlight launcher: Liquid Glass + animation.
+//
+// TIMING (every value lives in SpotlightMotion):
+// 1. Open   — the glass cluster pops from 0.92 to 1, bounces gently, fades in.
+// 2. Idle   — empty field for ~1.2s: the bar shrinks from the RIGHT (left edge stays put), 4 round buttons
+//             split off the bar like glass droplets (glassEffectID within one group).
+// 3. Type   — the round buttons merge back into the bar, the bar grows; the panel expands down to reveal
+//             results, rows rise one by one (only on the first expand).
+// 4. Close  — fade + slight shrink, then orderOut. Enter opens an item: slight zoom + dissolve.
+//
+// The window does not change size while animating (see SpotlightWindowSizing). The data
+// is still the fake data in SpotlightLauncherModels — this is just the UI part.
+
+struct SpotlightQuickItem: Identifiable {
+    let kind: SpotlightKind
+    let icon: String
+    let label: String
+    var id: SpotlightKind { kind }
+}
+
+struct SpotlightLauncherView: View {
+    private typealias Metric = SpotlightSpec.Metric
+
+    static let quickItems: [SpotlightQuickItem] = [
+        SpotlightQuickItem(kind: .app, icon: "square.grid.2x2", label: "Applications"),
+        SpotlightQuickItem(kind: .folder, icon: "folder", label: "Folders"),
+        SpotlightQuickItem(kind: .setting, icon: "gearshape", label: "Settings"),
+        SpotlightQuickItem(kind: .doc, icon: "doc.text", label: "Documents"),
+    ]
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var glassSpace
+    /// Selection bar that slides between rows (matchedGeometryEffect).
+    @Namespace private var selectionSpace
+
+    // Search
+    @State private var query = ""
+    /// Results currently shown. When the panel collapses, keep the old list so it fades
+    /// out with the panel instead of vanishing first.
+    @State private var all: [SpotlightItem] = []
+    @State private var sel = 0
+    @State private var filter: SpotlightKind?
+    /// Item currently Tabbed into to view its actions.
+    @State private var scope: SpotlightItem?
+    /// Query before Tabbing into actions — restored on exit.
+    @State private var scopeReturnQuery = ""
+    @State private var browse: SpotlightKind?
+    @State private var scrollTarget: String?
+    /// The core search in flight (nil = results already match the input).
+    @State private var searchTask: Task<Void, Never>?
+    /// Enter pressed before results for the latest text arrived: open as soon as they do.
+    @State private var activateWhenReady = false
+
+    // Presentation
+    /// Launcher is open (or opening). Set synchronously, not animated.
+    @State private var isOpen = false
+    @State private var dismissing = false
+    @State private var shownScale = false
+    @State private var shownAlpha = false
+    @State private var launching = false
+    @State private var expanded = false
+    @State private var idle = false
+    @State private var panelHeight = SpotlightSpec.Metric.barHeight
+    /// Delay for the next height animation (see SpotlightMotion.expandAfterMerge).
+    @State private var resizeDelay: Double = 0
+    /// When the 4 round buttons started merging back into the bar.
+    @State private var mergeStartedAt = Date.distantPast
+    @State private var introUntil = Date.distantPast
+    @State private var toastMsg: String?
+    @State private var mouseGate = MouseGate()
+
+    // Legacy launcher modes (prefix / command) — reusing the legacy modules as-is.
+    /// Clipboard watcher (c" / ci"). Must live with the launcher: the legacy launcher isn't
+    /// built in Spotlight mode, so nobody else records history.
+    @StateObject private var clipboardStore = ClipboardHistoryStore()
+    @StateObject private var processModel = ProcessFinderModel()
+    @State private var speedTest = SpeedTestController()
+    /// Command currently open (`:kill`, `:speed`). nil = normal search.
+    @State private var activeCommand: String?
+    /// ⌘/ reopens the most recently used command, like the legacy launcher.
+    @State private var lastCommand = SpotlightCommands.kill
+    /// :kill — the first Enter only "arms" this process; the second Enter kills it.
+    @State private var armedKillPID: Int32?
+    /// tw" — definitions of the word being looked up (nil while looking up).
+    @State private var lookup: LookupDefinition?
+    @State private var lookupTask: Task<Void, Never>?
+    @State private var keyMonitor = SpotlightKeyMonitor()
+
+    @State private var idleTask: Task<Void, Never>?
+    @State private var dismissTask: Task<Void, Never>?
+    @State private var toastTask: Task<Void, Never>?
+    @State private var pidToRestore: pid_t?
+    @FocusState private var isFocused: Bool
+
+    // MARK: - Derived
+
+    private var results: [SpotlightItem] {
+        guard let filter else { return all }
+        return all.filter { $0.kind == filter }
+    }
+
+    private var kinds: [SpotlightKind] {
+        var seen: [SpotlightKind] = []
+        for item in all where !seen.contains(item.kind) { seen.append(item.kind) }
+        return seen
+    }
+
+    private var panelWidth: CGFloat { idle ? Metric.idleWidth : Metric.panelWidth }
+
+    /// The panel always leaves room for at least `minRowsWithPreview` rows when open: the right half is the
+    /// preview, which needs room for code / images even with just one or two results.
+    private var rowSlots: Int { max(results.count, Metric.minRowsWithPreview) }
+
+    /// Width of the list column; the rest of the panel is the preview.
+    private static let listPaneWidth: CGFloat = 300
+
+    /// :speed replaces both the list and the preview with the legacy launcher's speed test.
+    private var showsSpeedPanel: Bool { activeCommand == SpotlightCommands.speed }
+
+    /// Item shown in the preview pane: the item whose actions are being viewed, otherwise the selected row.
+    private var previewItem: SpotlightItem? {
+        scope ?? (sel < results.count ? results[sel] : nil)
+    }
+
+    private var targetPanelHeight: CGFloat {
+        Metric.barHeight + (expanded ? SpotlightSpec.lowerHeight(rows: rowSlots) : 0)
+    }
+
+    /// Icon at the end of the bar: the item whose actions are being viewed, otherwise the top result.
+    private var topHit: SpotlightItem? { scope ?? results.first }
+    private var showsTopHit: Bool { expanded && topHit != nil }
+    private var chipLabel: String? {
+        scope?.name ?? activeCommand.map { ":" + $0 } ?? browse?.label
+    }
+
+    private var placeholder: String {
+        if let scope { return "Actions for \(scope.name)" }
+        if let activeCommand { return SpotlightCommands.placeholder(for: activeCommand) }
+        if let browse { return "Search in \(browse.label)" }
+        return "Spotlight Search"
+    }
+
+    private var introActive: Bool { !reduceMotion && Date() < introUntil }
+    private var isDark: Bool { colorScheme == .dark }
+    private var palette: SpotlightPalette { .of(colorScheme) }
+    private var panelShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Metric.pillRadius, style: .continuous)
+    }
+
+    private var clusterScale: CGFloat {
+        if reduceMotion { return 1 }
+        if launching { return SpotlightMotion.launchScale }
+        return shownScale ? 1 : SpotlightMotion.appearScale
+    }
+
+    private var clusterOffset: CGFloat {
+        reduceMotion || shownScale || launching ? 0 : SpotlightMotion.appearOffsetY
+    }
+
+    /// Reduce motion: every animation becomes a short fade.
+    private func motion(_ animation: Animation) -> Animation {
+        reduceMotion ? SpotlightMotion.reduced : animation
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Clicking outside the glass cluster closes it, like Spotlight.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { point in
+                    if !clusterContains(point) { hide() }
+                }
+
+            VStack(alignment: .leading, spacing: 14) {
+                cluster
+                    .scaleEffect(clusterScale, anchor: UnitPoint(x: 0.5, y: 0.3))
+                    .offset(y: clusterOffset)
+                    .opacity(shownAlpha ? 1 : 0)
+                toastView
+            }
+            .padding(.leading, SpotlightWindowSizing.margin)
+            .padding(.top, SpotlightWindowSizing.margin)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .modifier(modeHooks)
+        .onChange(of: query) {
+            sel = 0
+            filter = nil
+            // Typed more after Enter: that Enter belonged to the old text, drop it.
+            activateWhenReady = false
+            refresh()
+        }
+        .onChange(of: scope?.id) { refresh() }
+        .onChange(of: browse) {
+            sel = 0
+            filter = nil
+            refresh()
+        }
+        .onChange(of: filter) { sel = 0 }
+        .onChange(of: targetPanelHeight) { _, height in
+            // Panel height animates SEPARATELY: result rows change instantly, only the
+            // bottom edge of the glass slides to its new position.
+            let delay = resizeDelay
+            resizeDelay = 0
+            withAnimation(motion(SpotlightMotion.resize).delay(delay)) { panelHeight = height }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lookToggleWindowRequested)) { _ in
+            toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lookHideLauncherRequested)) { _ in
+            hide()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lookActivateLauncherRequested)) { _ in
+            show()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            hide(restore: false)
+        }
+        .onAppear {
+            keyMonitor.start { handleKey($0) }
+        }
+    }
+
+    /// Hooks for the legacy launcher modes, split out of `body` so the compiler
+    /// can type-check it.
+    private var modeHooks: SpotlightModeHooks {
+        SpotlightModeHooks(
+            activeCommand: activeCommand,
+            previewID: previewItem?.id,
+            processModel: processModel,
+            clipboardStore: clipboardStore,
+            onCommandChange: { refresh() },
+            onPreviewChange: {
+                armedKillPID = nil
+                // Processes: load details (memory, user, command line) on selection.
+                if let item = previewItem, item.kind == .process, let pid = item.pid {
+                    processModel.loadDetail(pid: pid)
+                }
+            },
+            // Mode data arriving later (process snapshot, new clip): rebuild the rows.
+            onProcesses: {
+                if activeCommand == SpotlightCommands.kill || isMode(.process) { refresh() }
+            },
+            onClips: { if isMode(.clip) { refresh() } },
+            onImages: { if isMode(.clipImage) { refresh() } }
+        )
+    }
+
+    // MARK: - Glass cluster: panel + 4 round buttons
+
+    private var cluster: some View {
+        SpotlightGlassGroup(spacing: Metric.quickGap + 2) {
+            HStack(alignment: .top, spacing: Metric.quickGap) {
+                panel
+                if idle {
+                    ForEach(Array(Self.quickItems.enumerated()), id: \.element.id) { index, item in
+                        quickButton(item, index: index)
+                    }
+                }
+            }
+        }
+    }
+
+    private var panel: some View {
+        // Panel width animates (430 ↔ 660) when the 4 round buttons split/merge. The content
+        // below the bar and the top-hit icon are laid out up front at the FINAL width, anchored to the
+        // left edge: the glass edge just gradually reveals them. Laying out at the animating width
+        // would drag the scrollbar, icon and right-hand text sliding from left to right.
+        VStack(alignment: .leading, spacing: 0) {
+            searchBar
+            lower
+                .frame(width: Metric.panelWidth)
+        }
+        .frame(width: panelWidth, height: panelHeight, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            topHitTile
+                .frame(height: Metric.barHeight)
+                .offset(x: Metric.panelWidth - Metric.barPadding - Self.topHitSize)
+                .allowsHitTesting(false)
+        }
+        .clipShape(panelShape)
+        .contentShape(panelShape)
+        .spotlightGlass(panelShape, id: "spotlight.panel", in: glassSpace, isDark: isDark)
+    }
+
+    private func quickButton(_ item: SpotlightQuickItem, index: Int) -> some View {
+        Button {
+            toggleBrowse(item.kind)
+        } label: {
+            Image(systemName: item.icon)
+                .font(.system(size: 21, weight: .regular))
+                .foregroundStyle(browse == item.kind ? HierarchicalShapeStyle.primary : .secondary)
+                .modifier(SpotlightPopIn(animation: reduceMotion ? nil : motion(SpotlightMotion.quickIcon(index))))
+                .frame(width: Metric.quickSize, height: Metric.quickSize)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .spotlightGlass(
+            Circle(),
+            id: "spotlight.quick.\(item.kind.rawValue)",
+            in: glassSpace,
+            interactive: true,
+            isDark: isDark
+        )
+        .help("\(item.label)  ⌘\(index + 1)")
+        .accessibilityLabel(item.label)
+    }
+
+    // MARK: - Search bar
+
+    private var searchBar: some View {
+        HStack(spacing: 15) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: Metric.glassIconSize, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+
+            if let chipLabel {
+                Text(chipLabel)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(palette.pillOn, in: Capsule())
+                    // The chip takes its space immediately while the text slides gradually, so the two have to
+                    // be out of step or the text would overlap the chip: on enter, wait for the text to slide away
+                    // before showing; on exit, dissolve quickly before the text comes back.
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.6, anchor: .leading)
+                            .combined(with: .opacity)
+                            .animation(motion(SpotlightMotion.chip).delay(0.1)),
+                        removal: .opacity.animation(.easeOut(duration: 0.08))
+                    ))
+            }
+
+            // The legacy launcher's input field: the caret SLIDES to its new position while typing (still
+            // while typing, blinking when paused) instead of jumping per character.
+            // System font/colors instead of the theme because the background is system glass.
+            // Enter goes through onSubmit (respecting an input method that is committing text); other
+            // navigation keys: see handleKey (local key monitor).
+            SmoothCaretTextField(
+                text: $query,
+                placeholder: placeholder,
+                isFocused: $isFocused,
+                themeStore: ThemeStore.shared,
+                fontOverride: .systemFont(ofSize: Metric.queryFontSize),
+                textColorOverride: .labelColor,
+                caretColorOverride: .controlAccentColor,
+                onSubmit: { activate() }
+            )
+            .frame(maxWidth: .infinity)
+
+            // Leave room for the top-hit icon (drawn in the panel overlay) so text doesn't
+            // run underneath it.
+            Color.clear
+                .frame(width: Self.topHitSize, height: Self.topHitSize)
+        }
+        .padding(.horizontal, Metric.barPadding)
+        .frame(height: Metric.barHeight)
+    }
+
+    private static let topHitSize: CGFloat = 32
+
+    /// The top result's icon pops out at the end of the bar when the panel expands.
+    private var topHitTile: some View {
+        ZStack {
+            if let topHit {
+                SpotlightTile(item: topHit, size: 30)
+            }
+        }
+        .frame(width: Self.topHitSize, height: Self.topHitSize)
+        .scaleEffect(showsTopHit || reduceMotion ? 1 : 0.6)
+        .opacity(showsTopHit ? 1 : 0)
+        .animation(motion(SpotlightMotion.pop), value: showsTopHit)
+    }
+
+    // MARK: - Lower part (always built; the panel clips it to the animating height)
+
+    private var lower: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(palette.divider)
+                .frame(height: 1)
+                .padding(.horizontal, 14)
+            pillsRow
+                .frame(height: Metric.pillsHeight)
+                .padding(.top, Metric.lowerTopInset)
+                .opacity(showsSpeedPanel ? 0 : 1)
+            Group {
+                if showsSpeedPanel {
+                    // :speed — the legacy launcher's speed test, full width.
+                    SpeedTestView(controller: speedTest, themeStore: ThemeStore.shared)
+                        .padding(.horizontal, 20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // Split INSIDE the panel: list on the left, preview on the right.
+                    HStack(spacing: 0) {
+                        listView
+                            .frame(width: Self.listPaneWidth)
+                        Rectangle()
+                            .fill(palette.divider)
+                            .frame(width: 1)
+                            .padding(.vertical, 8)
+                        previewPane
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            .frame(height: SpotlightSpec.listHeight(rows: rowSlots))
+            footer
+                .frame(height: Metric.footerHeight)
+        }
+        .frame(height: SpotlightSpec.lowerHeight(rows: rowSlots), alignment: .top)
+        .opacity(expanded ? 1 : 0)
+        .animation(motion(expanded ? SpotlightMotion.contentIn : SpotlightMotion.contentOut), value: expanded)
+        .allowsHitTesting(expanded)
+    }
+
+    /// Right half of the panel: preview of the selected row (or the item Tabbed into).
+    private var previewPane: some View {
+        ZStack(alignment: .topLeading) {
+            if let item = previewItem {
+                SpotlightPreviewView(
+                    item: item,
+                    processDetail: item.pid.flatMap { processModel.details[$0] },
+                    processCPU: item.pid.flatMap { processModel.cpu[$0] },
+                    measuringCPU: item.pid.map { processModel.measuringCPU.contains($0) } ?? false,
+                    lookup: item.kind == .lookup ? lookup : nil
+                )
+                .id(item.id)
+            }
+        }
+        // Changing rows swaps the preview content IMMEDIATELY (like the legacy launcher): cross-fading
+        // two files makes their text overlap. The sliding selection bar is enough.
+        .animation(nil, value: previewItem?.id)
+    }
+
+    private var pillsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Metric.pillGap) {
+                pillButton(label: "All", active: filter == nil) { filter = nil }
+                ForEach(kinds) { kind in
+                    pillButton(label: kind.label, active: filter == kind) {
+                        filter = (filter == kind) ? nil : kind
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
+
+    private func pillButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            focusField()
+        } label: {
+            Text(label)
+                .font(.system(size: 14.5, weight: active ? .medium : .regular))
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(active ? palette.pillOn : palette.pill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var listView: some View {
+        Group {
+            if results.isEmpty {
+                Text("No results for “\(query)”.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                                rowView(item, selected: index == sel)
+                                    .id(item.id)
+                                    .modifier(SpotlightRiseIn(
+                                        animation: introActive ? motion(SpotlightMotion.rowRise(index)) : nil
+                                    ))
+                                    .onTapGesture {
+                                        // Mouse click: open exactly the row being seen, no waiting.
+                                        sel = index
+                                        run(item)
+                                    }
+                                    .onHover { hovering in
+                                        // Ignore hovers caused by the list changing under a stationary
+                                        // pointer — only accept them when the mouse actually moves.
+                                        if hovering, mouseGate.moved(), sel != index {
+                                            withAnimation(motion(SpotlightMotion.selectionGlide)) { sel = index }
+                                        }
+                                    }
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.top, Metric.listInsetTop)
+                        .padding(.bottom, Metric.listInsetBottom)
+                    }
+                    .scrollIndicators(results.count > Metric.maxVisibleRows ? .automatic : .never)
+                    .onChange(of: scrollTarget) { _, target in
+                        // Scroll along with the selection bar, in step with its slide.
+                        guard let target else { return }
+                        withAnimation(motion(SpotlightMotion.selectionGlide)) { proxy.scrollTo(target) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func rowView(_ item: SpotlightItem, selected: Bool) -> some View {
+        HStack(spacing: 11) {
+            SpotlightRowIcon(item: item, size: 30, isSelected: selected)
+            // Narrow left column (right half is the preview): name on top, path / description below.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.kind == .web ? "Search the web — \(item.name)" : item.name)
+                    .font(.system(size: 14.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let meta = rowMeta(item), !meta.isEmpty {
+                    Text(meta)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 4)
+            // Change IMMEDIATELY on selection: cross-fading them in step with the slide would make the
+            // text of both states overlap.
+            Group {
+                if item.kind == .calc, let calcResult = item.calcResult {
+                    Text("= \(SpotlightCalc.format(calcResult))")
+                        .font(.system(size: 15, weight: .medium).monospacedDigit())
+                        .fixedSize()
+                } else if selected {
+                    keyCap(item.supportsActions && scope == nil ? "⇥" : "⏎")
+                } else if armedKillPID != nil, item.pid == armedKillPID {
+                    keyCap("⏎")
+                }
+            }
+            .animation(nil, value: selected)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: Metric.rowHeight)
+        .modifier(SpotlightSelection(
+            isSelected: selected,
+            fill: palette.rowSel,
+            namespace: selectionSpace,
+            reduceMotion: reduceMotion
+        ))
+        .contentShape(Rectangle())
+    }
+
+    /// Secondary line under the name. Apps don't need one (the name is enough); action rows show the item name.
+    private func rowMeta(_ item: SpotlightItem) -> String? {
+        switch item.kind {
+        case .app: return nil
+        case .cmd: return nil
+        default: return item.meta ?? item.kind.label
+        }
+    }
+
+    private func keyCap(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 12))
+            .fixedSize()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(palette.kbd, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var footer: some View {
+        HStack(spacing: 14) {
+            Text(footerHint)
+            Text("esc close")
+            Spacer()
+            if !results.isEmpty {
+                Text("\(results.count) results")
+            }
+        }
+        .font(.system(size: 12.5))
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 18)
+        .frame(maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(palette.divider)
+                .frame(height: 1)
+        }
+    }
+
+    private var footerHint: String {
+        if scope != nil { return "↑↓ select   ⏎ run action" }
+        switch activeCommand {
+        case SpotlightCommands.kill: return "⏎ select, ⏎ again to force quit"
+        case SpotlightCommands.speed: return "⏎ re-run   ⌘/ switch command"
+        default: break
+        }
+        return "↑↓ select   " + (browse != nil ? SpotlightMode.search : SpotlightMode.parse(query)).footerHint
+    }
+
+    // MARK: - Toast
+
+    @ViewBuilder
+    private var toastView: some View {
+        if let toastMsg {
+            Text(toastMsg)
+                .font(.system(size: 14.5, weight: .medium))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 11)
+                .spotlightGlass(Capsule(), in: glassSpace, isDark: isDark)
+                .frame(width: Metric.panelWidth)
+                .transition(.offset(y: -12).combined(with: .opacity))
+        }
+    }
+
+    private func toast(_ msg: String) {
+        withAnimation(motion(SpotlightMotion.toast)) { toastMsg = msg }
+        toastTask?.cancel()
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1900))
+            guard !Task.isCancelled else { return }
+            withAnimation(motion(SpotlightMotion.toast)) { toastMsg = nil }
+        }
+    }
+
+    // MARK: - Search + state
+
+    /// Text / browsed group / action mode changed: search again. The list changes WITHOUT
+    /// animation (like a native list); only the panel expand/collapse and glass droplets move.
+    private func refresh() {
+        searchTask?.cancel()
+        searchTask = nil
+        // Has text: the 4 round buttons merge back into the bar immediately, without waiting for results.
+        pokeIdle()
+
+        if let scope {
+            publish(SpotlightBackend.actionRows(for: scope, filter: query))
+            return
+        }
+        if let activeCommand {
+            // :kill lists apps + processes; :speed replaces the list with the speed test.
+            publish(activeCommand == SpotlightCommands.kill
+                ? SpotlightModeRows.killTargets(processModel, term: query)
+                : [])
+            return
+        }
+        if browse == nil, refreshMode(SpotlightMode.parse(query)) { return }
+
+        let request = SpotlightRequest(text: query, browse: browse)
+        guard !request.isEmpty else {
+            // Empty field: collapse the panel. `all` is kept so the list fades out with the panel.
+            activateWhenReady = false
+            if expanded { setExpanded(false) }
+            return
+        }
+
+        let engineQuery = SpotlightBackend.engineQuery(for: request)
+        // First keystroke (panel not expanded yet) searches immediately; further typing waits a short beat.
+        let debounce: Duration = expanded ? SpotlightBackend.debounce : .zero
+        searchTask = Task { @MainActor in
+            if debounce > .zero {
+                try? await Task.sleep(for: debounce)
+                guard !Task.isCancelled else { return }
+            }
+            // The core holds the engine read lock while searching: run off the main thread.
+            let found = await Task.detached(priority: .userInitiated) {
+                EngineBridge.shared.search(query: engineQuery.text, limit: engineQuery.limit)
+            }.value
+            // Text changed while waiting: these results are stale.
+            guard !Task.isCancelled else { return }
+            searchTask = nil
+            publish(SpotlightBackend.rows(from: found, for: request))
+        }
+    }
+
+    /// Legacy launcher prefixes / commands. `false` = the typed text is a normal search (including
+    /// a" f" d" r" rc", which the core understands itself), so refresh continues down to the core.
+    private func refreshMode(_ mode: SpotlightMode) -> Bool {
+        switch mode {
+        case .search:
+            lookupTask?.cancel()
+            return false
+        case .prefixMenu(let filter):
+            publish(SpotlightModeRows.prefixMenu(filter))
+        case .commandMenu(let filter):
+            // `:kill chrome` (with a space) goes straight into the command, like the legacy launcher.
+            if let trigger = SpotlightCommands.inlineTrigger(filter) {
+                enterCommand(trigger.id, args: trigger.args)
+            } else {
+                publish(SpotlightModeRows.commandMenu(filter))
+            }
+        case .clipboard(let term):
+            publish(SpotlightModeRows.clipboard(clipboardStore, term: term))
+        case .clipboardImage(let term):
+            publish(SpotlightModeRows.clipboardImages(clipboardStore, term: term))
+        case .lookup(let word):
+            publish(SpotlightModeRows.lookup(word))
+            startLookup(word)
+        case .process(let term):
+            processModel.loadSnapshotIfNeeded()
+            publish(SpotlightModeRows.processes(processModel, term: term))
+        }
+        return true
+    }
+
+    private func isMode(_ kind: SpotlightKind) -> Bool {
+        guard activeCommand == nil, scope == nil, browse == nil else { return false }
+        switch (SpotlightMode.parse(query), kind) {
+        case (.clipboard, .clip), (.clipboardImage, .clipImage), (.process, .process): return true
+        default: return false
+        }
+    }
+
+    /// tw": translate + dictionary lookup, waiting for the user to pause typing for a beat (like the legacy launcher).
+    private func startLookup(_ word: String) {
+        lookupTask?.cancel()
+        lookup = nil
+        guard !word.isEmpty else { return }
+        lookupTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            let result = await SpotlightModeRows.fetchLookup(word)
+            guard !Task.isCancelled else { return }
+            lookup = result
+        }
+    }
+
+    /// Enters a command (`:kill`, `:speed`). The text after the command name becomes its argument.
+    private func enterCommand(_ id: String, args: String = "") {
+        scopeReturnQuery = ""
+        withAnimation(motion(SpotlightMotion.chip)) {
+            scope = nil
+            browse = nil
+            activeCommand = id
+            query = args
+        }
+        lastCommand = id
+        switch id {
+        case SpotlightCommands.speed: speedTest.startIfStale()
+        case SpotlightCommands.kill: processModel.refreshSnapshot()
+        default: break
+        }
+        focusField()
+    }
+
+    /// ⌘/ — like the legacy launcher: reopen the most recent command, or exit the open one.
+    private func toggleCommandMode() {
+        if activeCommand != nil { exitChip() } else { enterCommand(lastCommand) }
+    }
+
+    /// :kill — the first Enter only selects (so a slip doesn't kill the wrong thing), the second one kills.
+    private func confirmKill(_ item: SpotlightItem) {
+        guard let pid = item.pid else { return }
+        if armedKillPID == pid {
+            armedKillPID = nil
+            killProcess(item)
+        } else {
+            armedKillPID = pid
+            toast("⏎ again to force quit \(item.name)")
+        }
+    }
+
+    private func killProcess(_ item: SpotlightItem) {
+        guard let pid = item.pid else { return }
+        switch processModel.kill(pid: pid) {
+        case .success:
+            toast("Force quit \(item.name)")
+        case .failure(let error):
+            toast("Couldn't quit \(item.name): \(error.message)")
+        }
+    }
+
+    /// Shows the results. Expands the panel if it isn't already.
+    private func publish(_ rows: [SpotlightItem]) {
+        var plain = Transaction()
+        plain.disablesAnimations = true
+        withTransaction(plain) {
+            all = rows
+            sel = 0
+        }
+        if !expanded { setExpanded(true) }
+        if activateWhenReady {
+            activateWhenReady = false
+            activate()
+        }
+    }
+
+    private func setExpanded(_ open: Bool) {
+        if open {
+            // The 4 round buttons are still merging into the bar: wait for the bar to grow before dropping
+            // the panel, so results fall straight down instead of sweeping diagonally.
+            let sinceMerge = Date().timeIntervalSince(mergeStartedAt)
+            let delay = reduceMotion ? 0 : max(0, SpotlightMotion.expandAfterMerge - sinceMerge)
+            resizeDelay = delay
+            introUntil = Date().addingTimeInterval(SpotlightMotion.introWindow + delay)
+        }
+        withAnimation(motion(SpotlightMotion.resize)) { expanded = open }
+    }
+
+    /// After the field is empty for a while the 4 round buttons split off; with content they merge back.
+    private func pokeIdle() {
+        idleTask?.cancel()
+        let canIdle = isOpen && !dismissing && query.isEmpty && scope == nil && browse == nil
+            && activeCommand == nil
+        guard canIdle else {
+            if idle {
+                mergeStartedAt = Date()
+                withAnimation(motion(SpotlightMotion.merge)) { idle = false }
+            }
+            return
+        }
+        guard !idle else { return }
+        idleTask = Task { @MainActor in
+            try? await Task.sleep(for: SpotlightMotion.idleDelay)
+            guard !Task.isCancelled, isOpen, !dismissing,
+                  query.isEmpty, scope == nil, browse == nil, activeCommand == nil
+            else { return }
+            withAnimation(motion(SpotlightMotion.morph)) { idle = true }
+        }
+    }
+
+    private func move(_ delta: Int) {
+        guard expanded, !results.isEmpty else { return }
+        // The selection bar SLIDES to the new row (like the legacy launcher) instead of jumping.
+        withAnimation(motion(SpotlightMotion.selectionGlide)) {
+            sel = (sel + delta + results.count) % results.count
+        }
+        scrollTarget = results[sel].id
+    }
+
+    /// Enter.
+    private func activate() {
+        // Results for the latest text haven't arrived: wait, then open, so we don't open a stale row.
+        if searchTask != nil {
+            activateWhenReady = true
+            return
+        }
+        guard expanded, sel < results.count else { return }
+        run(results[sel])
+    }
+
+    /// Opens a row (or runs its action when in Tab mode).
+    private func run(_ item: SpotlightItem) {
+        switch item.kind {
+        case .prefix:
+            // Like the legacy launcher: picking a prefix fills it into the field, then you type the keyword.
+            query = item.payload ?? ""
+            focusField()
+            return
+        case .command:
+            if let id = item.payload { enterCommand(id) }
+            return
+        case .clipImage:
+            if let hash = item.payload,
+               let entry = clipboardStore.imageEntries.first(where: { $0.id == hash }),
+               clipboardStore.copyImage(entry: entry)
+            {
+                toast("Copied image")
+            } else {
+                toast("Couldn't copy image")
+            }
+            return
+        case .lookup:
+            return  // definitions are already shown in the right half
+        case .process:
+            guard let pid = item.pid else { return }
+            if activeCommand == SpotlightCommands.kill {
+                confirmKill(item)
+            } else {
+                processModel.measureCPU(pid: pid)  // ps": Enter measures CPU, like the legacy launcher
+            }
+            return
+        default:
+            break
+        }
+        if let action = item.action, let scope, scope.kind == .process {
+            switch action {
+            case .measureCPU:
+                if let pid = scope.pid { processModel.measureCPU(pid: pid) }
+            case .killProcess:
+                killProcess(scope)
+                exitChip()
+            case .copyPID:
+                if let pid = scope.pid {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(String(pid), forType: .string)
+                    toast("Copied PID \(pid)")
+                }
+            default:
+                break
+            }
+            return
+        }
+        let outcome = if let action = item.action, let scope {
+            SpotlightOpener.perform(action, on: scope)
+        } else {
+            SpotlightOpener.open(item)
+        }
+        switch outcome {
+        case .launched:
+            // The just-opened app comes to the front by itself: don't return focus to the previous app.
+            hide(restore: false, launched: true)
+        case .message(let text):
+            toast(text)
+        }
+    }
+
+    /// Tab: view the actions of the selected row.
+    private func enterScope() {
+        guard scope == nil, sel < results.count else { return }
+        let item = results[sel]
+        guard item.supportsActions else { return }
+        scopeReturnQuery = query
+        withAnimation(motion(SpotlightMotion.chip)) {
+            scope = item
+            query = ""
+        }
+        focusField()
+    }
+
+    private func toggleBrowse(_ kind: SpotlightKind) {
+        withAnimation(motion(SpotlightMotion.chip)) {
+            scope = nil
+            browse = (browse == kind) ? nil : kind
+        }
+        focusField()
+    }
+
+    /// Remove the chip: exit actions (restoring the typed text) or exit the browsed group.
+    private func exitChip() {
+        withAnimation(motion(SpotlightMotion.chip)) {
+            if scope != nil {
+                scope = nil
+                query = scopeReturnQuery
+                scopeReturnQuery = ""
+            } else if activeCommand != nil {
+                activeCommand = nil
+                query = ""
+            } else {
+                browse = nil
+            }
+        }
+    }
+
+    private func handleEscape() {
+        if browse != nil || scope != nil || activeCommand != nil {
+            exitChip()
+            return
+        }
+        if !query.isEmpty {
+            query = ""
+            return
+        }
+        hide()
+    }
+
+    /// ⌫ on an empty field: remove the scope chip. Returns `false` so the key goes back to the field.
+    private func handleDelete() -> Bool {
+        guard query.isEmpty, browse != nil || scope != nil || activeCommand != nil else { return false }
+        exitChip()
+        return true
+    }
+
+    /// Navigation keys, called from SpotlightKeyMonitor. `true` = handled.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        typealias KeyCode = AppConstants.Launcher.KeyCode
+        guard isOpen, !dismissing, event.window is LauncherPanelWindow else { return false }
+        // The input method has uncommitted text: the key belongs to the input method.
+        if let editor = event.window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+            return false
+        }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+        switch event.keyCode {
+        case KeyCode.escape:
+            handleEscape()
+            return true
+        case KeyCode.arrowUp where !flags.contains(.shift):
+            move(-1)
+            return true
+        case KeyCode.arrowDown where !flags.contains(.shift):
+            move(1)
+            return true
+        case KeyCode.tab:
+            enterScope()
+            return true
+        case Self.backspaceKeyCode where flags.isEmpty:
+            return handleDelete()
+        default:
+            break
+        }
+
+        if flags == .control, key == "n" || key == "p" {
+            move(key == "n" ? 1 : -1)
+            return true
+        }
+        if flags == .command, key == "/" {
+            toggleCommandMode()
+            return true
+        }
+        // ⌘↩ — search the web for the typed text (like the legacy launcher).
+        if flags == .command, event.keyCode == KeyCode.returnKey || event.keyCode == KeyCode.keypadEnter {
+            let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !term.isEmpty else { return true }
+            run(SpotlightItem(id: "web|\(term)", name: term, kind: .web))
+            return true
+        }
+        // ⌘F — show the selected item in Finder (like the legacy launcher).
+        if flags == .command, key == "f", let item = previewItem,
+           item.target?.hasPrefix("/") == true, item.kind != .clipImage
+        {
+            switch SpotlightOpener.perform(.reveal, on: item) {
+            case .launched: hide(restore: false, launched: true)
+            case .message(let text): toast(text)
+            }
+            return true
+        }
+        if flags == .command, let digit = Int(key) {
+            // Inside a command / command menu: ⌘N picks the Nth command, like the legacy launcher.
+            let commands = SpotlightCommands.catalog
+            var inCommands = activeCommand != nil
+            if case .commandMenu = SpotlightMode.parse(query) { inCommands = true }
+            if inCommands, commands.indices.contains(digit - 1) {
+                enterCommand(commands[digit - 1].id)
+                return true
+            }
+            if Self.quickItems.indices.contains(digit - 1) {
+                toggleBrowse(Self.quickItems[digit - 1].kind)
+                return true
+            }
+        }
+        return false
+    }
+
+    private static let backspaceKeyCode: UInt16 = 51
+
+    /// Whether the click point (in root coordinates) is on the glass cluster.
+    private func clusterContains(_ point: CGPoint) -> Bool {
+        let quicks = idle
+            ? CGFloat(Metric.quickCount) * (Metric.quickSize + Metric.quickGap)
+            : 0
+        let rect = CGRect(
+            x: SpotlightWindowSizing.margin,
+            y: SpotlightWindowSizing.margin,
+            width: panelWidth + quicks,
+            height: panelHeight
+        )
+        return rect.contains(point)
+    }
+
+    /// Back to a brand-new state, no animation (the window is already hidden).
+    private func resetState() {
+        var plain = Transaction()
+        plain.disablesAnimations = true
+        withTransaction(plain) {
+            idleTask?.cancel()
+            toastTask?.cancel()
+            searchTask?.cancel()
+            searchTask = nil
+            activateWhenReady = false
+            query = ""
+            all = []
+            sel = 0
+            filter = nil
+            scope = nil
+            scopeReturnQuery = ""
+            browse = nil
+            expanded = false
+            idle = false
+            launching = false
+            toastMsg = nil
+            resizeDelay = 0
+            activeCommand = nil
+            armedKillPID = nil
+            lookupTask?.cancel()
+            lookup = nil
+            panelHeight = Metric.barHeight
+        }
+    }
+
+    // MARK: - Window
+
+    private func launcherWindow() -> NSWindow? {
+        NSApp.windows.first { $0 is LauncherPanelWindow }
+    }
+
+    private func toggle() {
+        if isOpen, !dismissing, NSApp.isActive { hide() } else { show() }
+    }
+
+    private func show() {
+        guard let window = launcherWindow() else { return }
+        // Reopened mid-close: reverse from where it is, don't rebuild.
+        let reentering = dismissing
+        dismissTask?.cancel()
+        dismissTask = nil
+        dismissing = false
+
+        if pidToRestore == nil,
+           let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        {
+            pidToRestore = front.processIdentifier
+        }
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if isOpen, !reentering {
+            // Already open (e.g. an echo from applicationDidBecomeActive): just refocus.
+            window.makeKeyAndOrderFront(nil)
+            focusField()
+            return
+        }
+
+        isOpen = true
+        if !reentering {
+            // Like the legacy launcher: each open asks the core to refresh the index in the background
+            // (the first time it also loads the engine from SQLite) — run in the background so animation isn't delayed.
+            Task.detached(priority: .utility) { _ = EngineBridge.shared.requestIndexRefresh() }
+            // While open, poll the clipboard more often (like the legacy launcher).
+            clipboardStore.setMonitoringMode(.foreground)
+            // Fresh open: go to the hidden state WITHOUT animation, position the window, and only then
+            // animate on the next tick — the two states must be in two transactions.
+            resetState()
+            var plain = Transaction()
+            plain.disablesAnimations = true
+            withTransaction(plain) {
+                shownScale = false
+                shownAlpha = false
+            }
+            let screen = SpotlightWindowSizing.screenForCursor() ?? window.screen ?? NSScreen.main
+            if let screen {
+                window.setFrame(SpotlightWindowSizing.frame(on: screen), display: false)
+            }
+            mouseGate.reset()
+        }
+        window.hasShadow = false
+        window.makeKeyAndOrderFront(nil)
+        focusField()
+
+        DispatchQueue.main.async {
+            withAnimation(motion(SpotlightMotion.appear)) {
+                shownScale = true
+                launching = false
+            }
+            withAnimation(motion(SpotlightMotion.appearFade)) { shownAlpha = true }
+            pokeIdle()
+        }
+    }
+
+    /// `launched`: closing because an item was just opened (slight zoom + dissolve) instead of collapsing.
+    private func hide(restore: Bool = true, launched: Bool = false) {
+        guard isOpen, !dismissing, let window = launcherWindow() else { return }
+        dismissing = true
+        idleTask?.cancel()
+        isFocused = false
+
+        if launched {
+            withAnimation(motion(SpotlightMotion.launch)) {
+                launching = true
+                shownAlpha = false
+            }
+        } else {
+            withAnimation(motion(SpotlightMotion.dismiss)) {
+                shownScale = false
+                shownAlpha = false
+            }
+        }
+
+        // Return focus to the previous app immediately, without waiting for the fade.
+        if restore, let pid = pidToRestore,
+           let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated
+        {
+            app.activate()
+        }
+        pidToRestore = nil
+
+        let seconds = launched ? SpotlightMotion.launchSeconds : SpotlightMotion.dismissSeconds
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Int(seconds * 1000) + 20))
+            guard !Task.isCancelled else { return }
+            window.orderOut(nil)
+            isOpen = false
+            dismissing = false
+            resetState()
+            // Hidden: poll the clipboard less often; next time ps" is entered, take a fresh process snapshot.
+            clipboardStore.setMonitoringMode(.background)
+            processModel.invalidate()
+        }
+    }
+
+    private func focusField() {
+        isFocused = true
+        // On the first open the window hasn't become key yet: set the first responder directly and
+        // retry for a few beats, like the legacy launcher's focus recovery.
+        for delay in [0.0, 0.05, 0.12] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard isOpen, !dismissing, let window = launcherWindow(),
+                      let field = Self.caretField(in: window.contentView)
+                else { return }
+                if field.currentEditor() == nil { window.makeFirstResponder(field) }
+            }
+        }
+    }
+
+    private static func caretField(in view: NSView?) -> CaretTextField? {
+        guard let view else { return nil }
+        if let field = view as? CaretTextField { return field }
+        for child in view.subviews {
+            if let field = caretField(in: child) { return field }
+        }
+        return nil
+    }
+}
+
+// MARK: - Small effects
+
+/// Result row rises + fades in. `animation == nil`: show immediately, no effect.
+private struct SpotlightRiseIn: ViewModifier {
+    let animation: Animation?
+    @State private var shown: Bool
+
+    init(animation: Animation?) {
+        self.animation = animation
+        _shown = State(initialValue: animation == nil)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : SpotlightMotion.rowRiseOffset)
+            .scaleEffect(shown ? 1 : 0.985, anchor: .top)
+            .onAppear {
+                guard !shown, let animation else { return }
+                DispatchQueue.main.async {
+                    withAnimation(animation) { shown = true }
+                }
+            }
+    }
+}
+
+/// Icon in a round button pops out slightly after the glass droplet.
+private struct SpotlightPopIn: ViewModifier {
+    let animation: Animation?
+    @State private var shown: Bool
+
+    init(animation: Animation?) {
+        self.animation = animation
+        _shown = State(initialValue: animation == nil)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.5)
+            .onAppear {
+                guard !shown, let animation else { return }
+                DispatchQueue.main.async {
+                    withAnimation(animation) { shown = true }
+                }
+            }
+    }
+}
+
+/// Background of the selected row. ONE single bar is moved between rows via
+/// `matchedGeometryEffect`, so it SLIDES when the selection change happens inside
+/// `withAnimation` (arrow keys, hover) and jumps straight when it doesn't (new results).
+/// The newly selected row also zooms up one beat and back — same approach as the legacy launcher's
+/// SelectionPill, just a different color (follows the glass, not the theme).
+private struct SpotlightSelection: ViewModifier {
+    let isSelected: Bool
+    let fill: Color
+    let namespace: Namespace.ID
+    let reduceMotion: Bool
+
+    @State private var zoomed = false
+    /// Incremented on each zoom: the return leg of an old beat doesn't cut off a new one
+    /// (moving away then back very quickly).
+    @State private var generation = 0
+
+    func body(content: Content) -> some View {
+        content
+            // Pushed down so the row's icon zooms in step.
+            .environment(\.isSelectionZoomed, zoomed)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: SpotlightSpec.Metric.rowRadius, style: .continuous)
+                        .fill(fill)
+                        .matchedGeometryEffect(id: "spotlight.selection", in: namespace)
+                        .scaleEffect(zoomed ? SpotlightMotion.pillZoomScale : 1)
+                }
+            }
+            // No .animation(value:) here: attached per row, every row the
+            // selection bar passes over would flash.
+            .onChange(of: isSelected) { _, selected in
+                generation &+= 1
+                guard selected else {
+                    zoomed = false
+                    return
+                }
+                guard !reduceMotion else { return }
+                let mine = generation
+                withAnimation(SpotlightMotion.zoomIn) { zoomed = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + SpotlightMotion.zoomInSeconds) {
+                    guard mine == generation else { return }
+                    withAnimation(SpotlightMotion.zoomOut) { zoomed = false }
+                }
+            }
+    }
+}
+
+/// The row's icon, zooming with the selection beat. A separate view because a view can't read
+/// environment values set by its own body.
+private struct SpotlightRowIcon: View {
+    @Environment(\.isSelectionZoomed) private var zoomed
+    let item: SpotlightItem
+    let size: CGFloat
+    let isSelected: Bool
+
+    var body: some View {
+        SpotlightTile(item: item, size: size)
+            .scaleEffect(isSelected && zoomed ? SpotlightMotion.iconZoomScale : 1)
+    }
+}
+
+/// Only let hover change the selected row when the mouse actually moves. Not
+/// @Observable: a mouse position change doesn't need to redraw anything.
+private final class MouseGate {
+    private var last = NSEvent.mouseLocation
+
+    func reset() { last = NSEvent.mouseLocation }
+
+    func moved() -> Bool {
+        let now = NSEvent.mouseLocation
+        defer { last = now }
+        return now != last
+    }
+}
+
+// MARK: - Tile (gradient + glyph like .tile in the HTML)
+// Shared with SpotlightField (motion lab) — so not private.
+
+struct SpotlightTile: View {
+    let item: SpotlightItem
+    let size: CGFloat
+
+    var body: some View {
+        if let image = realImage {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: item.kind == .clipImage ? size * 0.18 : 0, style: .continuous))
+                .frame(width: size, height: size)
+        } else {
+            colorTile
+        }
+    }
+
+    /// Real icon: app/file/folder, the process's app, thumbnail of a copied
+    /// image. Cached: NSWorkspace returns a new image on every call; without caching the
+    /// icon flickers on every keystroke.
+    private var realImage: NSImage? {
+        if item.kind == .process, let pid = item.pid {
+            return RowIconCache.image(key: "pid:\(pid)") { LauncherProcessFeature.icon(forPID: pid) }
+        }
+        if item.kind == .clipImage, let path = item.iconPath {
+            return RowIconCache.thumbnail(forFile: path)
+        }
+        return item.iconPath.map { RowIconCache.icon(forFile: $0) }
+    }
+
+    /// Colored tile for rows with no real file (calculation, web, actions, sample data).
+    private var colorTile: some View {
+        let pair = item.colors.split(separator: ",").map(String.init)
+        let c1 = Color(hex: pair.first ?? "#9aa2ad")
+        let c2 = Color(hex: pair.dropFirst().first ?? "#5c636e")
+        return ZStack {
+            RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                .fill(LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay {
+                    RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                        .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.28), radius: 1, y: 1)
+            if let symbol = item.symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .foregroundStyle(.white)
+            } else {
+                Text(item.glyph ?? String(item.name.replacingOccurrences(of: ".app", with: "").prefix(1)).uppercased())
+                    .font(.system(size: size * 0.44, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Hook that watches the state of the legacy launcher modes (see `modeHooks`).
+private struct SpotlightModeHooks: ViewModifier {
+    let activeCommand: String?
+    let previewID: String?
+    @ObservedObject var processModel: ProcessFinderModel
+    @ObservedObject var clipboardStore: ClipboardHistoryStore
+    let onCommandChange: () -> Void
+    let onPreviewChange: () -> Void
+    let onProcesses: () -> Void
+    let onClips: () -> Void
+    let onImages: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: activeCommand) { onCommandChange() }
+            .onChange(of: previewID) { onPreviewChange() }
+            .onReceive(processModel.$candidates) { _ in onProcesses() }
+            .onReceive(clipboardStore.$entries) { _ in onClips() }
+            .onReceive(clipboardStore.$imageEntries) { _ in onImages() }
+    }
+}

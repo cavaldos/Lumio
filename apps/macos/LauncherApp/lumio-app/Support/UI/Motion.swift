@@ -105,7 +105,7 @@ enum Motion {
 
     /// The whole panel arriving when the launcher opens. A content-layer effect
     /// on purpose: animating the window would mean touching the
-    /// `makeKeyAndOrderFront` path the Cmd+Space cold-login bug lives in.
+    /// `makeKeyAndOrderFront` path the launcher-hotkey cold-login bug lives in.
     enum Surface {
         static let arriveScale: CGFloat = 0.965
         static let arriveResponse: Double = 0.34

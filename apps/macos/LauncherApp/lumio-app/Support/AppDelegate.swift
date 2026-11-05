@@ -8,12 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // The launcher window is owned by AppKit (created here), NOT by a SwiftUI
     // WindowGroup. SwiftUI refuses to create a WindowGroup window on a
-    // background login launch, which left LauncherView (and its Cmd+Space
+    // background login launch, which left LauncherView (and its Option+Space
     // toggle observer) unmounted → the hotkey fired into the void. An AppKit
     // NSWindow is not subject to that suppression: we create it at launch
     // (hidden) so LauncherView is always mounted and the existing
     // .lookToggleWindowRequested → toggleWindowVisibility() path just works.
     private var launcherWindow: NSWindow?
+    private var settingsObserver: NSObjectProtocol?
 
     // Grace period allows macOS "Quit & Reopen" handoff to release the previous process lock.
     private static let relaunchGracePeriodSeconds: TimeInterval = 0.8
@@ -38,8 +39,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Create the launcher window ourselves (hidden) so LauncherView mounts
         // at launch - even on a cold background-login launch, where SwiftUI
         // would never create a WindowGroup window. With the view mounted, its
-        // .lookToggleWindowRequested observer is live and Cmd+Space toggles it.
+        // .lookToggleWindowRequested observer is live and Option+Space toggles it.
         makeLauncherWindow()
+
+        // The legacy launcher shows settings inside its own panel. The
+        // Spotlight launcher has none, so open them in a separate window.
+        if !LauncherFeatureFlags.isLegacyLauncherEnabled {
+            settingsObserver = NotificationCenter.default.addObserver(
+                forName: .lookToggleSettingsRequested, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { SettingsWindowController.shared.toggle() }
+            }
+        }
 
         // Notify-only update check against GitHub Releases (throttled to once
         // per 12h). Lumio ships via GitHub Releases, so this never self-installs - it
@@ -52,14 +63,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window on first appearance - corner radius, floating level, multi-display
     /// autoscale.
     private func makeLauncherWindow() {
-        let baseSize = WindowAutoScale.baseSize()
+        // New Spotlight launcher (flag OFF): transparent window, fixed size large
+        // enough for the biggest state — all animation lives in SwiftUI.
+        // Legacy launcher: keeps baseSize 860×600 + test flags as before.
+        let legacy = LauncherFeatureFlags.isLegacyLauncherEnabled
+        let baseSize = legacy ? WindowAutoScale.baseSize() : SpotlightWindowSizing.windowSize
         let (minW, minH) = (baseSize.width, baseSize.height)
-        // TEMP single-component: nới min để window thu được về 600×100.
+        // TEMP single-component: lower the min size so the window can shrink to 600×100.
         let testMin = LauncherView.testCollapsedWindowSize
         let content = ContentView()
             .frame(
-                minWidth: LauncherView.testExpandOnly ? testMin.width : minW,
-                minHeight: LauncherView.testExpandOnly ? testMin.height : minH
+                minWidth: legacy && LauncherView.testExpandOnly ? testMin.width : minW,
+                minHeight: legacy && LauncherView.testExpandOnly ? testMin.height : minH
             )
             .background(WindowConfigurator(themeStore: .shared))
             .environmentObject(AppUIState.shared)
@@ -71,10 +86,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.contentView = NSHostingView(rootView: content)
+        let hostingView = NSHostingView(rootView: content)
+        if !legacy {
+            // Spotlight: SwiftUI must not resize the window to fit content —
+            // the window stays put and the panel animates inside it.
+            hostingView.sizingOptions = []
+        }
+        window.contentView = hostingView
         window.isReleasedWhenClosed = false
         // Start hidden - this matches the launcher's normal resting state
-        // (it is summoned with Cmd+Space, not shown at launch).
+        // (it is summoned with Option+Space, not shown at launch).
         window.orderOut(nil)
         launcherWindow = window
     }
@@ -149,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if SettingsWindowController.shared.isVisible {
+            SettingsWindowController.shared.show()
+            return false
+        }
         if let window = collapseToSingleLauncherWindow(preferred: sender.windows.first(where: { $0.isVisible })) {
             sender.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -160,6 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         DispatchQueue.main.async {
+            // Activated for the settings window: leave the launcher closed.
+            if SettingsWindowController.shared.isVisible { return }
             if let app = notification.object as? NSApplication,
                 let window = app.windows.first(where: { $0.isVisible }) ?? app.windows.first
             {
@@ -172,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     private func collapseToSingleLauncherWindow(preferred: NSWindow? = nil) -> NSWindow? {
-        let windows = NSApplication.shared.windows
+        let windows = NSApplication.shared.windows.filter { !($0 is SettingsPanelWindow) }
         guard !windows.isEmpty else { return nil }
 
         let primary = preferred ?? windows.first(where: { $0.isVisible }) ?? windows.first

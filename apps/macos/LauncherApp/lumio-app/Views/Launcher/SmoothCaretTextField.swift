@@ -22,11 +22,17 @@ struct SmoothCaretTextField: NSViewRepresentable {
     /// Multiline support: the search bar is a single line by design, and a
     /// query with a newline in it means nothing to the matcher.
     var allowsMultiline: Bool = false
+    /// Font / colors that beat the theme. For a surface that is not themed (the
+    /// Spotlight launcher sits on system Liquid Glass, which follows the system
+    /// appearance, so theme colors could land light-on-light). Nil = theme.
+    var fontOverride: NSFont? = nil
+    var textColorOverride: NSColor? = nil
+    var caretColorOverride: NSColor? = nil
     var onSubmit: () -> Void
 
-    private var font: NSFont { themeStore.uiNSFont(size: fontSize) }
-    private var textColor: NSColor { NSColor(themeStore.fontColor()) }
-    private var caretColor: NSColor { NSColor(themeStore.accentColor()) }
+    private var font: NSFont { fontOverride ?? themeStore.uiNSFont(size: fontSize) }
+    private var textColor: NSColor { textColorOverride ?? NSColor(themeStore.fontColor()) }
+    private var caretColor: NSColor { caretColorOverride ?? NSColor(themeStore.accentColor()) }
     private var lineHeight: CGFloat { font.ascender - font.descender + font.leading }
 
     func makeNSView(context: Context) -> CaretTextField {

@@ -134,7 +134,7 @@ struct lumio_appApp: App {
         // The launcher window is an AppKit NSWindow owned by AppDelegate (see
         // AppDelegate.makeLauncherWindow) - SwiftUI won't create a WindowGroup
         // window on a background login launch, which was the root cause of the
-        // dead Cmd+Space. A Settings scene gives the app a valid Scene to carry
+        // dead launcher hotkey. A Settings scene gives the app a valid Scene to carry
         // the command menu below without auto-creating any window.
         Settings {
             EmptyView()
@@ -144,7 +144,7 @@ struct lumio_appApp: App {
 
             // The Settings scene above only keeps SwiftUI's command
             // infrastructure alive. Remove macOS's default Cmd+, action so the
-            // documented Cmd+Shift+, shortcut is the only way to open settings.
+            // documented Cmd+Shift+, (in-app) and Cmd+Shift+Space (global) shortcuts open settings.
             CommandGroup(replacing: .appSettings) {}
 
             CommandGroup(replacing: .appTermination) {

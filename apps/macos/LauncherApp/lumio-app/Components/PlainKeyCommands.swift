@@ -48,7 +48,7 @@ final class PlainKeyCommandsHostView: NSView {
                 return event
             }
             // A modifier means the key belongs to someone else (Cmd+R, and the
-            // Cmd+Space launcher hotkey).
+            // Option+Space launcher hotkey).
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
                 return event
             }

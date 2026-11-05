@@ -7,8 +7,10 @@ struct WindowConfigurator: NSViewRepresentable {
     @ObservedObject var themeStore: ThemeStore
 
     private var cornerRadius: CGFloat {
-        // TEMP test: WindowConfigurator vẽ lại mask mỗi lần update nên đọc
-        // override do applyTestWindowSize để lại — thu gọn = viên thuốc.
+        // Spotlight launcher: the window is just a transparent frame; the panel rounds its own corners.
+        guard LauncherFeatureFlags.isLegacyLauncherEnabled else { return 0 }
+        // TEMP test: WindowConfigurator redraws the mask on every update, so it reads
+        // the override left by applyTestWindowSize — collapsed = pill shape.
         if LauncherView.testExpandOnly, let override = LauncherView.testCornerRadiusOverride {
             return override
         }
@@ -73,7 +75,8 @@ struct WindowConfigurator: NSViewRepresentable {
 
         // Initial placement; toggleWindowVisibility re-places it on the active
         // screen every show, so this only seeds a sane frame before first show.
-        if let screen = window.screen ?? NSScreen.main {
+        // The Spotlight launcher places its own (fixed-size) window on show.
+        if LauncherFeatureFlags.isLegacyLauncherEnabled, let screen = window.screen ?? NSScreen.main {
             window.setFrame(WindowAutoScale.spotlightFrame(on: screen), display: true)
         }
     }

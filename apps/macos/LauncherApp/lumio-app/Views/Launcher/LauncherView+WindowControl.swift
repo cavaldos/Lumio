@@ -226,8 +226,8 @@ extension LauncherView {
             "position: visible=\(NSStringFromRect(screen.visibleFrame), privacy: .public) frame=\(NSStringFromRect(frame), privacy: .public) topGap=\(topGap, privacy: .public)"
         )
         window.setFrame(frame, display: true)
-        // TEMP single-component: show mới mà query trống thì thu window về
-        // cỡ componentA ngay (không animation), gõ chữ mới nở có animation.
+        // TEMP single-component: on a fresh show with an empty query, shrink the window to
+        // componentA size immediately (no animation); typing then expands it with animation.
         applyTestWindowSize(collapsed: testWantsCollapsedWindow, animated: false)
     }
 

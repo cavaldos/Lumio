@@ -103,27 +103,27 @@ struct LauncherView: View {
     static let restingBleedHorizontal: CGFloat = 14
     static let restingBleedTop: CGFloat = 6
 
-    /// TEMP test: tô màu background để phân biệt 2 trạng thái.
-    /// Ảnh 1 (bar lúc chưa gõ) = ĐỎ, ảnh 2 (panel lúc có result) = XANH.
-    /// Xóa flag này là về lại bình thường.
+    /// TEMP test: tint the background to tell the 2 states apart.
+    /// Image 1 (bar before typing) = RED, image 2 (panel with results) = GREEN.
+    /// Removing this flag restores normal behavior.
     static let testTintBackgrounds = false
-    /// TEMP test: nền đỏ đặc, bỏ blur kính — blur recompute mỗi frame
-    /// khi resize window là nguồn khựng chính. Đúng spec componentA nền đỏ.
+    /// TEMP test: solid red background, no glass blur — recomputing the blur every frame
+    /// while resizing the window is the main source of stutter. Matches the componentA red-background spec.
     static let testSolidBackground = false
-    /// TEMP test: override bán kính bo góc của window (WindowConfigurator
-    /// vẽ lại mỗi lần update nên phải đi đường shared state này).
-    /// nil = dùng panelRadius như cũ.
+    /// TEMP test: override the window's corner radius (WindowConfigurator
+    /// redraws on every update, so this has to go through shared state).
+    /// nil = use panelRadius as before.
     static var testCornerRadiusOverride: CGFloat?
-    /// TEMP test: giấu result, chỉ test 1 component to/nhỏ + animation.
-    /// Query trống = window thu về cỡ componentA, có kí tự = window nở
-    /// xuống (giữ mép trên) để chứa result sau này.
+    /// TEMP test: hide results and only test 1 component growing/shrinking + animation.
+    /// Empty query = window shrinks to componentA size; any characters = window grows
+    /// downward (keeping the top edge) to hold results later.
     static let testExpandOnly = false
-    /// Cỡ componentA lúc thu gọn: ngang = kích thước tự nhiên khai báo
-    /// sẵn (baseWidth), dọc fit khít input.
+    /// componentA size when collapsed: width = the natural size declared
+    /// up front (baseWidth), height fits the input snugly.
     static let testCollapsedWindowSize = CGSize(width: WindowAutoScale.baseWidth, height: 68)
-    /// TEMP test: chốt cứng chiều cao hàng input — chữ + icon luôn căn
-    /// giữa trong 56px, padding trên/dưới đối xứng, 2 trạng thái không
-    /// còn gì để xê dịch (6 + 56 + 6 = 68 = window).
+    /// TEMP test: hard-pin the input row height — text + icon always centered
+    /// in 56px, top/bottom padding symmetric, so nothing can shift
+    /// between the 2 states (6 + 56 + 6 = 68 = window).
     static let testBarHeight: CGFloat = 56
 
     /// Legibility floor for surfaces that float on the bare desktop while the
@@ -640,7 +640,7 @@ struct LauncherView: View {
         .onChange(of: query) { _, _ in
             handleQueryChange()
         }
-        // TEMP single-component: co/nở window theo trạng thái thu gọn.
+        // TEMP single-component: shrink/grow the window based on the collapsed state.
         .onChange(of: testWantsCollapsedWindow) { _, collapsed in
             applyTestWindowSize(collapsed: collapsed, animated: true)
         }
@@ -666,15 +666,15 @@ struct LauncherView: View {
         .background(notificationHandlers)
     }
 
-    /// TEMP single-component: true khi window cần thu về cỡ componentA
-    /// (chưa gõ, màn home classic). Mọi thứ khác (command/help/settings,
-    /// floating tiles) giữ window cao như cũ.
+    /// TEMP single-component: true when the window should shrink to componentA size
+    /// (nothing typed, classic home screen). Everything else (command/help/settings,
+    /// floating tiles) keeps the window tall as before.
     var testWantsCollapsedWindow: Bool {        Self.testExpandOnly && isLauncherIdle && !showsFloatingCards && hidesResultsForEmptyQuery
     }
 
-    /// Co/nở window giữ nguyên mép trên và tâm ngang — gõ chữ thì panel
-    /// nở xuống dưới đúng kiểu Spotlight. Chiều cao lúc nở = cỡ panel chuẩn.
-    /// Chạy qua animator easeOut ngắn để mượt, thay vì animate mặc định.
+    /// Shrinks/grows the window keeping the top edge and horizontal center — typing makes the panel
+    /// grow downward Spotlight-style. Expanded height = the standard panel size.
+    /// Runs through a short easeOut animator for smoothness instead of the default animation.
     func applyTestWindowSize(collapsed: Bool, animated: Bool) {
         let rzLog = Logger(subsystem: "noah-code.Lumio", category: "window-resize")
         rzLog.debug(
@@ -688,7 +688,7 @@ struct LauncherView: View {
             : CGSize(width: Self.testCollapsedWindowSize.width, height: WindowAutoScale.baseSize().height)
         let rect = NSRect(
             x: full.midX - size.width / 2, y: full.maxY - size.height, width: size.width, height: size.height)
-        // TEMP test: đồng bộ mask của window (viên thuốc lúc thu gọn).
+        // TEMP test: sync the window mask (pill shape when collapsed).
         Self.testCornerRadiusOverride = collapsed
             ? Self.testCollapsedWindowSize.height / 2 : themeStore.panelRadius
         rzLog.debug(
@@ -705,14 +705,14 @@ struct LauncherView: View {
         }
     }
 
-    /// Khối dưới bar có đang nở không: command/help, hoặc home có chữ.
-    /// Chỉ là nguồn lật onChange — animation chạy explicit trên Group cha
-    /// (identity ổn định), không animate frame qua chỗ swap view con.
+    /// Whether the area below the bar is expanded: command/help, or home with text.
+    /// Only the trigger for onChange — the animation runs explicitly on the parent Group
+    /// (stable identity), not by animating frames across the child view swap.
     private var belowBarSpringExpanded: Bool {
         isCommandMode || showsHelpScreen || (isLauncherIdle && !hidesResultsForEmptyQuery)
     }
-    /// 0 = thu, 1 = nở. Group cha scale Y neo mép trên + fade theo mix này;
-    /// mép dưới là thứ duy nhất quét lên/xuống, quá đà rồi settle.
+    /// 0 = collapsed, 1 = expanded. The parent Group scales Y anchored to the top edge + fades by this mix;
+    /// the bottom edge is the only thing that sweeps up/down, overshooting then settling.
     @State private var belowBarSpringMix: CGFloat = 0
 
     /// Second half of the root modifier chain (store subscriptions and
@@ -875,9 +875,9 @@ struct LauncherView: View {
 
     @ViewBuilder
     private func borderedPanel(windowCornerRadius: CGFloat, contentSpacing: CGFloat, contentPadding: CGFloat) -> some View {
-        // TEMP test: lúc thu gọn bo 50% chiều cao = viên thuốc như Spotlight,
-        // lúc nở về lại panelRadius. Mọi lớp (nền, clip, mask window) dùng
-        // chung số này để không lớp nào lòi ra ngoài lớp nào.
+        // TEMP test: when collapsed, round at 50% of the height = Spotlight-style pill;
+        // when expanded, go back to panelRadius. Every layer (background, clip, window mask) shares
+        // this number so no layer pokes out past another.
         let testRadius = Self.testExpandOnly && testWantsCollapsedWindow
             ? Self.testCollapsedWindowSize.height / 2 : windowCornerRadius
         ZStack {
@@ -888,19 +888,19 @@ struct LauncherView: View {
             // query) the blur + tint backdrop box is dropped so the tiles sit on
             // the bare desktop. A background image, if set, is cropped into each
             // tile (see tileBackground) rather than filling the gaps.
-            // TEMP single-component: ở classic (gap 0) giữ themedBackground
-            // cả lúc trống lẫn lúc nở — cùng 1 view chỉ đổi size, không swap
-            // 2 nền cho nhau nữa.
+            // TEMP single-component: in classic (gap 0) keep themedBackground
+            // both when empty and when expanded — the same view only changes size, no longer
+            // swapping 2 backgrounds.
             if !barFloatsFree || (Self.testExpandOnly && isLauncherIdle && !showsFloatingCards) {
                 if Self.testSolidBackground && Self.testExpandOnly {
-                    // Nền đỏ đặc duy nhất, co/nở theo window — không blur,
-                    // không lớp phủ, morph không khựng.
+                    // Single solid red background, shrinks/grows with the window — no blur,
+                    // no overlay, morph without stutter.
                     RoundedRectangle(cornerRadius: testRadius, style: .continuous)
                         .fill(Color.red)
                 } else {
                     themedBackground
-                    // TEMP test: A = đỏ, hiện cả lúc trống lẫn lúc có result
-                    // nên khi gõ chữ nó mở rộng xuống chứ không bị thay thế.
+                    // TEMP test: A = red, shown both when empty and with results,
+                    // so typing expands it downward instead of replacing it.
                     if Self.testTintBackgrounds && isLauncherIdle {
                         Color.red.opacity(0.45)
                     }
@@ -912,7 +912,7 @@ struct LauncherView: View {
             }
             // Tighter top inset so the search bar sits closer to the window's
             // top edge; keep the original padding on the other three sides.
-            // TEMP test: bottom = top để A fit đối xứng quanh input.
+            // TEMP test: bottom = top so A fits symmetrically around the input.
             .padding(.top, max(4, contentPadding - 8))
             .padding(.horizontal, contentPadding)
             .padding(.bottom, Self.testExpandOnly ? max(4, contentPadding - 8) : contentPadding)
@@ -977,7 +977,7 @@ struct LauncherView: View {
             }
 
             // Spotlight's hairline between the search field and the results.
-            // TEMP test: ẩn để morph chỉ còn bar + nền, không relayout giữa chừng.
+            // TEMP test: hidden so the morph is just bar + background, with no relayout mid-way.
             if isLauncherIdle && !hidesResultsForEmptyQuery && !Self.testExpandOnly {
                 Rectangle()
                     .fill(themeStore.dividerColor())
@@ -991,15 +991,15 @@ struct LauncherView: View {
                 bannerView(message: bannerMessage)
             }
 
-            // Mép dưới nảy lò xo: cả khối dưới bar (command/help/result) nở
-            // từ trên xuống, thu lại thì ngược lại — bar đứng yên, chỉ mép
-            // dưới chuyển động. Animation đặt trên Group cha (scale Y neo
-            // mép trên + fade), vì Group không bao giờ đổi identity kể cả
-            // khi view con bên trong swap (Spacer ↔ result).
+            // Spring-bounce bottom edge: the whole area below the bar (command/help/result) expands
+            // from the top down and collapses in reverse — the bar stays put, only the bottom
+            // edge moves. The animation sits on the parent Group (Y scale anchored to the
+            // top edge + fade), because the Group never changes identity even
+            // when the child views inside swap (Spacer ↔ result).
             Group {
             if Self.testExpandOnly && isLauncherIdle {
-                // Chưa hiện result: window tự co/nở nên Spacer lấp đầy
-                // phần còn lại là đủ, không cần khối giữ chỗ.
+                // No results shown yet: the window resizes itself, so a Spacer filling
+                // the rest is enough; no placeholder block needed.
                 Spacer(minLength: 0)
             } else if isCommandMode {
                 commandModeView
@@ -1035,18 +1035,18 @@ struct LauncherView: View {
                 resultsRow
             }
             }
-            // KHÔNG bao giờ scale về đúng 0: AppKit abort (SIGABRT trong
-            // convertSizeFromBacking) khi ScrollView kết quả mount/unmount
-            // dưới transform suy biến — 2 crash 13:59 + 14:08 đều từ đây.
-            // 0.01 + opacity 0 + clipped = vô hình mà transform vẫn khả nghịch.
+            // NEVER scale all the way to 0: AppKit aborts (SIGABRT in
+            // convertSizeFromBacking) when the results ScrollView mounts/unmounts
+            // under a degenerate transform — both crashes at 13:59 + 14:08 came from here.
+            // 0.01 + opacity 0 + clipped = invisible while the transform stays invertible.
             .scaleEffect(x: 1, y: max(belowBarSpringMix, 0.01), anchor: .top)
             .opacity(belowBarSpringMix)
             .clipped()
             .accessibilityHidden(!belowBarSpringExpanded)
             .onAppear { belowBarSpringMix = belowBarSpringExpanded ? 1 : 0 }
             .onChange(of: belowBarSpringExpanded) { _, expanded in
-                // Expand ~1s (response 0.55): mép dưới quét xuống, quá đà
-                // rung vài nhịp rồi settle. Collapse chạy ngược lại.
+                // Expand ~1s (response 0.55): the bottom edge sweeps down, overshoots,
+                // wobbles a few beats, then settles. Collapse runs in reverse.
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.6)) {
                     belowBarSpringMix = expanded ? 1 : 0
                 }
@@ -1058,7 +1058,7 @@ struct LauncherView: View {
 
             // While floating, every card carries its own hint footer; only the
             // classic (no-gap) layout keeps the full-width bar below the panel.
-            // TEMP test: ẩn để morph không relayout giữa chừng.
+            // TEMP test: hidden so the morph doesn't relayout mid-way.
             if !showsFloatingCards
                 && !hidesResultsForEmptyQuery
                 && !Self.testExpandOnly
@@ -1105,7 +1105,7 @@ struct LauncherView: View {
     @ViewBuilder
     private var resultsRow: some View {
         resultsContent
-            // TEMP test: B (result) = xanh, nằm BÊN TRONG panel đỏ (A mở rộng).
+            // TEMP test: B (result) = green, sits INSIDE the red panel (A expanded).
             .background {
                 if Self.testTintBackgrounds && isLauncherIdle {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1372,7 +1372,7 @@ struct LauncherView: View {
                 .overlay {
                     tileBorder(cornerRadius: themeStore.tileRadius)
                 }
-                // TEMP test: tile result lúc nổi = xanh (ảnh 2).
+                // TEMP test: result tile while floating = green (image 2).
                 .overlay {
                     if Self.testTintBackgrounds {
                         Color.blue.opacity(0.45)
@@ -1505,13 +1505,13 @@ struct LauncherView: View {
                     // draws the inner "wrapper" edge around the input. Opacity, not
                     // a branch, so the chain above stays stable and focus survives
                     // the empty <-> results flip.
-                    // TEMP single-component: test mode classic thì bar luôn
-                    // trong suốt, panel bg phía sau là nền duy nhất.
+                    // TEMP single-component: in classic test mode the bar is always
+                    // transparent; the panel bg behind it is the only background.
                     .opacity(hidesResultsForEmptyQuery && !Self.testExpandOnly ? 1 : 0)
                 }
             }
             .overlay {
-                // TEMP test: bỏ ring của bar để input trần trên nền A.
+                // TEMP test: drop the bar's ring so the input sits bare on background A.
                 if floats && !Self.testExpandOnly {
                     tileBorder(cornerRadius: barRadius)
                         // The ring rides the painted capsule, so it bleeds with it.
@@ -1521,8 +1521,8 @@ struct LauncherView: View {
             }
             .shadow(color: floats ? .black.opacity(0.25) : .clear,
                     radius: floats ? 7 : 0, x: 0, y: floats ? 3 : 0)
-            // TEMP test: bỏ overlay đỏ ở bar vì panel đã phủ đỏ toàn bộ —
-            // giữ lại sẽ thành 2 lớp chồng nhau, vùng bar đỏ rực bất thường.
+            // TEMP test: drop the red overlay on the bar since the panel is already fully red —
+            // keeping it would stack 2 layers, making the bar area unusually bright red.
     }
 
     /// Wraps a single-panel home state (translation, recent empty) in
@@ -1604,7 +1604,7 @@ struct LauncherView: View {
         // While floating the copyright moves into a card footer; on the empty-rest
         // screen it's hidden entirely; otherwise it stays in the panel's
         // bottom-right corner.
-        // TEMP test: ẩn để morph không relayout giữa chừng.
+        // TEMP test: hidden so the morph doesn't relayout mid-way.
         if !showsFloatingCards && !hidesResultsForEmptyQuery && !isHideAppConfirmationVisible && !Self.testExpandOnly {
             copyrightLink
                 .padding(.trailing, 10)

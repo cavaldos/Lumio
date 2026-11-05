@@ -1,27 +1,78 @@
 #!/bin/sh
-# lumiodev - the dev build's handle, the way `lumio` is the installed one's.
-# `lumio` symlinks into /Applications/Lumio.app, so it always runs the release
-# binary no matter what you just built. Installed by `make app-install-dev`.
+# lumiodev - run the dev build of the code in this checkout.
+# `lumio` symlinks into /Applications/Lumio.app (the release). `lumiodev`
+# rebuilds this repo, installs it as /Applications/Lumio Dev.app, stops the
+# dev copy that is already running, and starts the new one.
 #
-#   lumiodev                 launch it with the dev config
-#   lumiodev clipboard       open it in a mode
+#   lumiodev                  rebuild + restart + open
+#   lumiodev clipboard        rebuild + restart + open in a mode
 #   lumiodev --list-modes
+#   lumiodev --no-build ...   skip the rebuild, just restart the installed dev app
+#
+# Env: LUMIO_DEV_APP, LUMIO_DEV_CONFIG, LUMIODEV_VERBOSE=1 (full build output)
 set -eu
 
 APP="${LUMIO_DEV_APP:-/Applications/Lumio Dev.app}"
 CONFIG="${LUMIO_DEV_CONFIG:-$HOME/.lumio/config.dev}"
+BIN="$APP/Contents/MacOS/Lumio"
+# Works through the /opt/homebrew/bin/lumiodev symlink too.
+REPO="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
 
-if [ ! -d "$APP" ]; then
+build=1
+if [ "${1:-}" = "--no-build" ]; then
+    build=0
+    shift
+fi
+# Listing modes doesn't need a fresh build or a restart.
+[ "${1:-}" = "--list-modes" ] && build=0
+
+if [ "$build" -eq 1 ]; then
+    echo "lumiodev: building $REPO"
+    if [ "${LUMIODEV_VERBOSE:-0}" = 1 ]; then
+        make -C "$REPO" --no-print-directory app-install-dev
+    else
+        log="${TMPDIR:-/tmp}/lumiodev-build.log"
+        if ! make -C "$REPO" --no-print-directory app-install-dev >"$log" 2>&1; then
+            grep -E 'error:|BUILD FAILED' "$log" | head -20 >&2 || tail -30 "$log" >&2
+            echo "lumiodev: build failed. Full log: $log" >&2
+            exit 1
+        fi
+        echo "lumiodev: build ok"
+    fi
+fi
+
+if [ ! -x "$BIN" ]; then
     echo "lumiodev: $APP is not installed. Run: make app-install-dev" >&2
     exit 3
+fi
+
+# A running dev copy would keep the old code: Lumio is single-instance, so a
+# new launch just hands off to it. Stop it first (only the dev app, never the
+# release one).
+if [ "${1:-}" != "--list-modes" ]; then
+    pids="$(pgrep -f "^$BIN( |\$)" || true)"
+    if [ -n "$pids" ]; then
+        echo "lumiodev: stopping running Lumio Dev"
+        kill $pids 2>/dev/null || true
+        i=0
+        while pgrep -f "^$BIN( |\$)" >/dev/null 2>&1; do
+            i=$((i + 1))
+            if [ "$i" -ge 30 ]; then
+                pkill -9 -f "^$BIN( |\$)" 2>/dev/null || true
+                break
+            fi
+            sleep 0.1
+        done
+    fi
 fi
 
 # `-u LUMIO_DB_PATH` matches DEV_OPEN_ENV in scripts/Makefile.mac: an inherited
 # path would point the dev build at the release database.
 if [ "$#" -eq 0 ]; then
+    echo "lumiodev: opening $APP"
     exec env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$CONFIG" open -a "$APP"
 fi
 
 # The binary, not `open --args`: LaunchServices would activate the running
 # instance instead of starting a process that can read the arguments.
-exec env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$CONFIG" "$APP/Contents/MacOS/Lumio" "$@"
+exec env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$CONFIG" "$BIN" "$@"
