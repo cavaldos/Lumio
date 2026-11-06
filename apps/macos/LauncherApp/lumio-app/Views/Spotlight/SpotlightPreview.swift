@@ -83,11 +83,11 @@ struct SpotlightPreviewView: View {
                     .truncationMode(.middle)
                 HStack(spacing: 7) {
                     Text(item.kind.label)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(badgeColor, in: Capsule())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Color(nsColor: .systemBlue), in: Capsule())
                     if let detail = info.detail {
                         Text(detail)
                             .font(.system(size: 12.5))
@@ -97,16 +97,6 @@ struct SpotlightPreviewView: View {
                 }
             }
             Spacer(minLength: 0)
-        }
-    }
-
-    private var badgeColor: Color {
-        switch item.kind {
-        case .app: .accentColor
-        case .doc, .content: .green
-        case .folder: .orange
-        case .url, .web: .blue
-        default: .gray
         }
     }
 
