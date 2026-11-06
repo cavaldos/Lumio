@@ -6,7 +6,7 @@
 	     the feed after each release; SUPublicEDKey verifies the downloads and must
 	     match the SPARKLE_PRIVATE_KEY secret (shared with Ice). -->
 	<key>SUFeedURL</key>
-	<string>https://cavaldos.github.io/lumio-releases/appcast.xml</string>
+	<string>https://cavaldos.github.io/macos-app-releases/lumio/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>5giXQMfuJxsXCpuCn1XxL2IFkBoSiNMiP4rNwAanT7A=</string>
 	<key>SUEnableAutomaticChecks</key>

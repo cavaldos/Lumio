@@ -2,8 +2,8 @@
 # Tell users about a release (Lumio's version of Ice's update-appcast.sh).
 # CI runs this after every release (job notify-users in release.yml); run it
 # by hand only if that job failed.
-#   1. Sparkle: adds the release to appcast.xml in cavaldos/lumio-releases
-#      (GitHub Pages). Installed apps check it daily or via Check for Updates,
+#   1. Sparkle: adds the release to lumio/appcast.xml in cavaldos/macos-app-releases
+#      (GitHub Pages, shared with other apps). Installed apps check it daily or via Check for Updates,
 #      then download, verify and install the update.
 #   2. Homebrew: points Casks/lumio.rb in cavaldos/homebrew-tap at the new
 #      Lumio.dmg, so `brew upgrade` installs it.
@@ -13,23 +13,29 @@
 #          ~/.sparkle/sparkle-priv.pem, then the key in your Keychain. It must
 #          match SUPublicEDKey in apps/macos/LauncherApp/lumio-app/Info.plist.
 # Needs: gh logged in, generate_appcast (bin/ of the Sparkle release download),
-#        git push access to both repos. CI pushes with deploy keys: set
-#        LUMIO_RELEASES_SSH / HOMEBREW_TAP_SSH to an ssh command using the key.
+#        git push access to the repos below. CI pushes with deploy keys: set
+#        RELEASES_SSH / LEGACY_RELEASES_SSH / HOMEBREW_TAP_SSH to an ssh
+#        command using the key.
 set -eo pipefail
 cd "$(dirname "$0")/.."
 
 REPO="cavaldos/Lumio"
-RELEASES_REPO="cavaldos/lumio-releases"
+RELEASES_REPO="cavaldos/macos-app-releases"
+APPCAST="lumio/appcast.xml"
+# Lumio v0.0.5 and older still read their feed from cavaldos/lumio-releases, so
+# mirror the appcast there until most users have updated. Set to "" before
+# deleting that repo.
+LEGACY_REPO="cavaldos/lumio-releases"
 TAP_REPO="cavaldos/homebrew-tap"
 ASSET="Lumio.dmg"
-FEED_URL="https://cavaldos.github.io/lumio-releases/appcast.xml"
+FEED_URL="https://cavaldos.github.io/macos-app-releases/$APPCAST"
 
 TAG=""
 KEY="${SPARKLE_PRIVATE_KEY:-}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --key) KEY="$2"; shift 2 ;;
-        -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) TAG="$1"; shift ;;
     esac
 done
@@ -114,12 +120,12 @@ gh release download "$TAG" -R "$REPO" -p "$ASSET" -D "$WORK/archives"
 SHA256="$(shasum -a 256 "$WORK/archives/$ASSET" | cut -d' ' -f1)"
 
 # --- 1. Sparkle appcast ---------------------------------------------------------
-echo "==> Sparkle: adding $TAG to appcast.xml in $RELEASES_REPO"
-clone "$RELEASES_REPO" "$WORK/releases" "${LUMIO_RELEASES_SSH:-}"
+echo "==> Sparkle: adding $TAG to $APPCAST in $RELEASES_REPO"
+clone "$RELEASES_REPO" "$WORK/releases" "${RELEASES_SSH:-}"
 # Keep history: generate_appcast keeps the entries of an appcast.xml it finds
 # next to the archives.
-if [ -f "$WORK/releases/appcast.xml" ]; then
-    cp "$WORK/releases/appcast.xml" "$WORK/archives/appcast.xml"
+if [ -f "$WORK/releases/$APPCAST" ]; then
+    cp "$WORK/releases/$APPCAST" "$WORK/archives/appcast.xml"
 fi
 generate_appcast ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
     --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
@@ -128,9 +134,18 @@ if ! grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>"
     echo "appcast has no $VERSION entry: is $ASSET on $TAG really version $VERSION?" >&2
     exit 1
 fi
-cp "$WORK/archives/appcast.xml" "$WORK/releases/appcast.xml"
-git -C "$WORK/releases" add appcast.xml
-publish "$WORK/releases" "appcast: $TAG"
+mkdir -p "$(dirname "$WORK/releases/$APPCAST")"
+cp "$WORK/archives/appcast.xml" "$WORK/releases/$APPCAST"
+git -C "$WORK/releases" add "$APPCAST"
+publish "$WORK/releases" "appcast: Lumio $TAG"
+
+if [ -n "$LEGACY_REPO" ]; then
+    echo "==> Sparkle: mirroring appcast.xml to $LEGACY_REPO (old feed)"
+    clone "$LEGACY_REPO" "$WORK/legacy" "${LEGACY_RELEASES_SSH:-}"
+    cp "$WORK/archives/appcast.xml" "$WORK/legacy/appcast.xml"
+    git -C "$WORK/legacy" add appcast.xml
+    publish "$WORK/legacy" "appcast: $TAG"
+fi
 
 # --- 2. Homebrew cask -----------------------------------------------------------
 echo "==> Homebrew: pointing Casks/lumio.rb in $TAP_REPO at $VERSION"

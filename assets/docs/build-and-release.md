@@ -44,9 +44,9 @@ cargo test --manifest-path bridge/ffi/Cargo.toml
 
 `notify-update.sh` reaches users two ways:
 
-- **Sparkle**: adds the release to `appcast.xml` in [cavaldos/lumio-releases](https://github.com/cavaldos/lumio-releases), served at `https://cavaldos.github.io/lumio-releases/appcast.xml`.
+- **Sparkle**: adds the release to `lumio/appcast.xml` in [cavaldos/macos-app-releases](https://github.com/cavaldos/macos-app-releases) (shared with other apps), served at `https://cavaldos.github.io/macos-app-releases/lumio/appcast.xml`. Lumio v0.0.5 and older still read `cavaldos/lumio-releases`, so the appcast is mirrored there too; once most users have updated, set `LEGACY_REPO=""` in `scripts/notify-update.sh`, drop `LUMIO_RELEASES_DEPLOY_KEY`, and delete that repo.
 - **Homebrew**: points the `lumio` cask in [cavaldos/homebrew-tap](https://github.com/cavaldos/homebrew-tap) at the new DMG.
 
-Rules: the version comes from the tag (`vX.Y.Z`), is never reused, and must be newer than the last release. Updates are EdDSA-signed; never rotate the key, or installed apps will reject updates. The `notify-users` job needs the secrets `SPARKLE_PRIVATE_KEY`, `LUMIO_RELEASES_DEPLOY_KEY` and `HOMEBREW_TAP_DEPLOY_KEY`.
+Rules: the version comes from the tag (`vX.Y.Z`), is never reused, and must be newer than the last release. Updates are EdDSA-signed; never rotate the key, or installed apps will reject updates. The `notify-users` job needs the secrets `SPARKLE_PRIVATE_KEY`, `MACOS_APP_RELEASES_DEPLOY_KEY`, `LUMIO_RELEASES_DEPLOY_KEY` and `HOMEBREW_TAP_DEPLOY_KEY`.
 
 CI (`ci.yml`) is manual only (`workflow_dispatch`).
