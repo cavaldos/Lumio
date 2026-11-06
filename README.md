@@ -25,17 +25,21 @@
 
 ## Demo
 
-<video src="https://github.com/cavaldos/Lumio/raw/main/assets/lumio-ui/video-demo.mp4" controls muted playsinline width="100%"></video>
+<p align="center">
+  <a href="https://github.com/cavaldos/Lumio/raw/main/assets/lumio-ui/video-demo.mp4">
+    <img src="assets/lumio-ui/demo.gif" alt="Lumio demo" width="100%">
+  </a>
+</p>
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td><img src="assets/lumio-ui/1.png" alt="Lumio screenshot 1"></td>
-    <td><img src="assets/lumio-ui/2.png" alt="Lumio screenshot 2"></td>
-    <td><img src="assets/lumio-ui/3.png" alt="Lumio screenshot 3"></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="assets/lumio-ui/1.png" alt="Lumio app search" width="100%">
+</p>
+<p align="center">
+  <img src="assets/lumio-ui/2.png" alt="Lumio dictionary lookup" height="300">
+  <img src="assets/lumio-ui/3.png" alt="Lumio translation" height="300">
+</p>
 
 ## Install
 
