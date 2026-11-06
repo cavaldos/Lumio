@@ -1,7 +1,9 @@
 <div align="center">
-    <img src="apps/macos/LauncherApp/lumio-app/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width=200 height=200>
-    <h1>Lumio — Free & Open-Source Keyboard Launcher for macOS</h1>
-    <p>Open apps, files and folders, find screenshots and PDFs by the text inside them (OCR), search your clipboard history, look up words and translate text without leaving the keyboard. A fast, <strong>local-first Spotlight alternative</strong> with a Rust core and a native SwiftUI interface.<br>✨ <strong>Liquid Glass on macOS 26</strong></p>
+    <img src="apps/macos/LauncherApp/lumio-app/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width=160 height=160>
+    <h1>Lumio</h1>
+    <p><strong>A fast, free and open-source keyboard launcher for macOS.</strong></p>
+    <p>Press <code>Option+Space</code> and get results as you type. A Rust core searches apps, files, folders, clipboard history and text inside images and PDFs (OCR) in milliseconds, behind a native SwiftUI interface. Everything runs locally on your Mac.</p>
+    <p>A fork of <a href="https://github.com/kunkka19xx/look"><strong>kunkka19xx/look</strong></a>. Huge thanks to <a href="https://github.com/kunkka19xx">kunkka19xx</a> for the original work this project builds on.</p>
 </div>
 
 <div align="center">
@@ -14,12 +16,6 @@
 [![GitHub forks](https://img.shields.io/github/forks/cavaldos/Lumio?style=flat-square)](https://github.com/cavaldos/Lumio/network/members)
 [![License](https://img.shields.io/github/license/cavaldos/Lumio?style=flat-square)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor%20%E2%9D%A4%EF%B8%8F-8A2BE2?style=flat-square)](https://ko-fi.com/calvados)
-
-<br>
-
-<a href="https://ko-fi.com/calvados" target="_blank">
-    <img src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Support me on Ko-fi" style="height: 60px !important;width: 217px !important;">
-</a>
 
 </div>
 
@@ -39,6 +35,7 @@
 <p align="center">
   <img src="assets/lumio-ui/2.png" alt="Lumio dictionary lookup" height="300">
   <img src="assets/lumio-ui/3.png" alt="Lumio translation" height="300">
+  <img src="assets/lumio-ui/4.png" alt="Lumio Setting" height="300">
 </p>
 
 ## Install
@@ -108,54 +105,13 @@ rm -rf ~/.lumio "$HOME/Library/Application Support/lumio"
 
 Select a word in any app before pressing `Option+Space` and Lumio opens straight on its dictionary entry (needs Accessibility, asked once).
 
-**OCR tab.** Find images and PDFs by the text *inside* them, not just their name. See [OCR search](#ocr-search).
-
-**Prefixes.** Type `"` to list them all.
-
-| Prefix | Does |
-| --- | --- |
-| `a"` `f"` `d"` | Apps, files or folders only |
-| `rc"` | Recent files and folders, newest first |
-| `r"` | Regex search |
-| `c"` `ci"` | Clipboard history: text, images |
-| `tw"` | Dictionary lookup |
-| `tr"` | Translate text into English, Vietnamese or Japanese |
-| `ps"` | Find running processes, measure CPU, force quit |
+**OCR tab.** Find images and PDFs by the text *inside* them, not just their name. See [OCR search](assets/docs/ocr-search.md).
 
 **Commands.** Type `:` or press `Cmd+/`: `:kill <name, PID or port>`, `:emptytrash`, `:help`.
 
-### OCR search
-
-Find a screenshot, a photo of a document or a scanned PDF by what is written in it: a bank transfer receipt by its amount, a contract by a clause, a slide by its title.
-
-**Open it** with the **OCR** pill in the filter bar (always shown, last), `Cmd+4`, the fourth round button next to the empty search bar, or `Tab` until it is selected. The search bar shows an `OCR` chip; type 3 or more characters. Each result shows the line the words were found in, with a preview of the file on the right. `Esc`, the **All** pill or `Tab` go back to the normal name search.
-
-**What is read**
-
-| File | How |
-| --- | --- |
-| Images: png, jpg, jpeg, heic, heif, tiff, gif, bmp, webp | OCR |
-| PDFs with a text layer | The text layer, plus OCR of pictures on the page (screenshots, photos) |
-| Scanned PDFs | OCR, page by page |
-
-Text files (.md, .txt, .docx, …) are not part of OCR search; find them by name as usual.
-
-**Matching.** Case and accents are ignored, so `hoa don` finds "Hóa Đơn". Every word of 3+ characters must appear in the file, anywhere and in any order; shorter words are skipped.
-
-**Indexing.** Lumio reads the folders it already indexes (`file_scan_roots`, `file_scan_extra_roots`, default Desktop, Documents and Downloads, minus `file_exclude_paths` and `skip_dir_names`), newest files first. It starts about 20 seconds after launch, then picks up new or changed files at most every 15 minutes when you open Lumio; unchanged files are never read twice. While it runs, the OCR tab shows how many files have text and how many are left, and refreshes by itself. Expect about a minute before the first file after each launch (macOS loads its text-recognition model), then a fraction of a second per image.
-
-**Privacy.** Text recognition runs on your Mac with Apple's Vision framework; nothing is uploaded. The recognized text is stored in `~/Library/Application Support/lumio/content-index.db`.
-
-**Limits.** At most `content_index_limit` files (3000 by default), the newest ones. Images over 40 MB and PDFs over 200 MB are skipped; per PDF, up to 300 pages are read and up to 15 of them OCR'd; up to 30,000 characters are kept per file. Images smaller than 48 px (icons) are skipped.
-
-| Config key | Default | Does |
-| --- | --- | --- |
-| `content_index_enabled` | `true` | `false` turns OCR search off and deletes the stored text |
-| `content_index_limit` | `3000` | Most files read (100–20000), newest first |
-
 ## Configuration
 
-Settings live in `~/.lumio/config`, created on first launch: which folders to index, scan depth and limits, ignore patterns, search aliases (`alias_code=Visual Studio Code|Cursor|Zed`), [OCR search](#ocr-search), clipboard history size, and the editor and terminal behind `Cmd+E` / `Cmd+T`. Change them from Settings (`Cmd+Shift+Space`), or edit the file and press `Cmd+Shift+;` to reload.
+Settings live in `~/.lumio/config`, created on first launch: which folders to index, scan depth and limits, ignore patterns, search aliases (`alias_code=Visual Studio Code|Cursor|Zed`), OCR search, clipboard history size, and the editor and terminal behind `Cmd+E` / `Cmd+T`. Change them from Settings (`Cmd+Shift+Space`), or edit the file and press `Cmd+Shift+;` to reload.
 
 ## Permissions
 
@@ -164,19 +120,18 @@ Lumio works without any special permission. Two are asked for only when you use 
 - **Accessibility**: to read the selected word for a dictionary lookup.
 - **Automation (Finder)**: to empty the Trash, which macOS protects.
 
+## Documentation
+
+- [Architecture](assets/docs/architecture.md)
+- [Rust core](assets/docs/core.md)
+- [FFI bridge](assets/docs/ffi-bridge.md)
+- [macOS app](assets/docs/macos-app.md)
+- [OCR search](assets/docs/ocr-search.md)
+- [Build and release](assets/docs/build-and-release.md)
+
 ## Contributing
 
-Contributions are welcome! Please read the [contribution guidelines](CONTRIBUTING.md) before submitting a pull request.
-
-## Support
-
-<a href="https://ko-fi.com/calvados" target="_blank">
-    <img src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Support me on Ko-fi" style="height: 36px !important;width: 130px !important;">
-</a>
-
-<a href="https://www.paypal.com/paypalme/nnkhanh29" target="_blank">
-    <img src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_200x51.png" alt="Donate with PayPal" style="height: 36px !important;">
-</a>
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Acknowledgments
 

@@ -6,6 +6,7 @@
 | `icon.png` | 1024 px master icon, generated. Do not edit by hand. |
 | `generate-icons.py` | Builds `icon.png` and every size in `AppIcon.appiconset` from `icon-source.png`. |
 | `lumio-ui/` | UI screenshots. |
+| `docs/` | Architecture docs. |
 
 ## Updating the app icon
 
