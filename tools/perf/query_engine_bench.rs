@@ -65,7 +65,6 @@ fn main() {
         "a\"safari",
         "f\"note",
         "d\"down",
-        "r\"^visual.*",
     ];
 
     let mut query_stats = Vec::new();

@@ -318,7 +318,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "noah-code.Lumio";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cavaldos.Lumio";
 				PRODUCT_NAME = "Lumio";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -362,7 +362,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "noah-code.Lumio";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cavaldos.Lumio";
 				PRODUCT_NAME = "Lumio";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

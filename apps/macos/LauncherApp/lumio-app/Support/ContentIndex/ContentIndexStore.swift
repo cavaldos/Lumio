@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import SQLite3
 
-nonisolated private let storeLog = Logger(subsystem: "noah-code.Lumio", category: "ContentIndex")
+nonisolated private let storeLog = Logger(subsystem: "com.cavaldos.Lumio", category: "ContentIndex")
 
 /// SQLITE_TRANSIENT: SQLite copies bound strings before the call returns.
 nonisolated private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -29,11 +29,7 @@ final class LauncherSearchLogicTests: XCTestCase {
         XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "a\"finder"), .apps)
         XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "f\"report"), .files)
         XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "d\"doc"), .folders)
-        XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "r\".*"), .disabled)
         XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "c\"note"), .disabled)
-        // rc" (recent) suppresses pinned quick-folder/Finder injection.
-        XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "rc\""), .disabled)
-        XCTAssertEqual(LauncherSearchLogic.pinnedLookupScope(for: "rc\"report"), .disabled)
     }
 
     func testNormalizedPinnedQueryRespectsScope() {
@@ -46,7 +42,7 @@ final class LauncherSearchLogicTests: XCTestCase {
             "documents"
         )
         XCTAssertNil(
-            LauncherSearchLogic.normalizedPinnedLookupQuery(for: "r\"foo", scope: .disabled)
+            LauncherSearchLogic.normalizedPinnedLookupQuery(for: "c\"foo", scope: .disabled)
         )
         XCTAssertNil(
             LauncherSearchLogic.normalizedPinnedLookupQuery(for: "   ", scope: .unscoped)

@@ -159,12 +159,17 @@ cask "lumio" do
         must_succeed: false
   end
 
-  uninstall quit: "noah-code.Lumio"
+  uninstall quit: "com.cavaldos.Lumio"
 
   zap trash: [
     "~/.lumio",
     "~/Library/Application Support/lumio",
+    "~/Library/Preferences/com.cavaldos.Lumio.plist",
+    "~/Library/Caches/com.cavaldos.Lumio",
+    "~/Library/HTTPStorages/com.cavaldos.Lumio",
     "~/Library/Preferences/noah-code.Lumio.plist",
+    "~/Library/Caches/noah-code.Lumio",
+    "~/Library/HTTPStorages/noah-code.Lumio",
   ]
 
   caveats <<~EOS

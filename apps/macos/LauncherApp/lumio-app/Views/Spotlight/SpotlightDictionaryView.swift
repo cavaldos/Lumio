@@ -4,7 +4,7 @@
 //
 //  tw" — right half of the panel. The selected word's entries laid out like Dictionary.app
 //  (headword | pronunciation |, parts of speech, senses, examples), with the word's
-//  EN / VI / JA translations in a bar along the bottom.
+//  Translations (languages chosen in Settings) in a bar along the bottom.
 //
 //  Painted with system colors, like the rest of the Spotlight preview.
 //

@@ -23,6 +23,10 @@
 
 </div>
 
+## Demo
+
+<video src="https://github.com/cavaldos/Lumio/raw/main/assets/lumio-ui/video-demo.mp4" controls muted playsinline width="100%"></video>
+
 ## Screenshots
 
 <table>

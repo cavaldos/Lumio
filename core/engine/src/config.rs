@@ -26,10 +26,6 @@ pub const LAZY_INDEXING_ENABLED: bool = true;
 pub const SCORE_TITLE_CONTAINS: i64 = 1200;
 pub const SCORE_SUBTITLE_CONTAINS: i64 = 900;
 pub const SCORE_TOKEN_ALL_MATCH: i64 = 850;
-pub const SCORE_REGEX_TITLE_AND_PATH: i64 = 1500;
-pub const SCORE_REGEX_TITLE_ONLY: i64 = 1300;
-pub const SCORE_REGEX_PATH_ONLY: i64 = 1100;
-pub const SCORE_REGEX_SUBTITLE_ONLY: i64 = 1000;
 
 pub const BIAS_APP: i64 = 220;
 pub const BIAS_FOLDER: i64 = 0;

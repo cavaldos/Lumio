@@ -23,7 +23,7 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         case .prefix: "Prefixes"
         case .command: "Commands"
         case .clip: "Clipboard"
-        case .clipImage: "Copied Images"
+        case .clipImage: "Clipboard"
         case .lookup: "Lookup"
         case .translation: "Translations"
         case .process: "Processes"
@@ -34,7 +34,25 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
     /// Filter pill a row belongs to. System Settings rows have no pill of their own:
     /// they sit under Applications.
     var pillGroup: SpotlightKind {
-        self == .setting ? .app : self
+        switch self {
+        case .setting: .app
+        case .clipImage: .clip  // images live in the Clipboard tab with the text clips
+        default: self
+        }
+    }
+
+    /// Tabs after OCR: each switches the launcher into a tool (replaces the old `x"` prefixes).
+    static let toolTabs: [SpotlightKind] = [.clip, .lookup, .translation, .process]
+
+    /// Tabs that run their own search instead of filtering the current results.
+    static let modeTabs: [SpotlightKind] = [.content] + toolTabs
+
+    var tabLabel: String {
+        switch self {
+        case .lookup: "Dictionary"
+        case .translation: "Translate"
+        default: label
+        }
     }
 
     /// A file on disk matched by name (.doc) or by its text (.content).

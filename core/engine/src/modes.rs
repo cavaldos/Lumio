@@ -85,20 +85,6 @@ pub const MODES: &[Mode] = &[
         about: "folders only",
     },
     Mode {
-        name: "recent",
-        aliases: &[],
-        prefix: "rc\"",
-        platforms: Platforms::All,
-        about: "recent files and folders, newest first",
-    },
-    Mode {
-        name: "regex",
-        aliases: &["re"],
-        prefix: "r\"",
-        platforms: Platforms::All,
-        about: "regex search",
-    },
-    Mode {
         name: "processes",
         aliases: &["ps"],
         prefix: "ps\"",
@@ -469,7 +455,6 @@ mod tests {
     /// agree.
     #[test]
     fn platform_columns_match_the_shells() {
-        assert_eq!(resolve("recent").unwrap().platforms, Platforms::All);
         assert_eq!(resolve("processes").unwrap().platforms, Platforms::All);
         assert_eq!(resolve("dictionary").unwrap().platforms, Platforms::MacOnly);
         assert_eq!(

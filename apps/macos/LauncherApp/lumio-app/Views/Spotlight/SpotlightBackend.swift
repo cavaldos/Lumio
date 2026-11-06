@@ -79,7 +79,7 @@ enum SpotlightBackend {
         }
 
         // Synthesized rows only appear in a general search: not while browsing a group,
-        // or once a core filter prefix has been typed (a" f" d" r" rc").
+        // or once a core filter prefix has been typed (a" f" d").
         let term = request.term
         guard request.browse == nil, !term.isEmpty, !hasEnginePrefix(term) else { return rows }
 
@@ -240,7 +240,7 @@ enum SpotlightBackend {
     private static func hasEnginePrefix(_ term: String) -> Bool {
         typealias P = AppConstants.Launcher.QueryPrefix
         let lower = term.lowercased()
-        return [P.apps, P.files, P.folders, P.regex, P.recent].contains { lower.hasPrefix($0) }
+        return [P.apps, P.files, P.folders].contains { lower.hasPrefix($0) }
     }
 
     /// Each item shows only once: apps by name, files/folders by path.

@@ -11,7 +11,7 @@
 import AppKit
 import OSLog
 
-nonisolated private let spotlightOpenLog = Logger(subsystem: "noah-code.Lumio", category: "spotlight-open")
+nonisolated private let spotlightOpenLog = Logger(subsystem: "com.cavaldos.Lumio", category: "spotlight-open")
 
 enum SpotlightOpener {
     enum Outcome {

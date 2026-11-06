@@ -20,7 +20,7 @@ enum AppVersion {
     }
 
     /// True for side-by-side dev installs (`make app-run-dev` rewrites the
-    /// bundle id to `noah-code.Lumio.Dev`). Dev builds carry a fixed 1.0 version,
+    /// bundle id to `com.cavaldos.Lumio.Dev`). Dev builds carry a fixed 1.0 version,
     /// so comparing them against published releases is meaningless.
     static var isDevBuild: Bool {
         Bundle.main.bundleIdentifier?.hasSuffix(".Dev") ?? false

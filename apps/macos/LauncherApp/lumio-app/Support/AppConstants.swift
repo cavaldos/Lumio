@@ -59,18 +59,15 @@ enum AppConstants {
 
 
 
+        // Query prefixes the core still understands. The launcher no longer takes them
+        // typed: each is a tab (SpotlightKind.toolTabs); `lumio <mode>` still sends them.
         enum QueryPrefix {
             static let apps = "a\""
             static let files = "f\""
             static let folders = "d\""
-            static let regex = "r\""
             static let clipboard = "c\""
             // Copied images (see LauncherClipboardImageFeature).
             static let clipboardImage = "ci\""
-            // Recent files/folders, newest-activity first. Handled engine-side
-            // (needs last_used/fs_modified timestamps); the app just sends it
-            // through search and suppresses pinned injection (see LauncherSearchLogic).
-            static let recent = "rc\""
             // Dictionary prefix (handled in LauncherView+Translation).
             static let translateWord = "tw\""
             // Translate text with Apple Translation (Spotlight launcher only, see TextTranslator).
@@ -79,73 +76,8 @@ enum AppConstants {
             // running processes, kill / copy-PID / measure-CPU from the results.
             static let process = "ps\""
 
-            // Typing a lone `"` opens the prefix-discovery menu (see
-            // PrefixSuggestion.all / LauncherView.isPrefixSuggestionQuery).
-            static let discovery = "\""
         }
 
-        // Canonical list of query prefixes, with a usage hint and a description.
-        // Single source of truth for the prefix-discovery menu (type `"`) and `:help`.
-        enum PrefixSuggestion {
-            struct Entry: Identifiable {
-                let prefix: String
-                let argHint: String
-                let description: String
-                /// Whether this entry appears in the live `"` discovery menu.
-                /// The `"` entry itself is documented in the static lists but
-                /// hidden from the menu it opens (see `menuEntries`).
-                var listedInMenu: Bool = true
-                var id: String { prefix }
-                /// What the help/shortcuts lists show, e.g. `a"word` (or just `"`).
-                var displayWithArg: String { prefix + argHint }
-            }
-
-            /// Entries shown in the live discovery menu (excludes `"` itself).
-            static var menuEntries: [Entry] { all.filter(\.listedInMenu) }
-
-            /// Discovery entries narrowed by `filter` - the text typed after the
-            /// leading `"`. Case-insensitive substring match against the prefix,
-            /// its display form, and the description, so `"folder` finds `d"` by
-            /// intent rather than only by the cryptic prefix letter. An empty
-            /// filter returns the full menu.
-            static func menuEntries(matching filter: String) -> [Entry] {
-                let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !needle.isEmpty else { return menuEntries }
-                return menuEntries.filter {
-                    $0.prefix.lowercased().contains(needle)
-                        || $0.displayWithArg.lowercased().contains(needle)
-                        || $0.description.lowercased().contains(needle)
-                }
-            }
-
-            static let all: [Entry] = [
-                Entry(
-                    prefix: QueryPrefix.discovery, argHint: "",
-                    description: "Browse all prefixes", listedInMenu: false),
-                Entry(prefix: QueryPrefix.apps, argHint: "word", description: "Apps only"),
-                Entry(prefix: QueryPrefix.files, argHint: "word", description: "Files only"),
-                Entry(prefix: QueryPrefix.folders, argHint: "word", description: "Folders only"),
-                Entry(
-                    prefix: QueryPrefix.recent, argHint: "word",
-                    description: "Recent files/folders, newest first (optional filter)"),
-                Entry(prefix: QueryPrefix.regex, argHint: "pattern", description: "Regex search"),
-                Entry(
-                    prefix: QueryPrefix.clipboard, argHint: "word",
-                    description: "Clipboard history search (recent text clips)"),
-                Entry(
-                    prefix: QueryPrefix.clipboardImage, argHint: "word",
-                    description: "Copied images, newest first"),
-                Entry(
-                    prefix: QueryPrefix.translateWord, argHint: "word",
-                    description: "Lookup panel with definitions"),
-                Entry(
-                    prefix: QueryPrefix.translate, argHint: "text",
-                    description: "Translate text (EN / VI / JA, on-device)"),
-                Entry(
-                    prefix: QueryPrefix.process, argHint: "word",
-                    description: "Find & kill running processes"),
-            ]
-        }
 
 
         enum WebURL {
@@ -287,7 +219,7 @@ enum AppConstants {
         private static let commandDefinitions: [(id: String, detail: String, placeholder: String)] = [
             (Command.kill, "Force kill app or process by name, PID, or port", "Type a name, PID, or port"),
             (Command.emptyTrash, "Empty the Trash (asks first)", "⏎ empty, Esc cancel"),
-            (Command.help, "Prefixes, commands and shortcuts", "Filter"),
+            (Command.help, "Tabs, commands and shortcuts", "Filter"),
         ]
 
         static let commandCatalog: [AppCommand] = commandDefinitions.enumerated().map { index, definition in

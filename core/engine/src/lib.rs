@@ -747,21 +747,6 @@ mod tests {
     }
 
     #[test]
-    fn regex_prefix_matches_by_pattern() {
-        let engine = sample_engine();
-        let results = engine.search_scored("r\"^Visual.*Code$", 10);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].0.id.as_ref(), "app:vscode");
-    }
-
-    #[test]
-    fn regex_prefix_returns_empty_on_invalid_pattern() {
-        let engine = sample_engine();
-        let results = engine.search_scored("r\"([", 10);
-        assert!(results.is_empty());
-    }
-
-    #[test]
     fn vietnamese_diacritics_query_matches_ascii_titles() {
         let engine = QueryEngine::new(vec![Candidate::new(
             "app:terminal",

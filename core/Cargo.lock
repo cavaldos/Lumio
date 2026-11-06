@@ -250,7 +250,6 @@ dependencies = [
  "lumio-tools",
  "objc2",
  "objc2-foundation",
- "regex",
  "serde",
  "serde_json",
  "toml",

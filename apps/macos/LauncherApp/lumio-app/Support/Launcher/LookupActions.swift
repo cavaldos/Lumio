@@ -16,7 +16,11 @@ enum LookupActions {
         let utterance = AVSpeechUtterance(string: trimmed)
         utterance.rate = 0.46
 
-        if isJapaneseText(trimmed) {
+        // Detected language first: the character checks below can't tell French "é" from Vietnamese.
+        if let detected = TextTranslator.detectLanguage(of: trimmed, likely: TranslationLanguage.all),
+           let voice = AVSpeechSynthesisVoice(language: detected.minimalIdentifier) {
+            utterance.voice = voice
+        } else if isJapaneseText(trimmed) {
             utterance.voice = AVSpeechSynthesisVoice(language: "ja-JP")
         } else if isVietnameseText(trimmed) {
             utterance.voice = AVSpeechSynthesisVoice(language: "vi-VN")

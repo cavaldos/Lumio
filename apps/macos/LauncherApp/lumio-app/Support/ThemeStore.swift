@@ -4,7 +4,7 @@ import Foundation
 import ServiceManagement
 
 /// App settings kept in the config file (`~/.lumio/config`) and edited in Settings:
-/// file indexing, log level, launch at login.
+/// file indexing, log level, launch at login, translation languages.
 final class ThemeStore: ObservableObject {
     // Shared so AppDelegate (which hosts ContentView in an AppKit window), the
     // Settings window and the launcher use the same store.
@@ -42,9 +42,24 @@ final class ThemeStore: ObservableObject {
 
     init() {
         Self.ensureDefaultConfigFileExists(at: Self.configPath())
+        Self.migrateLegacyDefaults(key: defaultsKey)
         settings = Self.loadThemeSettings(from: UserDefaults.standard.data(forKey: defaultsKey))
         applyOverridesFromConfigFile()
         _ = applyLaunchAtLoginSetting()
+    }
+
+    /// The bundle id used to be `noah-code.Lumio`, so theme settings saved before
+    /// the rename live in that domain. Copy them over once so they survive.
+    private static func migrateLegacyDefaults(key: String) {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: key) == nil,
+            let bundleID = Bundle.main.bundleIdentifier,
+            bundleID.hasPrefix("com.cavaldos.Lumio"),
+            let legacy = UserDefaults(
+                suiteName: bundleID.replacingOccurrences(of: "com.cavaldos.Lumio", with: "noah-code.Lumio")),
+            let data = legacy.data(forKey: key)
+        else { return }
+        defaults.set(data, forKey: key)
     }
 
     struct ConfigReloadResult {
@@ -92,6 +107,7 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "file_scan_extra_roots", value: ConfigFileLines.renderList(extraFileScanRoots))
         ConfigFileLines.upsert(&lines, key: "backend_log_level", value: settings.backendLogLevel.rawValue)
         ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
+        ConfigFileLines.upsert(&lines, key: "translation_languages", value: settings.translationLanguages.joined(separator: ","))
 
         do {
             try ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)
@@ -209,6 +225,10 @@ final class ThemeStore: ObservableObject {
                 if let parsed = parseBackendLogLevel(value) { settings.backendLogLevel = parsed }
             case "launch_at_login":
                 if let parsed = parseBool(value) { settings.launchAtLogin = parsed }
+            case "translation_languages":
+                let codes = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                let known = codes.filter { TranslationLanguage.named($0) != nil }
+                if !known.isEmpty { settings.translationLanguages = Array(known.prefix(TranslationLanguage.maxSelected)) }
             default:
                 continue
             }
@@ -374,6 +394,8 @@ content_index_enabled=true
 content_index_limit=3000
 backend_log_level=error
 launch_at_login=true
+# Translator languages (tr" / tw"), 1-5 codes. Choices: en,vi,fr,ja,ko,zh-Hans,zh-Hant,es,de,it,pt,ru,th,id,hi,ar
+translation_languages=vi,en,fr
 skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv
 
 # Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3

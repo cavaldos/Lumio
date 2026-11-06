@@ -38,6 +38,8 @@ struct SmoothCaretTextField: NSViewRepresentable {
         applyLineMode(to: field)
         context.coordinator.appliedMultiline = allowsMultiline
         applyPlaceholder(to: field)
+        context.coordinator.appliedPlaceholder = placeholder
+        context.coordinator.appliedPlaceholderFont = font
         return field
     }
 
@@ -97,10 +99,20 @@ struct SmoothCaretTextField: NSViewRepresentable {
             // has not grown to fit them at this point.
             field.refreshCaretSettling()
         }
-        field.font = font
-        field.textColor = textColor
-        field.caretColor = caretColor
-        applyPlaceholder(to: field)
+        // Assign only on a real change. This runs on every keystroke (the query
+        // lives in the launcher's root view), and setting `font` / `textColor`
+        // on a field being edited pushes them into the field editor: a full
+        // re-layout per character, and it can break an input method's marked
+        // text (Vietnamese Telex) mid-word.
+        if field.font != font { field.font = font }
+        if field.textColor != textColor { field.textColor = textColor }
+        if field.caretColor != caretColor { field.caretColor = caretColor }
+        if context.coordinator.appliedPlaceholder != placeholder
+            || context.coordinator.appliedPlaceholderFont != font {
+            context.coordinator.appliedPlaceholder = placeholder
+            context.coordinator.appliedPlaceholderFont = font
+            applyPlaceholder(to: field)
+        }
 
         // Bridge focus INTO first responder only. `currentEditor() != nil` is a
         // stable "editing" signal (unlike first-responder identity, which flickers
@@ -132,6 +144,9 @@ struct SmoothCaretTextField: NSViewRepresentable {
         /// The line mode currently applied to the field, so a mode flip is
         /// detected once rather than re-applied on every SwiftUI update.
         var appliedMultiline = false
+        /// Placeholder last written to the field (see updateNSView).
+        var appliedPlaceholder: String?
+        var appliedPlaceholderFont: NSFont?
 
         init(_ parent: SmoothCaretTextField) { self.parent = parent }
 
@@ -292,6 +307,10 @@ final class CaretTextField: NSTextField {
     /// gliding when `animated`.
     func refreshCaret(animated: Bool) {
         guard window?.firstResponder === currentEditor(), let rect = caretRect() else { return }
+        // One keystroke asks up to three times for the same spot (text change,
+        // selection change, settle pass). Re-setting the frame restarts the
+        // ease-out from zero each time, so the glide stutters: skip a no-op move.
+        if animated, caretLayer.frame.equalTo(rect) { return }
         CATransaction.begin()
         if animated {
             CATransaction.setAnimationDuration(Motion.Caret.glideSeconds)

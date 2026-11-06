@@ -50,6 +50,8 @@ struct SpotlightLauncherView: View {
     @State private var scopeReturnQuery = ""
     /// Text left in the field when the launcher was dismissed; restored on the next open.
     @State private var keptQuery = ""
+    /// Tab (Dictionary, Translate, …) open when the launcher was dismissed; reopened with `keptQuery`.
+    @State private var keptBrowse: SpotlightKind?
     @State private var browse: SpotlightKind?
     @State private var scrollTarget: String?
     /// The core search in flight (nil = results already match the input).
@@ -118,13 +120,16 @@ struct SpotlightLauncherView: View {
     /// shown (last), since it switches to a different search rather than filtering this one.
     private var kinds: [SpotlightKind] {
         var seen: [SpotlightKind] = []
-        for item in all where item.kind != .content && !seen.contains(item.kind.pillGroup) {
+        for item in all where !SpotlightKind.modeTabs.contains(item.kind.pillGroup) && !seen.contains(item.kind.pillGroup) {
             seen.append(item.kind.pillGroup)
         }
         return seen
     }
 
     private var inOCR: Bool { browse == .content }
+
+    /// On OCR or a tool tab: a different search, not a filter of the name results.
+    private var inModeTab: Bool { browse.map(SpotlightKind.modeTabs.contains) ?? false }
 
     private var panelWidth: CGFloat { idle ? Metric.idleWidth : Metric.panelWidth }
 
@@ -296,7 +301,7 @@ struct SpotlightLauncherView: View {
                 if activeCommand == SpotlightCommands.kill || isMode(.process) { refresh() }
             },
             onClips: { if isMode(.clip) { refresh() } },
-            onImages: { if isMode(.clipImage) { refresh() } }
+            onImages: { if isMode(.clip) { refresh() } }
         )
     }
 
@@ -467,7 +472,7 @@ struct SpotlightLauncherView: View {
                     processCPU: item.pid.flatMap { processModel.cpu[$0] },
                     measuringCPU: item.pid.map { processModel.measuringCPU.contains($0) } ?? false,
                     onLookup: { word in
-                        query = AppConstants.Launcher.QueryPrefix.translateWord + word
+                        openTab(.lookup, text: word)
                         focusField()
                     },
                     translation: translation
@@ -484,8 +489,8 @@ struct SpotlightLauncherView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Metric.pillGap) {
-                    pillButton(label: "All", active: filter == nil && !inOCR) {
-                        if inOCR { leaveOCR() } else { filter = nil }
+                    pillButton(label: "All", active: filter == nil && !inModeTab) {
+                        if inModeTab { leaveModeTab() } else { filter = nil }
                     }
                         .id(Self.allPillID)
                     ForEach(kinds) { kind in
@@ -494,10 +499,12 @@ struct SpotlightLauncherView: View {
                         }
                         .id(kind.rawValue)
                     }
-                    pillButton(label: SpotlightKind.content.label, active: inOCR) {
-                        toggleBrowse(.content)
+                    ForEach(SpotlightKind.modeTabs) { tab in
+                        pillButton(label: tab.tabLabel, active: browse == tab) {
+                            toggleBrowse(tab)
+                        }
+                        .id(tab.rawValue)
                     }
-                        .id(SpotlightKind.content.rawValue)
                 }
                 .padding(.horizontal, 14)
             }
@@ -507,9 +514,10 @@ struct SpotlightLauncherView: View {
                     proxy.scrollTo(kind?.rawValue ?? Self.allPillID)
                 }
             }
-            .onChange(of: inOCR) { _, ocr in
+            .onChange(of: browse) { _, tab in
+                let id = tab.flatMap { SpotlightKind.modeTabs.contains($0) ? $0.rawValue : nil }
                 withAnimation(motion(SpotlightMotion.chip)) {
-                    proxy.scrollTo(ocr ? SpotlightKind.content.rawValue : Self.allPillID)
+                    proxy.scrollTo(id ?? Self.allPillID)
                 }
             }
         }
@@ -517,23 +525,34 @@ struct SpotlightLauncherView: View {
 
     private static let allPillID = "pill-all"
 
-    /// Tab / Shift+Tab: move to the next / previous filter pill (All → Applications → … → OCR → All).
-    /// Landing on OCR switches to the OCR search; leaving it goes back to the name search.
+    /// Tab / Shift+Tab: move to the next / previous pill (All → Applications → … → OCR → tools → All).
+    /// Landing on OCR or a tool switches to its search; leaving goes back to the name search.
     private func cycleFilter(_ step: Int) {
-        let options: [SpotlightKind?] = [nil] + kinds + [.content]
-        let current = inOCR ? options.count - 1 : (options.firstIndex(of: filter) ?? 0)
+        let options: [SpotlightKind?] = [nil] + kinds + SpotlightKind.modeTabs.map(Optional.some)
+        let current = inModeTab ? (options.firstIndex(of: browse) ?? 0) : (options.firstIndex(of: filter) ?? 0)
         let next = options[(current + step + options.count) % options.count]
-        if next == .content {
-            toggleBrowse(.content)
-        } else if inOCR {
-            leaveOCR()
-            filter = next
+        if let next, SpotlightKind.modeTabs.contains(next) {
+            filter = nil
+            withAnimation(motion(SpotlightMotion.chip)) { scope = nil; browse = next }
         } else {
+            if inModeTab { leaveModeTab() }
             filter = next
         }
     }
 
-    private func leaveOCR() {
+    /// Opens a tool tab with some text in the field (Dictionary from a linked word, `lumio <mode>`).
+    private func openTab(_ tab: SpotlightKind?, text: String) {
+        withAnimation(motion(SpotlightMotion.chip)) {
+            scope = nil
+            activeCommand = nil
+            filter = nil
+            browse = tab
+        }
+        query = text
+        focusField()
+    }
+
+    private func leaveModeTab() {
         withAnimation(motion(SpotlightMotion.chip)) { browse = nil }
     }
 
@@ -731,7 +750,8 @@ struct SpotlightLauncherView: View {
         case SpotlightCommands.emptyTrash: return "⏎ twice to empty   esc cancel"
         default: break
         }
-        return "↑↓ select   " + (browse != nil ? SpotlightMode.search : SpotlightMode.parse(query)).footerHint
+        let mode = browse.map { SpotlightMode.forTab($0, query: query) ?? .search } ?? SpotlightMode.parse(query)
+        return "↑↓ select   " + mode.footerHint
     }
 
     // MARK: - Toast
@@ -782,6 +802,10 @@ struct SpotlightLauncherView: View {
             case SpotlightCommands.help: publish(SpotlightModeRows.help(query))
             default: publish([])
             }
+            return
+        }
+        if let browse, let mode = SpotlightMode.forTab(browse, query: query) {
+            _ = refreshMode(mode)
             return
         }
         if browse == nil, refreshMode(SpotlightMode.parse(query)) { return }
@@ -853,14 +877,11 @@ struct SpotlightLauncherView: View {
         }
     }
 
-    /// Legacy launcher prefixes / commands. `false` = the typed text is a normal search (including
-    /// a" f" d" r" rc", which the core understands itself), so refresh continues down to the core.
+    /// Tool tabs / commands. `false` = the typed text is a normal search, so refresh continues down to the core.
     private func refreshMode(_ mode: SpotlightMode) -> Bool {
         switch mode {
         case .search:
             return false
-        case .prefixMenu(let filter):
-            publish(SpotlightModeRows.prefixMenu(filter))
         case .commandMenu(let filter):
             // `:kill chrome` (with a space) goes straight into the command, like the legacy launcher.
             if let trigger = SpotlightCommands.inlineTrigger(filter) {
@@ -869,9 +890,7 @@ struct SpotlightLauncherView: View {
                 publish(SpotlightModeRows.commandMenu(filter))
             }
         case .clipboard(let term):
-            publish(SpotlightModeRows.clipboard(clipboardStore, term: term))
-        case .clipboardImage(let term):
-            publish(SpotlightModeRows.clipboardImages(clipboardStore, term: term))
+            publish(SpotlightModeRows.clipboardAll(clipboardStore, term: term))
         case .lookup(let word):
             publish(SpotlightModeRows.lookup(word))
         case .translate(let text):
@@ -886,7 +905,7 @@ struct SpotlightLauncherView: View {
     /// tr": the target-language rows show right away; the translations fill in once typing pauses.
     /// Runs as `searchTask`, so an Enter pressed meanwhile waits and copies the fresh translation.
     private func startTranslation(_ text: String) {
-        let source = text.isEmpty ? nil : TextTranslator.detectLanguage(of: text)
+        let source = text.isEmpty ? nil : TextTranslator.detectLanguage(of: text, likely: TranslationLanguage.all)
         let rows = SpotlightModeRows.translation(text, source: source)
         // First keystroke (panel not expanded yet) translates immediately; further typing waits a beat.
         let debounce: Duration = expanded ? .milliseconds(200) : .zero
@@ -919,11 +938,7 @@ struct SpotlightLauncherView: View {
     }
 
     private func isMode(_ kind: SpotlightKind) -> Bool {
-        guard activeCommand == nil, scope == nil, browse == nil else { return false }
-        switch (SpotlightMode.parse(query), kind) {
-        case (.clipboard, .clip), (.clipboardImage, .clipImage), (.process, .process): return true
-        default: return false
-        }
+        activeCommand == nil && scope == nil && browse == kind
     }
 
     /// Enters a command (`:kill`, `:emptytrash`, `:help`). The text after the command name becomes its argument.
@@ -1110,13 +1125,8 @@ struct SpotlightLauncherView: View {
     /// `lumio clipboard` (and other launch modes): open straight into that query.
     private func applyLaunchQuery(_ text: String) {
         show()
-        withAnimation(motion(SpotlightMotion.chip)) {
-            scope = nil
-            browse = nil
-            activeCommand = nil
-        }
-        query = text
-        focusField()
+        let launch = SpotlightMode.tab(fromLaunchQuery: text)
+        openTab(launch.tab, text: launch.text)
     }
 
     /// Shows the results. Expands the panel if it isn't already.
@@ -1500,7 +1510,7 @@ struct SpotlightLauncherView: View {
         }
         show()
         if let selection {
-            query = AppConstants.Launcher.QueryPrefix.translateWord + selection
+            openTab(.lookup, text: selection)
         }
     }
 
@@ -1540,12 +1550,18 @@ struct SpotlightLauncherView: View {
             // Fresh open: go to the hidden state WITHOUT animation, position the window, and only then
             // animate on the next tick — the two states must be in two transactions.
             resetState()
-            // Bring back the search from last time (sets the query after the reset, so it re-runs),
-            // unless it was hidden longer than `query_retention_seconds`.
-            if QueryRetentionPolicy.shouldClear(hiddenAt: hiddenAt, seconds: retentionSeconds) {
+            // Bring back the search from last time (sets the query after the reset, so it re-runs).
+            // A plain search is dropped after `query_retention_seconds`; a tab (Dictionary,
+            // Translate, …) always comes back as it was left.
+            if keptBrowse == nil,
+               QueryRetentionPolicy.shouldClear(hiddenAt: hiddenAt, seconds: retentionSeconds) {
                 keptQuery = ""
             }
             hiddenAt = nil
+            if let tab = keptBrowse {
+                browse = tab
+                keptBrowse = nil
+            }
             if !keptQuery.isEmpty {
                 query = keptQuery
                 keptQuery = ""
@@ -1603,9 +1619,10 @@ struct SpotlightLauncherView: View {
         }
         pidToRestore = nil
 
-        // Dismissed (not launched) from a plain search: remember the text for the next open.
-        let plainSearch = scope == nil && browse == nil && activeCommand == nil
-        keptQuery = (!launched && plainSearch) ? query : ""
+        // Dismissed (not launched) from a plain search or a tab: remember it for the next open.
+        let keepable = !launched && scope == nil && activeCommand == nil
+        keptBrowse = keepable ? browse : nil
+        keptQuery = keepable ? query : ""
 
         let seconds = launched ? SpotlightMotion.launchSeconds : SpotlightMotion.dismissSeconds
         dismissTask = Task { @MainActor in

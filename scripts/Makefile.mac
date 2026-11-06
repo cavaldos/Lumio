@@ -6,7 +6,7 @@ XCODE_SCHEME := Lumio
 XCODE_CONFIG := Debug
 XCODE_DERIVED_DATA := .build/xcode
 
-APP_ID := noah-code.Lumio
+APP_ID := com.cavaldos.Lumio
 APP_PROCESS := Lumio
 APP_BUNDLE := $(XCODE_DERIVED_DATA)/Build/Products/$(XCODE_CONFIG)/Lumio.app
 APP_DEBUG_DYLIB := $(APP_BUNDLE)/Contents/MacOS/Lumio.debug.dylib
@@ -26,9 +26,9 @@ RUST_SOURCE_DIRS := core bridge
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 DEV_APP_NAME ?= Lumio Dev
-DEV_APP_ID ?= noah-code.Lumio.Dev
+DEV_APP_ID ?= com.cavaldos.Lumio.Dev
 DEV_APP_INSTALL_BUNDLE := /Applications/$(DEV_APP_NAME).app
-LOG_PREDICATE ?= subsystem == "noah-code.Lumio"
+LOG_PREDICATE ?= subsystem == "com.cavaldos.Lumio"
 
 REAL_DB_PATH := $(HOME)/Library/Application Support/lumio/lumio.db
 # The dev file Lumio itself names (core/engine/src/config_path.rs). Never

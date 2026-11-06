@@ -2,15 +2,14 @@
 //  SpotlightModes.swift
 //  lumio-app
 //
-//  The legacy launcher's prefixes and commands, running inside the Spotlight launcher:
+//  The legacy launcher's tools, running inside the Spotlight launcher. Each one is a tab
+//  after OCR (see SpotlightKind.toolTabs); the old `x"` prefixes are gone:
 //
-//    a" f" d" r" rc"   — core filters (go straight to EngineBridge, see SpotlightBackend)
-//    "                 — menu listing every prefix (PrefixSuggestion)
-//    c"  ci"           — text / image clipboard history (ClipboardHistoryStore)
-//    tw"               — word lookup: system dictionary (Dictionary.app style) + EN/VI/JA translation
-//    tr"               — translate text into EN / VI / JA (Apple Translation, see TextTranslator)
-//    ps"               — find / measure CPU / force quit processes (ProcessFinderModel)
-//    :                 — command menu; :kill  :emptytrash  :help  (or ⌘/ opens the most recent command)
+//    Clipboard           — copied text and images in one list, newest first (ClipboardHistoryStore)
+//    Dictionary          — word lookup: system dictionary + EN/VI/JA translation
+//    Translate           — translate text into the languages chosen in Settings (Apple Translation)
+//    Processes           — find / measure CPU / force quit processes (ProcessFinderModel)
+//    :                   — command menu; :kill  :emptytrash  :help  (or ⌘/ opens the most recent command)
 //
 //  Reuses the legacy launcher's modules as-is; only the rows are built Spotlight-style.
 //
@@ -20,45 +19,52 @@ import CoreServices
 
 enum SpotlightMode: Equatable {
     case search
-    case prefixMenu(filter: String)
     case commandMenu(filter: String)
     case clipboard(term: String)
-    case clipboardImage(term: String)
     case lookup(word: String)
     case translate(text: String)
     case process(term: String)
 
-    private typealias Prefix = AppConstants.Launcher.QueryPrefix
-
-    /// Same rules as the legacy launcher.
+    /// Typed text outside a tool tab: only `:` (commands) is special.
     static func parse(_ query: String) -> SpotlightMode {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = trimmed.lowercased()
-        if let term = ClipboardQueryPrefix.image.searchTerm(in: trimmed) { return .clipboardImage(term: term) }
-        if let term = ClipboardQueryPrefix.text.searchTerm(in: trimmed) { return .clipboard(term: term) }
-        if let term = LauncherProcessFeature.searchTerm(from: trimmed) { return .process(term: term) }
-        if lower.hasPrefix(Prefix.translateWord) {
-            let word = String(trimmed.dropFirst(Prefix.translateWord.count))
-            return .lookup(word: word.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        if lower.hasPrefix(Prefix.translate) {
-            let text = String(trimmed.dropFirst(Prefix.translate.count))
-            return .translate(text: text.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        if trimmed.hasPrefix(Prefix.discovery) {
-            return .prefixMenu(filter: String(trimmed.dropFirst(Prefix.discovery.count)))
-        }
         if trimmed.hasPrefix(":") { return .commandMenu(filter: String(trimmed.dropFirst())) }
         return .search
+    }
+
+    /// The mode a tool tab runs with the typed text. nil = not a tool tab with its own rows.
+    static func forTab(_ tab: SpotlightKind, query: String) -> SpotlightMode? {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch tab {
+        case .clip: return .clipboard(term: term)
+        case .lookup: return .lookup(word: term)
+        case .translation: return .translate(text: term)
+        case .process: return .process(term: term)
+        default: return nil
+        }
+    }
+
+    /// `lumio <mode>` still sends a prefixed query (from core): turn it into a tab + text.
+    static func tab(fromLaunchQuery text: String) -> (tab: SpotlightKind?, text: String) {
+        typealias P = AppConstants.Launcher.QueryPrefix
+        let table: [(String, SpotlightKind)] = [
+            (P.clipboardImage, .clip), (P.clipboard, .clip), (P.translateWord, .lookup),
+            (P.translate, .translation), (P.process, .process),
+            (P.apps, .app), (P.folders, .folder), (P.files, .doc),
+        ]
+        let lower = text.lowercased()
+        for (prefix, tab) in table where lower.hasPrefix(prefix) {
+            return (tab, String(text.dropFirst(prefix.count)))
+        }
+        return (nil, text)
     }
 
     /// Key hint in the panel footer for this mode.
     var footerHint: String {
         switch self {
         case .search: "⏎ open   ⇥ filter   ⌘K actions"
-        case .prefixMenu: "⏎ use prefix"
         case .commandMenu: "⏎ enter command"
-        case .clipboard, .clipboardImage: "⏎ copy"
+        case .clipboard: "⏎ copy"
         case .lookup: "click a linked word to look it up"
         case .translate: "⏎ copy translation"
         case .process: "⏎ measure CPU   ⌘K actions"
@@ -108,16 +114,6 @@ enum SpotlightModeRows {
         return formatter
     }()
 
-    static func prefixMenu(_ filter: String) -> [SpotlightItem] {
-        AppConstants.Launcher.PrefixSuggestion.menuEntries(matching: filter).map { entry in
-            SpotlightItem(
-                id: "prefix|\(entry.prefix)", name: entry.displayWithArg, kind: .prefix,
-                colors: "#a7aeb8,#5e6670", meta: entry.description,
-                symbol: "text.cursor", payload: entry.prefix
-            )
-        }
-    }
-
     static func commandMenu(_ filter: String) -> [SpotlightItem] {
         AppConstants.Launcher.commandCatalog(matching: filter).enumerated().map { index, command in
             SpotlightItem(
@@ -126,6 +122,15 @@ enum SpotlightModeRows {
                 symbol: command.symbolName, payload: command.id
             )
         }
+    }
+
+    /// Clipboard tab: copied text and images in one list, newest first (like Maccy).
+    static func clipboardAll(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
+        let texts = zip(store.search(term).map(\.capturedAt), clipboard(store, term: term))
+        let images = zip(store.searchImages(term).map(\.capturedAt), clipboardImages(store, term: term))
+        return (Array(texts) + Array(images))
+            .sorted { $0.0 > $1.0 }
+            .map(\.1)
     }
 
     static func clipboard(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
@@ -225,11 +230,9 @@ enum SpotlightModeRows {
 
     /// `:help` — prefixes, commands and keyboard shortcuts of this launcher.
     static func help(_ filter: String) -> [SpotlightItem] {
-        let prefixes = AppConstants.Launcher.PrefixSuggestion.menuEntries(matching: "").map {
-            ($0.displayWithArg, $0.description)
-        }
+        let tabs = SpotlightKind.toolTabs.map { ($0.tabLabel + " tab", toolDetail($0)) }
         let commands = AppConstants.Launcher.commandCatalog.map { (":" + $0.id, SpotlightCommands.detail(for: $0)) }
-        let entries = prefixes + commands + helpShortcuts
+        let entries = tabs + commands + helpShortcuts
         let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return entries
             .filter { needle.isEmpty || $0.0.lowercased().contains(needle) || $0.1.lowercased().contains(needle) }
@@ -239,6 +242,16 @@ enum SpotlightModeRows {
                     colors: "#a7aeb8,#5e6670", meta: detail, symbol: "keyboard"
                 )
             }
+    }
+
+    private static func toolDetail(_ tab: SpotlightKind) -> String {
+        switch tab {
+        case .clip: "Copied text and images, newest first"
+        case .lookup: "Lookup panel with definitions"
+        case .translation: "Translate text (\(TranslationLanguage.all.map(\.shortCode).joined(separator: " / ")), on-device)"
+        case .process: "Find & kill running processes"
+        default: tab.label
+        }
     }
 
     private static let helpShortcuts: [(String, String)] = [
@@ -259,11 +272,12 @@ enum SpotlightModeRows {
 
     // MARK: - Translation (tw" bar, tr")
 
-    /// EN / VI / JA translations of a word, for the tw" bar.
+    /// Translations of a word into the chosen languages, for the tw" bar.
     static func fetchTranslations(_ word: String) async -> [SpotlightTranslation] {
-        let source = TextTranslator.detectLanguage(of: word)
-        let results = await translate(word, from: source, to: TranslationLanguage.all)
-        return TranslationLanguage.all.map { language in
+        let languages = TranslationLanguage.all
+        let source = TextTranslator.detectLanguage(of: word, likely: languages)
+        let results = await translate(word, from: source, to: languages)
+        return languages.map { language in
             SpotlightTranslation(label: language.name, code: language.shortCode, text: results[language.code]?.text)
         }
     }

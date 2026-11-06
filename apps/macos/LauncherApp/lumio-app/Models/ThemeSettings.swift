@@ -23,6 +23,22 @@ struct ThemeSettings: Codable, Equatable {
     var lazyIndexingEnabled: Bool = true
     var backendLogLevel: BackendLogLevel = .error
     var launchAtLogin: Bool = true
+    /// Language codes the translator offers (tr" rows, tw" bar).
+    var translationLanguages: [String] = TranslationLanguage.defaultCodes
 
     static let `default` = ThemeSettings()
+
+    init() {}
+
+    // Missing keys keep their defaults, so a blob saved by an older build still loads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ThemeSettings()
+        fileScanDepth = try c.decodeIfPresent(Int.self, forKey: .fileScanDepth) ?? d.fileScanDepth
+        fileScanLimit = try c.decodeIfPresent(Int.self, forKey: .fileScanLimit) ?? d.fileScanLimit
+        lazyIndexingEnabled = try c.decodeIfPresent(Bool.self, forKey: .lazyIndexingEnabled) ?? d.lazyIndexingEnabled
+        backendLogLevel = try c.decodeIfPresent(BackendLogLevel.self, forKey: .backendLogLevel) ?? d.backendLogLevel
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+        translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages
+    }
 }

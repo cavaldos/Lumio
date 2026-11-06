@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import Synchronization
 
-nonisolated private let indexLog = Logger(subsystem: "noah-code.Lumio", category: "ContentIndex")
+nonisolated private let indexLog = Logger(subsystem: "com.cavaldos.Lumio", category: "ContentIndex")
 
 /// What the OCR tab shows while there is nothing (yet) to list.
 nonisolated struct ContentIndexStatus: Equatable, Sendable {

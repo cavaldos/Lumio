@@ -235,6 +235,14 @@ extension ThemeSettingsView {
                         .overlay(themeStore.dividerColor())
                         .padding(.vertical, 4)
 
+                    sectionHeader("Translation")
+
+                    translationLanguagesRow
+
+                    Divider()
+                        .overlay(themeStore.dividerColor())
+                        .padding(.vertical, 4)
+
                     sectionHeader("Privacy & Logs")
 
                     presetRow(
@@ -320,6 +328,79 @@ extension ThemeSettingsView {
     }
 
     static let aboutAnchorID = "lumio-about-section"
+
+    /// Language chips for tr" / tw": tap to add or remove, 1-5 at a time.
+    var translationLanguagesRow: some View {
+        let chosen = Set(TranslationLanguage.selected(settings.translationLanguages).map(\.code))
+        let atMax = chosen.count >= TranslationLanguage.maxSelected
+        let atMin = chosen.count <= TranslationLanguage.minSelected
+        return HStack(alignment: .top, spacing: 10) {
+            Text("Languages")
+                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                .foregroundStyle(themeStore.secondaryTextColor())
+
+            VStack(alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
+                    ForEach(TranslationLanguage.supported) { language in
+                        let isOn = chosen.contains(language.code)
+                        let locked = isOn ? atMin : atMax
+                        Button {
+                            toggleTranslationLanguage(language.code, chosen: chosen)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("\(language.name)")
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(language.shortCode)
+                                    .foregroundStyle(themeStore.mutedTextColor())
+                            }
+                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: isOn ? .semibold : .regular))
+                            .foregroundStyle(isOn ? themeStore.fontColor() : themeStore.secondaryTextColor())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                themeStore.liftColor(opacity: isOn ? Self.activeFillOpacity : Self.inactiveFillOpacity),
+                                in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(locked)
+                        .opacity(locked && !isOn ? 0.45 : 1)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Text("Pick \(TranslationLanguage.minSelected)-\(TranslationLanguage.maxSelected) languages to translate into (tr\" and tw\").")
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                        .foregroundStyle(themeStore.mutedTextColor())
+                    if Set(TranslationLanguage.defaultCodes) != chosen {
+                        Button("Reset to VI · EN · FR") {
+                            settings.translationLanguages = TranslationLanguage.defaultCodes
+                        }
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    func toggleTranslationLanguage(_ code: String, chosen: Set<String>) {
+        var next = chosen
+        if next.contains(code) {
+            guard next.count > TranslationLanguage.minSelected else { return }
+            next.remove(code)
+        } else {
+            guard next.count < TranslationLanguage.maxSelected else { return }
+            next.insert(code)
+        }
+        // Keep the catalog's display order.
+        settings.translationLanguages = TranslationLanguage.supported.map(\.code).filter(next.contains)
+    }
 
     @ViewBuilder
     var aboutSection: some View {

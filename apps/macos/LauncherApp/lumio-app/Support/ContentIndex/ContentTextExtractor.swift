@@ -4,7 +4,7 @@ import OSLog
 import PDFKit
 import Vision
 
-nonisolated private let extractLog = Logger(subsystem: "noah-code.Lumio", category: "ContentIndex")
+nonisolated private let extractLog = Logger(subsystem: "com.cavaldos.Lumio", category: "ContentIndex")
 
 /// Reads the text inside images and PDFs: OCR (Vision) for images, scanned pages and pictures
 /// inside PDFs, plus the PDF text layer. Runs on the indexer's background task.

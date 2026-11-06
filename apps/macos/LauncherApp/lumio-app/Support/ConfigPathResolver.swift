@@ -10,7 +10,7 @@ nonisolated
 private func lumio_free_config_cstring(_ ptr: UnsafeMutablePointer<CChar>?)
 
 enum ConfigPathResolver {
-    private static let productionBundleIdentifier = "noah-code.Lumio"
+    private static let productionBundleIdentifier = "com.cavaldos.Lumio"
 
     /// Where this build reads and writes its settings.
     ///

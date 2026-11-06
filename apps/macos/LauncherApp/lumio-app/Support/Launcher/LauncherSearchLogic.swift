@@ -12,12 +12,7 @@ enum LauncherSearchLogic {
     static func pinnedLookupScope(for query: String) -> LauncherPinnedLookupScope {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        if normalized.hasPrefix(AppConstants.Launcher.QueryPrefix.regex)
-            || normalized.hasPrefix(AppConstants.Launcher.QueryPrefix.clipboard)
-            || normalized.hasPrefix(AppConstants.Launcher.QueryPrefix.recent)
-        {
-            // Recent (rc") is engine-ranked by recency; suppress quick-folder and
-            // Finder pinned injection so they don't pollute the recent list.
+        if normalized.hasPrefix(AppConstants.Launcher.QueryPrefix.clipboard) {
             return .disabled
         }
         if normalized.hasPrefix(AppConstants.Launcher.QueryPrefix.apps) {
