@@ -287,7 +287,7 @@ fn request_background_index_refresh_internal() -> bool {
                 Ok(()) => {
                     refresh_engine_cache();
                     clear_index_dirty_if_unchanged(dirty_version_snapshot);
-                    let candidate_count = with_engine(|engine| engine.search("", 2000).len());
+                    let candidate_count = with_engine(QueryEngine::candidate_count);
                     log_info(&format!(
                         "background index refresh ok candidates={} elapsed_ms={}",
                         candidate_count,
@@ -406,7 +406,7 @@ fn start_background_bootstrap_refresh() {
                 Ok(()) => {
                     refresh_engine_cache();
                     clear_index_dirty_if_unchanged(dirty_version_snapshot);
-                    let candidate_count = with_engine(|engine| engine.search("", 2000).len());
+                    let candidate_count = with_engine(QueryEngine::candidate_count);
                     log_info(&format!(
                         "bootstrap refresh ok candidates={} elapsed_ms={}",
                         candidate_count,

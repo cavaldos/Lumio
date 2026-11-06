@@ -182,6 +182,11 @@ impl QueryEngine {
         steps
     }
 
+    /// Number of indexed candidates, without materializing any results.
+    pub fn candidate_count(&self) -> usize {
+        self.candidates.len()
+    }
+
     pub fn record_usage_in_memory(&mut self, candidate_id: &str, used_at_unix_s: i64) -> bool {
         if let Some(indexed) = self
             .candidates

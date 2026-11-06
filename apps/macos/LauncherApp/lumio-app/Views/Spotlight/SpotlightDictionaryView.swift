@@ -201,6 +201,13 @@ enum SpotlightLookupCache {
         translationCache[word] = translations
     }
 
+    /// Drops the dictionary HTML (the heavy part) when the launcher hides.
+    /// Rebuilding it is a local lookup of a few ms. Translations stay: they
+    /// are small, and fetching them again is a network call.
+    static func purgeEntries() {
+        entryCache.removeAll()
+    }
+
     static func entries(for word: String) -> [DictionaryEntry] {
         if let cached = entryCache[word] { return cached }
         if entryCache.count > limit { entryCache = [:] }

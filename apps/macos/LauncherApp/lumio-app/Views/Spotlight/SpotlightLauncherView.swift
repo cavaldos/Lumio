@@ -1549,6 +1549,7 @@ struct SpotlightLauncherView: View {
             // Hidden: drop preview bitmaps and highlighted text, then hand the
             // freed pages back to the OS so an idle Lumio stays small.
             HighlightedTextCache.purge()
+            SpotlightLookupCache.purgeEntries()
             await QuickLookPreviewService.shared.purge()
             malloc_zone_pressure_relief(nil, 0)
         }
