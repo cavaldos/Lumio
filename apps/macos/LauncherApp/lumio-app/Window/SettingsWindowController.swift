@@ -110,9 +110,7 @@ private struct SettingsWindowRoot: View {
     var body: some View {
         ThemeSettingsView(settings: $themeStore.settings)
             .padding(20)
-            .foregroundStyle(themeStore.fontColor())
             .frame(minWidth: 680, minHeight: 520)
-            .background(ThemedBackdrop(themeStore: themeStore).ignoresSafeArea())
-            .background(WindowAppearancePin(appearance: themeStore.themeAppearance()))
+            .background(VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow).ignoresSafeArea())
     }
 }

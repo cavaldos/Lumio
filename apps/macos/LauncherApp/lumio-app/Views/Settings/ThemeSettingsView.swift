@@ -10,14 +10,12 @@ struct ThemeSettingsView: View {
         let succeeded: Bool
     }
 
-    static let activeTabFillOpacity = 0.16
-    static let inactiveTabFillOpacity = 0.06
+    static let activeFillOpacity = 0.16
+    static let inactiveFillOpacity = 0.06
 
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var themeStore: ThemeStore
-    @ObservedObject var updateChecker = UpdateChecker.shared
     @Binding var settings: ThemeSettings
-    @State var selectedTab = 0
     @State var saveMessage: SaveMessage?
     @State var fileScanDepthInput = ""
     @State var fileScanLimitInput = ""
@@ -27,19 +25,17 @@ struct ThemeSettingsView: View {
     @State var showFreshConfigConfirm = false
     @State var freshConfigMessage: String?
     @State var localKeyMonitor: Any?
-    @State var shortcutsTopicFilter: ShortcutTopic?
-    @State var expandedShortcutGroups: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Settings")
-                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize + 2), weight: .semibold))
+                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize + 2), weight: .semibold))
                 Spacer()
 
                 if let saveMessage {
                     Text(saveMessage.text)
-                        .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
                         .foregroundStyle(saveMessage.succeeded ? themeStore.onSuccessColor() : themeStore.onDangerColor())
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -63,33 +59,16 @@ struct ThemeSettingsView: View {
                 }
                 .disabled(hasIndexingError)
                 .opacity(hasIndexingError ? 0.5 : 1)
-                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
 
                 Button("Back to Launcher") {
                     closeSettingsPanel()
                 }
-                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                Text("Esc or Cmd+Shift+Space to close")
-                    .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .regular))
-                    .foregroundStyle(themeStore.mutedTextColor())
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
             }
 
-            HStack(spacing: 8) {
-                tabButton(title: "Appearance", index: 0)
-                tabButton(title: "Advanced", index: 1)
-                tabButton(title: "Shortcuts", index: 2)
-            }
-
-            Group {
-                if selectedTab == 0 {
-                    appearanceTab
-                } else if selectedTab == 1 {
-                    backgroundTab
-                } else {
-                    shortcutsTab
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
+            settingsPage
+                .frame(maxHeight: .infinity, alignment: .top)
 
         }
         .onExitCommand {
@@ -114,51 +93,46 @@ struct ThemeSettingsView: View {
     func sectionHeader(_ title: String) -> some View {
         HStack(spacing: 8) {
             Text("▶")
-                .font(.system(size: CGFloat(settings.fontSize - 2)))
+                .font(.system(size: CGFloat(AppConstants.ThemeUI.fontSize - 2)))
                 .foregroundStyle(themeStore.secondaryTextColor())
 
             Text(title)
-                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
                 .foregroundStyle(themeStore.secondaryTextColor())
 
             Spacer(minLength: 0)
         }
     }
 
-    @ViewBuilder
-    func sectionHeaderWithPicker<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 8) {
-            Text("▶")
-                .font(.system(size: CGFloat(settings.fontSize - 2)))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
+    func presetRow(title: String, options: [String], selected: Int?, onPick: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 10) {
             Text(title)
-                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .semibold))
+                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
                 .foregroundStyle(themeStore.secondaryTextColor())
 
-            content()
+            HStack(spacing: 8) {
+                ForEach(options.indices, id: \.self) { index in
+                    let isActive = selected == index
+                    Button {
+                        onPick(index)
+                    } label: {
+                        Text(options[index])
+                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: isActive ? .semibold : .regular))
+                            .foregroundStyle(isActive ? themeStore.fontColor() : themeStore.secondaryTextColor())
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                themeStore.liftColor(opacity: isActive ? Self.activeFillOpacity : Self.inactiveFillOpacity),
+                                in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
             Spacer(minLength: 0)
         }
-    }
-
-    func tabButton(title: String, index: Int) -> some View {
-        let isActive = selectedTab == index
-        let tabCornerRadius = themeStore.controlRadius
-        return Button {
-            selectedTab = index
-        } label: {
-            Text(title)
-                .font(themeStore.uiFont(size: CGFloat(settings.fontSize - 1), weight: .medium))
-                .foregroundStyle(isActive ? themeStore.fontColor() : themeStore.secondaryTextColor())
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(
-                    themeStore.liftColor(opacity: isActive ? Self.activeTabFillOpacity : Self.inactiveTabFillOpacity),
-                    in: RoundedRectangle(cornerRadius: tabCornerRadius, style: .continuous)
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     func closeSettingsPanel() {
@@ -170,6 +144,12 @@ struct ThemeSettingsView: View {
         guard localKeyMonitor == nil else { return }
 
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // The settings window is reused after closing, so onDisappear may
+            // never fire and this monitor stays installed. Only act while
+            // settings is shown; otherwise it would swallow Cmd+Shift+, and Esc
+            // for the rest of the app.
+            guard appUIState.showsThemeSettings else { return event }
+
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
             if event.keyCode == 53 && flags.isEmpty {
@@ -200,36 +180,5 @@ struct ThemeSettingsView: View {
         guard let localKeyMonitor else { return }
         NSEvent.removeMonitor(localKeyMonitor)
         self.localKeyMonitor = nil
-    }
-}
-
-struct LabeledSlider: View {
-    @EnvironmentObject private var themeStore: ThemeStore
-
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    private var valueColumnWidth: CGFloat {
-        let scaledFontSize = CGFloat(themeStore.settings.fontSize) * themeStore.uiScale
-        return max(42, scaledFontSize * 2.3 + 14)
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-            Slider(value: $value, in: range)
-                .controlSize(.mini)
-                .tint(themeStore.fontColor(opacityMultiplier: 0.92))
-            Text(value, format: .number.precision(.fractionLength(2)))
-                .font(themeStore.uiFont(size: CGFloat(themeStore.settings.fontSize - 1), weight: .regular))
-                .monospacedDigit()
-                .lineLimit(1)
-                .frame(width: valueColumnWidth, alignment: .trailing)
-                .foregroundStyle(themeStore.mutedTextColor())
-        }
     }
 }

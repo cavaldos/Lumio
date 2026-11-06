@@ -36,7 +36,7 @@ REAL_DB_PATH := $(HOME)/Library/Application Support/lumio/lumio.db
 DEV_CONFIG_PATH ?= $(HOME)/.lumio/config.dev
 DEV_OPEN_ENV = env -u LUMIO_DB_PATH LUMIO_CONFIG_PATH="$(DEV_CONFIG_PATH)" LUMIO_DEV_HINT=1 LUMIO_LOG_LEVEL=debug LUMIO_UI_DEBUG_EVENTS=1
 
-.PHONY: help core-check ffi-check ffi-build ffi-build-release ffi-unstale app-build app-ensure-bundle app-stop app-run app-install-dev app-run-dev app-uninstall-dev dev-cli app-logs app-logs-all symbols db-path db-status db-shell db-reset db-refresh
+.PHONY: help core-check ffi-check ffi-build ffi-build-release ffi-unstale app-build app-ensure-bundle app-stop app-run app-install-dev app-run-dev app-uninstall-dev dev-cli app-logs app-logs-all symbols db-path db-status db-shell db-reset db-refresh icons
 
 help:
 	@printf "lumio developer tasks\n\n"
@@ -63,7 +63,9 @@ help:
 	@printf "  make db-status    - inspect candidates/usage tables\n"
 	@printf "  make db-shell     - open sqlite shell for real db\n"
 	@printf "  make db-reset     - delete real db file\n"
-	@printf "  make db-refresh   - delete db and rebuild app\n"
+	@printf "  make db-refresh   - delete db and rebuild app\n\n"
+	@printf "assets\n"
+	@printf "  make icons        - rebuild the app icon set from assets/icon-source.png (ICON=path for another file)\n"
 
 core-check:
 	cargo check --workspace --manifest-path core/Cargo.toml
@@ -153,7 +155,7 @@ app-logs-all:
 	@log stream --style compact --level debug --predicate 'process == "Lumio"'
 
 symbols: app-build
-	@nm -gU "$(APP_DEBUG_DYLIB)" | rg "_lumio_search_json|_lumio_record_usage|_lumio_free_cstring"
+	@nm -gU "$(APP_DEBUG_DYLIB)" | rg "_lumio_search_json_compact|_lumio_record_usage_json|_lumio_free_cstring"
 
 db-path:
 	@echo "$(REAL_DB_PATH)"
@@ -172,3 +174,13 @@ db-reset:
 
 db-refresh: db-reset app-build
 	@echo "DB refreshed and app rebuilt"
+
+# Regenerates assets/icon.png and AppIcon.appiconset. pipx installs Pillow/numpy
+# on the fly; without pipx the script needs them installed for python3.
+ICON ?= assets/icon-source.png
+icons:
+	@if command -v pipx >/dev/null 2>&1; then \
+		pipx run assets/generate-icons.py "$(ICON)"; \
+	else \
+		python3 assets/generate-icons.py "$(ICON)"; \
+	fi

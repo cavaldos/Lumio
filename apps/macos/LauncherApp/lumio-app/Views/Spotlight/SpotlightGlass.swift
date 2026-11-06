@@ -64,13 +64,14 @@ private struct SpotlightGlassModifier<S: Shape>: ViewModifier {
             content
                 .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
                 .glassEffectID(id, in: namespace)
+                .background { FloatShadow(shape: shape, isDark: isDark) }
         } else {
             content
                 .background {
                     VisualEffectBlur(
                         material: .popover,
                         blendingMode: .behindWindow,
-                        appearance: isDark ? .dark : .light
+                        appearance: isDark ? .darkAqua : .aqua
                     )
                 }
                 .clipShape(shape)
@@ -80,5 +81,33 @@ private struct SpotlightGlassModifier<S: Shape>: ViewModifier {
                 .shadow(color: .black.opacity(isDark ? 0.35 : 0.15), radius: 18, y: 8)
                 .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
         }
+    }
+}
+
+/// Drop shadow under the glass's outline, like Spotlight's, so it floats above the desktop.
+/// Liquid Glass has no shadow of its own, and anything drawn under it shows through the
+/// glass, so the shadow is cut away inside the outline and only falls outside, mostly below.
+private struct FloatShadow<S: Shape>: View {
+    let shape: S
+    let isDark: Bool
+
+    var body: some View {
+        shape
+            .fill(Color.black)
+            .shadow(color: .black.opacity(isDark ? 0.50 : 0.22), radius: 14, y: 12)
+            .shadow(color: .black.opacity(isDark ? 0.25 : 0.10), radius: 2, y: 2)
+            .mask { OutsideOf(shape: shape).fill(style: FillStyle(eoFill: true)) }
+            .allowsHitTesting(false)
+    }
+}
+
+/// A big rectangle with `shape` punched out of it (even-odd fill).
+private struct OutsideOf<S: Shape>: nonisolated Shape {
+    let shape: S
+
+    nonisolated func path(in rect: CGRect) -> Path {
+        var path = Path(rect.insetBy(dx: -80, dy: -80))
+        path.addPath(shape.path(in: rect))
+        return path
     }
 }

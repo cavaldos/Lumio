@@ -69,34 +69,4 @@ enum LauncherSearchLogic {
                 && normalized.count >= AppConstants.Launcher.Finder.minPrefixMatchLength)
     }
 
-    static func dedupe(results: [LauncherResult]) -> [LauncherResult] {
-        var seen = Set<String>()
-        var unique: [LauncherResult] = []
-
-        for item in results {
-            let key = dedupeKey(for: item)
-            if key.isEmpty || seen.insert(key).inserted {
-                unique.append(item)
-            }
-        }
-
-        return unique
-    }
-
-    private static func dedupeKey(for result: LauncherResult) -> String {
-        let normalizedTitle = result.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let normalizedPath = result.path.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        switch result.kind {
-        case .app:
-            return "\(result.kind.rawValue):\(normalizedTitle)"
-        case .file, .folder:
-            return "\(result.kind.rawValue):\(normalizedPath)"
-        case .clipboard, .process, .action:
-            // Clipboard entries, process rows, and declared blocks are already
-            // unique by id (entry UUID / pid / block id), so key on it rather
-            // than title/path.
-            return result.id
-        }
-    }
 }

@@ -345,22 +345,6 @@ final class ClipboardHistoryStore: ObservableObject {
         }
     }
 
-    /// Copies `payload` to the pasteboard but files it in history under
-    /// `display`; re-copying the entry still pastes `payload`. Marks the
-    /// pasteboard change as already seen so the passive poller doesn't also
-    /// insert an unlabeled duplicate.
-    func recordLabeled(display: String, payload: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(payload, forType: .string)
-        lastChangeCount = pasteboard.changeCount
-
-        entries.removeAll { $0.content == display }
-        let labeled = ClipboardHistoryEntry(content: display, payload: payload)
-        prepend(labeled)
-        persist(display, entryID: labeled.id)
-    }
-
     /// Inserts `entry` at the front and drops anything beyond `maxEntries`.
     private func prepend(_ entry: ClipboardHistoryEntry) {
         entries.insert(entry, at: 0)

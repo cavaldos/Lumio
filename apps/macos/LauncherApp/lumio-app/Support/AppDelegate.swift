@@ -36,66 +36,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager.registerToggleHotKey()
         NSApp.setActivationPolicy(.accessory)
 
-        // Create the launcher window ourselves (hidden) so LauncherView mounts
+        // Create the launcher window ourselves (hidden) so the launcher view mounts
         // at launch - even on a cold background-login launch, where SwiftUI
         // would never create a WindowGroup window. With the view mounted, its
         // .lookToggleWindowRequested observer is live and Option+Space toggles it.
         makeLauncherWindow()
 
-        // The legacy launcher shows settings inside its own panel. The
-        // Spotlight launcher has none, so open them in a separate window.
-        if !LauncherFeatureFlags.isLegacyLauncherEnabled {
-            settingsObserver = NotificationCenter.default.addObserver(
-                forName: .lookToggleSettingsRequested, object: nil, queue: .main
-            ) { _ in
-                MainActor.assumeIsolated { SettingsWindowController.shared.toggle() }
-            }
+        // Settings open in a separate window.
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .lookToggleSettingsRequested, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { SettingsWindowController.shared.toggle() }
         }
 
-        // Notify-only update check against GitHub Releases (throttled to once
-        // per 12h). Lumio ships via GitHub Releases, so this never self-installs - it
-        // just surfaces a notice linking to the release page.
-        UpdateChecker.shared.checkForUpdates()
+        // Sparkle: daily update checks, download + install on the user's OK.
+        UpdateChecker.shared.start()
     }
 
-    /// Build the launcher window in AppKit, host ContentView in it, and leave
-    /// it hidden. WindowConfigurator (embedded in ContentView) restyles this
-    /// window on first appearance - corner radius, floating level, multi-display
-    /// autoscale.
+    /// Build the launcher window in AppKit, host ContentView in it, and leave it hidden.
+    /// The window is transparent and fixed-size, large enough for the biggest state:
+    /// all animation lives in SwiftUI.
     private func makeLauncherWindow() {
-        // New Spotlight launcher (flag OFF): transparent window, fixed size large
-        // enough for the biggest state — all animation lives in SwiftUI.
-        // Legacy launcher: keeps baseSize 860×600 + test flags as before.
-        let legacy = LauncherFeatureFlags.isLegacyLauncherEnabled
-        let baseSize = legacy ? WindowAutoScale.baseSize() : SpotlightWindowSizing.windowSize
-        let (minW, minH) = (baseSize.width, baseSize.height)
-        // TEMP single-component: lower the min size so the window can shrink to 600×100.
-        let testMin = LauncherView.testCollapsedWindowSize
+        let size = SpotlightWindowSizing.windowSize
         let content = ContentView()
-            .frame(
-                minWidth: legacy && LauncherView.testExpandOnly ? testMin.width : minW,
-                minHeight: legacy && LauncherView.testExpandOnly ? testMin.height : minH
-            )
-            .background(WindowConfigurator(themeStore: .shared))
+            .frame(minWidth: size.width, minHeight: size.height)
+            .background(WindowConfigurator())
             .environmentObject(AppUIState.shared)
             .environmentObject(ThemeStore.shared)
 
         let window = LauncherPanelWindow(
-            contentRect: NSRect(x: 0, y: 0, width: minW, height: minH),
+            contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         let hostingView = NSHostingView(rootView: content)
-        if !legacy {
-            // Spotlight: SwiftUI must not resize the window to fit content —
-            // the window stays put and the panel animates inside it.
-            hostingView.sizingOptions = []
-        }
+        // SwiftUI must not resize the window to fit content: the panel animates inside it.
+        hostingView.sizingOptions = []
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
-        // Start hidden - this matches the launcher's normal resting state
-        // (it is summoned with Option+Space, not shown at launch).
+        // Start hidden: the launcher is summoned with Option+Space, not shown at launch.
         window.orderOut(nil)
         launcherWindow = window
     }

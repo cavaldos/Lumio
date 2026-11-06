@@ -44,10 +44,12 @@ struct SpotlightLauncherView: View {
     @State private var all: [SpotlightItem] = []
     @State private var sel = 0
     @State private var filter: SpotlightKind?
-    /// Item currently Tabbed into to view its actions.
+    /// Item whose actions are being viewed (⌘K).
     @State private var scope: SpotlightItem?
-    /// Query before Tabbing into actions — restored on exit.
+    /// Query before opening actions — restored on exit.
     @State private var scopeReturnQuery = ""
+    /// Text left in the field when the launcher was dismissed; restored on the next open.
+    @State private var keptQuery = ""
     @State private var browse: SpotlightKind?
     @State private var scrollTarget: String?
     /// The core search in flight (nil = results already match the input).
@@ -78,16 +80,22 @@ struct SpotlightLauncherView: View {
     /// built in Spotlight mode, so nobody else records history.
     @StateObject private var clipboardStore = ClipboardHistoryStore()
     @StateObject private var processModel = ProcessFinderModel()
-    @State private var speedTest = SpeedTestController()
-    /// Command currently open (`:kill`, `:speed`). nil = normal search.
+    /// Command currently open (`:kill`, `:emptytrash`, `:help`). nil = normal search.
     @State private var activeCommand: String?
     /// ⌘/ reopens the most recently used command, like the legacy launcher.
     @State private var lastCommand = SpotlightCommands.kill
     /// :kill — the first Enter only "arms" this process; the second Enter kills it.
     @State private var armedKillPID: Int32?
-    /// tw" — definitions of the word being looked up (nil while looking up).
-    @State private var lookup: LookupDefinition?
-    @State private var lookupTask: Task<Void, Never>?
+    /// Destructive actions (Move to Trash, Empty Trash, Hide from Results) need a second Enter:
+    /// the key of the armed one.
+    @State private var armedConfirm: String?
+    /// :emptytrash — item count read when the command opens.
+    @State private var trashCount: Int?
+    /// Clear the kept search when hidden longer than `query_retention_seconds`.
+    @State private var hiddenAt: Date?
+    @State private var retentionSeconds = AppConstants.Launcher.QueryRetention.defaultSeconds
+    /// tr" — translations of the typed text (the rows only name the target languages).
+    @State private var translation = SpotlightTranslationBatch()
     @State private var keyMonitor = SpotlightKeyMonitor()
 
     @State private var idleTask: Task<Void, Never>?
@@ -113,13 +121,19 @@ struct SpotlightLauncherView: View {
 
     /// The panel always leaves room for at least `minRowsWithPreview` rows when open: the right half is the
     /// preview, which needs room for code / images even with just one or two results.
-    private var rowSlots: Int { max(results.count, Metric.minRowsWithPreview) }
+    /// tw" shows dictionary entries, which need the full height whatever the number of words.
+    private var rowSlots: Int {
+        isLookup ? Metric.maxVisibleRows : max(results.count, Metric.minRowsWithPreview)
+    }
+
+    /// tw": the list is a narrow column of words, like the Dictionary.app sidebar.
+    private var isLookup: Bool { all.first?.kind == .lookup }
 
     /// Width of the list column; the rest of the panel is the preview.
-    private static let listPaneWidth: CGFloat = 300
+    private var listPaneWidth: CGFloat { isLookup ? 180 : 300 }
 
-    /// :speed replaces both the list and the preview with the legacy launcher's speed test.
-    private var showsSpeedPanel: Bool { activeCommand == SpotlightCommands.speed }
+    /// Height of a word row in the tw" list (other rows use `Metric.rowHeight`).
+    private static let wordRowHeight: CGFloat = 32
 
     /// Item shown in the preview pane: the item whose actions are being viewed, otherwise the selected row.
     private var previewItem: SpotlightItem? {
@@ -141,7 +155,7 @@ struct SpotlightLauncherView: View {
         if let scope { return "Actions for \(scope.name)" }
         if let activeCommand { return SpotlightCommands.placeholder(for: activeCommand) }
         if let browse { return "Search in \(browse.label)" }
-        return "Spotlight Search"
+        return "Lumio Search"
     }
 
     private var introActive: Bool { !reduceMotion && Date() < introUntil }
@@ -151,7 +165,13 @@ struct SpotlightLauncherView: View {
         RoundedRectangle(cornerRadius: Metric.pillRadius, style: .continuous)
     }
 
-    private var clusterScale: CGFloat {
+    /// Open pop springs vertically only; the width stays fixed. The launch zoom stays uniform.
+    private var clusterScaleX: CGFloat {
+        if reduceMotion { return 1 }
+        return launching ? SpotlightMotion.launchScale : 1
+    }
+
+    private var clusterScaleY: CGFloat {
         if reduceMotion { return 1 }
         if launching { return SpotlightMotion.launchScale }
         return shownScale ? 1 : SpotlightMotion.appearScale
@@ -179,7 +199,7 @@ struct SpotlightLauncherView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 cluster
-                    .scaleEffect(clusterScale, anchor: UnitPoint(x: 0.5, y: 0.3))
+                    .scaleEffect(x: clusterScaleX, y: clusterScaleY, anchor: UnitPoint(x: 0.5, y: 0.3))
                     .offset(y: clusterOffset)
                     .opacity(shownAlpha ? 1 : 0)
                 toastView
@@ -203,6 +223,7 @@ struct SpotlightLauncherView: View {
             refresh()
         }
         .onChange(of: filter) { sel = 0 }
+        .onChange(of: sel) { armedConfirm = nil }
         .onChange(of: targetPanelHeight) { _, height in
             // Panel height animates SEPARATELY: result rows change instantly, only the
             // bottom edge of the glass slides to its new position.
@@ -222,8 +243,24 @@ struct SpotlightLauncherView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             hide(restore: false)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .lookReloadConfigRequested)) { _ in
+            reloadConfig()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lookRefocusInputRequested)) { _ in
+            if isOpen { focusField() }
+        }
+        // `lumio <mode>` arriving while this instance is already up.
+        .onReceive(DistributedNotificationCenter.default().publisher(for: LaunchModes.deliveryNotification)) { note in
+            if let text = note.object as? String { applyLaunchQuery(text) }
+        }
         .onAppear {
             keyMonitor.start { handleKey($0) }
+            loadRetention()
+            // A cold `lumio <mode>`: this process launched to serve it.
+            if let pending = LaunchModes.pendingQuery {
+                LaunchModes.pendingQuery = nil
+                DispatchQueue.main.async { applyLaunchQuery(pending) }
+            }
         }
     }
 
@@ -238,6 +275,7 @@ struct SpotlightLauncherView: View {
             onCommandChange: { refresh() },
             onPreviewChange: {
                 armedKillPID = nil
+                armedConfirm = nil
                 // Processes: load details (memory, user, command line) on selection.
                 if let item = previewItem, item.kind == .process, let pid = item.pid {
                     processModel.loadDetail(pid: pid)
@@ -342,17 +380,13 @@ struct SpotlightLauncherView: View {
 
             // The legacy launcher's input field: the caret SLIDES to its new position while typing (still
             // while typing, blinking when paused) instead of jumping per character.
-            // System font/colors instead of the theme because the background is system glass.
             // Enter goes through onSubmit (respecting an input method that is committing text); other
             // navigation keys: see handleKey (local key monitor).
             SmoothCaretTextField(
                 text: $query,
                 placeholder: placeholder,
                 isFocused: $isFocused,
-                themeStore: ThemeStore.shared,
-                fontOverride: .systemFont(ofSize: Metric.queryFontSize),
-                textColorOverride: .labelColor,
-                caretColorOverride: .controlAccentColor,
+                font: .systemFont(ofSize: Metric.queryFontSize),
                 onSubmit: { activate() }
             )
             .frame(maxWidth: .infinity)
@@ -392,26 +426,16 @@ struct SpotlightLauncherView: View {
             pillsRow
                 .frame(height: Metric.pillsHeight)
                 .padding(.top, Metric.lowerTopInset)
-                .opacity(showsSpeedPanel ? 0 : 1)
-            Group {
-                if showsSpeedPanel {
-                    // :speed — the legacy launcher's speed test, full width.
-                    SpeedTestView(controller: speedTest, themeStore: ThemeStore.shared)
-                        .padding(.horizontal, 20)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Split INSIDE the panel: list on the left, preview on the right.
-                    HStack(spacing: 0) {
-                        listView
-                            .frame(width: Self.listPaneWidth)
-                        Rectangle()
-                            .fill(palette.divider)
-                            .frame(width: 1)
-                            .padding(.vertical, 8)
-                        previewPane
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
+            // Split INSIDE the panel: list on the left, preview on the right.
+            HStack(spacing: 0) {
+                listView
+                    .frame(width: listPaneWidth)
+                Rectangle()
+                    .fill(palette.divider)
+                    .frame(width: 1)
+                    .padding(.vertical, 8)
+                previewPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(height: SpotlightSpec.listHeight(rows: rowSlots))
             footer
@@ -423,7 +447,7 @@ struct SpotlightLauncherView: View {
         .allowsHitTesting(expanded)
     }
 
-    /// Right half of the panel: preview of the selected row (or the item Tabbed into).
+    /// Right half of the panel: preview of the selected row (or the item whose actions are open).
     private var previewPane: some View {
         ZStack(alignment: .topLeading) {
             if let item = previewItem {
@@ -432,7 +456,11 @@ struct SpotlightLauncherView: View {
                     processDetail: item.pid.flatMap { processModel.details[$0] },
                     processCPU: item.pid.flatMap { processModel.cpu[$0] },
                     measuringCPU: item.pid.map { processModel.measuringCPU.contains($0) } ?? false,
-                    lookup: item.kind == .lookup ? lookup : nil
+                    onLookup: { word in
+                        query = AppConstants.Launcher.QueryPrefix.translateWord + word
+                        focusField()
+                    },
+                    translation: translation
                 )
                 .id(item.id)
             }
@@ -443,17 +471,38 @@ struct SpotlightLauncherView: View {
     }
 
     private var pillsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Metric.pillGap) {
-                pillButton(label: "All", active: filter == nil) { filter = nil }
-                ForEach(kinds) { kind in
-                    pillButton(label: kind.label, active: filter == kind) {
-                        filter = (filter == kind) ? nil : kind
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Metric.pillGap) {
+                    pillButton(label: "All", active: filter == nil) { filter = nil }
+                        .id(Self.allPillID)
+                    ForEach(kinds) { kind in
+                        pillButton(label: kind.label, active: filter == kind) {
+                            filter = (filter == kind) ? nil : kind
+                        }
+                        .id(kind.rawValue)
                     }
                 }
+                .padding(.horizontal, 14)
             }
-            .padding(.horizontal, 14)
+            // Tab can land on a pill that is scrolled out of view: bring it in.
+            .onChange(of: filter) { _, kind in
+                withAnimation(motion(SpotlightMotion.chip)) {
+                    proxy.scrollTo(kind?.rawValue ?? Self.allPillID)
+                }
+            }
         }
+    }
+
+    private static let allPillID = "pill-all"
+
+    /// Tab / Shift+Tab: move to the next / previous filter pill (All → Applications → … → All).
+    private func cycleFilter(_ step: Int) {
+        let options: [SpotlightKind?] = [nil] + kinds
+        guard options.count > 1 else { return }
+        let current = options.firstIndex(of: filter) ?? 0
+        let next = (current + step + options.count) % options.count
+        filter = options[next]
     }
 
     private func pillButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -465,8 +514,8 @@ struct SpotlightLauncherView: View {
                 .font(.system(size: 14.5, weight: active ? .medium : .regular))
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
                 .background(active ? palette.pillOn : palette.pill, in: Capsule())
                 .contentShape(Capsule())
         }
@@ -509,7 +558,7 @@ struct SpotlightLauncherView: View {
                         .padding(.top, Metric.listInsetTop)
                         .padding(.bottom, Metric.listInsetBottom)
                     }
-                    .scrollIndicators(results.count > Metric.maxVisibleRows ? .automatic : .never)
+                    .spotlightThinScroller(isDark: isDark)
                     .onChange(of: scrollTarget) { _, target in
                         // Scroll along with the selection bar, in step with its slide.
                         guard let target else { return }
@@ -520,7 +569,46 @@ struct SpotlightLauncherView: View {
         }
     }
 
+    @ViewBuilder
     private func rowView(_ item: SpotlightItem, selected: Bool) -> some View {
+        if item.kind == .lookup {
+            wordRow(item, selected: selected)
+        } else if item.kind == .translation {
+            standardRow(translationRow(item), selected: selected)
+        } else {
+            standardRow(item, selected: selected)
+        }
+    }
+
+    /// tr": the translation on top, the target language below.
+    private func translationRow(_ item: SpotlightItem) -> SpotlightItem {
+        let name = translation.result(for: item.payload)?.text
+            ?? (translation.failed(item.payload) ? "Couldn't translate" : "Translating…")
+        return SpotlightItem(
+            id: item.id, name: name, kind: item.kind, colors: item.colors,
+            meta: item.meta, symbol: item.symbol, payload: item.payload
+        )
+    }
+
+    /// tw": just the word, like the Dictionary.app sidebar.
+    private func wordRow(_ item: SpotlightItem, selected: Bool) -> some View {
+        Text(item.name)
+            .font(.system(size: 14.5, weight: selected ? .semibold : .regular))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .frame(height: Self.wordRowHeight)
+            .modifier(SpotlightSelection(
+                isSelected: selected,
+                fill: palette.rowSel,
+                namespace: selectionSpace,
+                reduceMotion: reduceMotion
+            ))
+            .contentShape(Rectangle())
+    }
+
+    private func standardRow(_ item: SpotlightItem, selected: Bool) -> some View {
         HStack(spacing: 11) {
             SpotlightRowIcon(item: item, size: 30, isSelected: selected)
             // Narrow left column (right half is the preview): name on top, path / description below.
@@ -547,7 +635,7 @@ struct SpotlightLauncherView: View {
                         .font(.system(size: 15, weight: .medium).monospacedDigit())
                         .fixedSize()
                 } else if selected {
-                    keyCap(item.supportsActions && scope == nil ? "⇥" : "⏎")
+                    keyCap("⏎")
                 } else if armedKillPID != nil, item.pid == armedKillPID {
                     keyCap("⏎")
                 }
@@ -608,7 +696,7 @@ struct SpotlightLauncherView: View {
         if scope != nil { return "↑↓ select   ⏎ run action" }
         switch activeCommand {
         case SpotlightCommands.kill: return "⏎ select, ⏎ again to force quit"
-        case SpotlightCommands.speed: return "⏎ re-run   ⌘/ switch command"
+        case SpotlightCommands.emptyTrash: return "⏎ twice to empty   esc cancel"
         default: break
         }
         return "↑↓ select   " + (browse != nil ? SpotlightMode.search : SpotlightMode.parse(query)).footerHint
@@ -654,10 +742,12 @@ struct SpotlightLauncherView: View {
             return
         }
         if let activeCommand {
-            // :kill lists apps + processes; :speed replaces the list with the speed test.
-            publish(activeCommand == SpotlightCommands.kill
-                ? SpotlightModeRows.killTargets(processModel, term: query)
-                : [])
+            switch activeCommand {
+            case SpotlightCommands.kill: publish(SpotlightModeRows.killTargets(processModel, term: query))
+            case SpotlightCommands.emptyTrash: publish(SpotlightModeRows.emptyTrash(itemCount: trashCount))
+            case SpotlightCommands.help: publish(SpotlightModeRows.help(query))
+            default: publish([])
+            }
             return
         }
         if browse == nil, refreshMode(SpotlightMode.parse(query)) { return }
@@ -679,13 +769,20 @@ struct SpotlightLauncherView: View {
                 guard !Task.isCancelled else { return }
             }
             // The core holds the engine read lock while searching: run off the main thread.
-            let found = await Task.detached(priority: .userInitiated) {
-                EngineBridge.shared.search(query: engineQuery.text, limit: engineQuery.limit)
+            let wantsURLs = request.browse == nil && request.term.count >= 2
+            let urlQuery = request.term
+            let urlLimit = AppConstants.Launcher.WebURL.recentLimit
+            let (found, recents) = await Task.detached(priority: .userInitiated) {
+                let found = EngineBridge.shared.search(query: engineQuery.text, limit: engineQuery.limit)
+                let recents = wantsURLs
+                    ? EngineBridge.shared.recentURLs(query: urlQuery, limit: urlLimit)
+                    : []
+                return (found, recents)
             }.value
             // Text changed while waiting: these results are stale.
             guard !Task.isCancelled else { return }
             searchTask = nil
-            publish(SpotlightBackend.rows(from: found, for: request))
+            publish(SpotlightBackend.rows(from: found, for: request, recentURLs: recents))
         }
     }
 
@@ -694,7 +791,6 @@ struct SpotlightLauncherView: View {
     private func refreshMode(_ mode: SpotlightMode) -> Bool {
         switch mode {
         case .search:
-            lookupTask?.cancel()
             return false
         case .prefixMenu(let filter):
             publish(SpotlightModeRows.prefixMenu(filter))
@@ -711,12 +807,48 @@ struct SpotlightLauncherView: View {
             publish(SpotlightModeRows.clipboardImages(clipboardStore, term: term))
         case .lookup(let word):
             publish(SpotlightModeRows.lookup(word))
-            startLookup(word)
+        case .translate(let text):
+            startTranslation(text)
         case .process(let term):
             processModel.loadSnapshotIfNeeded()
             publish(SpotlightModeRows.processes(processModel, term: term))
         }
         return true
+    }
+
+    /// tr": the target-language rows show right away; the translations fill in once typing pauses.
+    /// Runs as `searchTask`, so an Enter pressed meanwhile waits and copies the fresh translation.
+    private func startTranslation(_ text: String) {
+        let source = text.isEmpty ? nil : TextTranslator.detectLanguage(of: text)
+        let rows = SpotlightModeRows.translation(text, source: source)
+        // First keystroke (panel not expanded yet) translates immediately; further typing waits a beat.
+        let debounce: Duration = expanded ? .milliseconds(200) : .zero
+        // Coming from another mode: the old results belong to some earlier text.
+        if all.first?.kind != .translation { translation.results = [:] }
+        translation.text = text
+        translation.sourceName = source.map(TextTranslator.displayName(of:))
+        translation.isTranslating = !rows.isEmpty
+        // Same targets as before: keep the rows (and the selection) as they are.
+        if !expanded || rows.map(\.id) != all.map(\.id) { publish(rows) }
+        guard !rows.isEmpty else { return }
+
+        let targets = rows.compactMap { TranslationLanguage.named($0.payload) }
+        searchTask = Task { @MainActor in
+            if debounce > .zero {
+                try? await Task.sleep(for: debounce)
+                guard !Task.isCancelled else { return }
+            }
+            let results = await SpotlightModeRows.translate(text, from: source, to: targets)
+            // Text changed while translating: these results are stale.
+            guard !Task.isCancelled else { return }
+            searchTask = nil
+            translation.results = results
+            translation.isTranslating = false
+            if activateWhenReady {
+                activateWhenReady = false
+                activate()
+            }
+        }
     }
 
     private func isMode(_ kind: SpotlightKind) -> Bool {
@@ -727,21 +859,7 @@ struct SpotlightLauncherView: View {
         }
     }
 
-    /// tw": translate + dictionary lookup, waiting for the user to pause typing for a beat (like the legacy launcher).
-    private func startLookup(_ word: String) {
-        lookupTask?.cancel()
-        lookup = nil
-        guard !word.isEmpty else { return }
-        lookupTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(220))
-            guard !Task.isCancelled else { return }
-            let result = await SpotlightModeRows.fetchLookup(word)
-            guard !Task.isCancelled else { return }
-            lookup = result
-        }
-    }
-
-    /// Enters a command (`:kill`, `:speed`). The text after the command name becomes its argument.
+    /// Enters a command (`:kill`, `:emptytrash`, `:help`). The text after the command name becomes its argument.
     private func enterCommand(_ id: String, args: String = "") {
         scopeReturnQuery = ""
         withAnimation(motion(SpotlightMotion.chip)) {
@@ -752,8 +870,8 @@ struct SpotlightLauncherView: View {
         }
         lastCommand = id
         switch id {
-        case SpotlightCommands.speed: speedTest.startIfStale()
         case SpotlightCommands.kill: processModel.refreshSnapshot()
+        case SpotlightCommands.emptyTrash: trashCount = TrashService.itemCount()
         default: break
         }
         focusField()
@@ -784,6 +902,153 @@ struct SpotlightLauncherView: View {
         case .failure(let error):
             toast("Couldn't quit \(item.name): \(error.message)")
         }
+    }
+
+    /// Destructive actions run on the second Enter (same key) so a slip doesn't delete anything.
+    private func confirm(_ key: String, prompt: String, perform: () -> Void) {
+        if armedConfirm == key {
+            armedConfirm = nil
+            perform()
+        } else {
+            armedConfirm = key
+            toast(prompt)
+        }
+    }
+
+    /// Actions that need launcher state (confirmation, async tool run). `false` = not one of them.
+    private func performLocal(_ action: SpotlightAction, on item: SpotlightItem) -> Bool {
+        switch action {
+        case .openInEditor:
+            runTool(AppConstants.Launcher.Tools.editAction, on: item)
+        case .openInTerminal:
+            runTool(AppConstants.Launcher.Tools.terminalAction, on: item)
+        case .moveToTrash:
+            guard let path = item.target else { return true }
+            confirm("trash|\(path)", prompt: "⏎ again to move \(item.name) to the Trash") {
+                moveToTrash(item, path: path)
+            }
+        case .emptyTrash:
+            confirm("emptytrash", prompt: "⏎ again to empty the Trash — this can't be undone") {
+                emptyTrash()
+            }
+        case .excludeApp:
+            confirm("exclude|\(item.id)", prompt: "⏎ again to hide \(item.name) from results") {
+                excludeApp(item)
+            }
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// ⌘E / ⌘T / ⌘D / ⌘⇧H on the selected row (or the item whose actions are open).
+    private func performShortcut(_ action: SpotlightAction) {
+        guard let item = previewItem else { return }
+        let allowed: Bool = switch action {
+        case .openInEditor, .openInTerminal: item.isFileTarget
+        case .moveToTrash, .emptyTrash: SpotlightBackend.trashAction(for: item) == action
+        case .excludeApp: item.kind == .app && item.target != nil
+        default: false
+        }
+        guard allowed else {
+            toast(action == .excludeApp ? "Select an app to hide" : "Not available for \(item.name)")
+            return
+        }
+        _ = performLocal(action, on: item)
+    }
+
+    private func runTool(_ action: String, on item: SpotlightItem) {
+        guard item.isFileTarget, let path = item.target else {
+            toast("Select a file or folder")
+            return
+        }
+        let candidateID = item.candidateID ?? item.id
+        let isDirectory = item.kind == .folder
+        Task { @MainActor in
+            switch await ToolLauncher.run(
+                action, candidateID: candidateID, title: item.name, path: path, isDirectory: isDirectory
+            ) {
+            case .launched: hide(restore: false, launched: true)
+            case .message(let text): toast(text)
+            }
+        }
+    }
+
+    private func moveToTrash(_ item: SpotlightItem, path: String) {
+        Task { @MainActor in
+            if let error = await TrashService.moveToTrash(path) {
+                toast("Couldn't trash \(item.name): \(error)")
+                return
+            }
+            toast("Moved \(item.name) to Trash")
+            Task.detached(priority: .utility) { _ = EngineBridge.shared.requestIndexRefresh() }
+            if scope?.id == item.id { exitChip() }
+            all.removeAll { $0.id == item.id }
+            sel = min(sel, max(results.count - 1, 0))
+        }
+    }
+
+    private func emptyTrash() {
+        Task { @MainActor in
+            if let error = await TrashService.emptyTrash() {
+                toast(error)
+                return
+            }
+            toast("Trash emptied")
+            if activeCommand == SpotlightCommands.emptyTrash { exitChip() }
+        }
+    }
+
+    private func excludeApp(_ item: SpotlightItem) {
+        switch AppExcludeWriter.append(item.name) {
+        case .writeFailed:
+            toast("Couldn't update the config file")
+        case .alreadyExcluded:
+            toast("\(item.name) is already hidden")
+        case .added:
+            if scope?.id == item.id { exitChip() }
+            toast(EngineBridge.shared.reloadConfig()
+                ? "Hid \(item.name) from results"
+                : "Saved, but reloading the config failed")
+            refresh()
+        }
+    }
+
+    /// ⌘⇧; / the Settings button: re-read the config file.
+    private func reloadConfig() {
+        let result = ThemeStore.shared.reloadFromConfig()
+        let backendReloaded = EngineBridge.shared.reloadConfig()
+        clipboardStore.reloadFromConfig()
+        loadRetention()
+        guard isOpen else { return }
+        if !backendReloaded {
+            toast("Config reload failed")
+        } else if !result.warnings.isEmpty {
+            toast(result.warnings.joined(separator: ", "))
+        } else {
+            toast("Config reloaded")
+        }
+        refresh()
+    }
+
+    private func loadRetention() {
+        guard let raw = try? String(contentsOfFile: ConfigPathResolver.resolvedPath(), encoding: .utf8) else {
+            retentionSeconds = AppConstants.Launcher.QueryRetention.defaultSeconds
+            return
+        }
+        retentionSeconds = QueryRetentionPolicy.resolveSeconds(from: ConfigFileLines.keyValues(raw))
+    }
+
+    /// `lumio clipboard` (and other launch modes): open straight into that query.
+    private func applyLaunchQuery(_ text: String) {
+        show()
+        withAnimation(motion(SpotlightMotion.chip)) {
+            scope = nil
+            browse = nil
+            activeCommand = nil
+        }
+        query = text
+        focusField()
     }
 
     /// Shows the results. Expands the panel if it isn't already.
@@ -855,7 +1120,7 @@ struct SpotlightLauncherView: View {
         run(results[sel])
     }
 
-    /// Opens a row (or runs its action when in Tab mode).
+    /// Opens a row (or runs its action when in actions mode).
     private func run(_ item: SpotlightItem) {
         switch item.kind {
         case .prefix:
@@ -864,7 +1129,15 @@ struct SpotlightLauncherView: View {
             focusField()
             return
         case .command:
-            if let id = item.payload { enterCommand(id) }
+            if item.payload == SpotlightCommands.emptyTrash, activeCommand == SpotlightCommands.emptyTrash {
+                confirm("emptytrash", prompt: "⏎ again to empty the Trash — this can't be undone") {
+                    emptyTrash()
+                }
+            } else if let id = item.payload {
+                enterCommand(id)
+            }
+            return
+        case .help:
             return
         case .clipImage:
             if let hash = item.payload,
@@ -878,6 +1151,15 @@ struct SpotlightLauncherView: View {
             return
         case .lookup:
             return  // definitions are already shown in the right half
+        case .translation:
+            if let text = translation.result(for: item.payload)?.text {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                toast("Copied translation")
+            } else {
+                toast("Nothing to copy")
+            }
+            return
         case .process:
             guard let pid = item.pid else { return }
             if activeCommand == SpotlightCommands.kill {
@@ -907,6 +1189,9 @@ struct SpotlightLauncherView: View {
             }
             return
         }
+        if let action = item.action, let scope, performLocal(action, on: scope) {
+            return
+        }
         let outcome = if let action = item.action, let scope {
             SpotlightOpener.perform(action, on: scope)
         } else {
@@ -921,7 +1206,7 @@ struct SpotlightLauncherView: View {
         }
     }
 
-    /// Tab: view the actions of the selected row.
+    /// ⌘K: view the actions of the selected row.
     private func enterScope() {
         guard scope == nil, sel < results.count else { return }
         let item = results[sel]
@@ -963,10 +1248,7 @@ struct SpotlightLauncherView: View {
             exitChip()
             return
         }
-        if !query.isEmpty {
-            query = ""
-            return
-        }
+        // Typed text is kept: Escape just hides, and the next open shows the same search.
         hide()
     }
 
@@ -999,7 +1281,7 @@ struct SpotlightLauncherView: View {
             move(1)
             return true
         case KeyCode.tab:
-            enterScope()
+            cycleFilter(flags.contains(.shift) ? -1 : 1)
             return true
         case Self.backspaceKeyCode where flags.isEmpty:
             return handleDelete()
@@ -1011,8 +1293,38 @@ struct SpotlightLauncherView: View {
             move(key == "n" ? 1 : -1)
             return true
         }
+        // ⌘K / ⌃K — view the actions of the selected row (Tab now cycles the filter pills).
+        if flags == .command || flags == .control, key == "k" {
+            enterScope()
+            return true
+        }
         if flags == .command, key == "/" {
             toggleCommandMode()
+            return true
+        }
+        if flags == .command, key == "h" {
+            enterCommand(SpotlightCommands.help)
+            return true
+        }
+        if flags == [.command, .shift], key == "h" {
+            performShortcut(.excludeApp)
+            return true
+        }
+        if flags == .command, key == "e" || key == "t" {
+            performShortcut(key == "e" ? .openInEditor : .openInTerminal)
+            return true
+        }
+        if flags == .command, key == "d", let item = previewItem {
+            // Clipboard rows: ⌘D removes the clip from history instead.
+            if item.kind == .clip, let id = item.clipID {
+                clipboardStore.deleteEntry(id: id)
+                toast("Clipboard item deleted")
+            } else if item.kind == .clipImage, let id = item.payload {
+                clipboardStore.deleteImageEntry(id: id)
+                toast("Image deleted")
+            } else {
+                performShortcut(SpotlightBackend.trashAction(for: item) ?? .moveToTrash)
+            }
             return true
         }
         // ⌘↩ — search the web for the typed text (like the legacy launcher).
@@ -1089,8 +1401,9 @@ struct SpotlightLauncherView: View {
             resizeDelay = 0
             activeCommand = nil
             armedKillPID = nil
-            lookupTask?.cancel()
-            lookup = nil
+            armedConfirm = nil
+            trashCount = nil
+            translation = SpotlightTranslationBatch()
             panelHeight = Metric.barHeight
         }
     }
@@ -1102,7 +1415,22 @@ struct SpotlightLauncherView: View {
     }
 
     private func toggle() {
-        if isOpen, !dismissing, NSApp.isActive { hide() } else { show() }
+        if isOpen, !dismissing, NSApp.isActive {
+            hide()
+            return
+        }
+        // Text selected in the app in front: open straight on its lookup (tw"). Read it
+        // BEFORE Lumio takes focus.
+        var selection: String?
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        {
+            selection = SelectedTextReader.selection(in: front)
+        }
+        show()
+        if let selection {
+            query = AppConstants.Launcher.QueryPrefix.translateWord + selection
+        }
     }
 
     private func show() {
@@ -1139,6 +1467,16 @@ struct SpotlightLauncherView: View {
             // Fresh open: go to the hidden state WITHOUT animation, position the window, and only then
             // animate on the next tick — the two states must be in two transactions.
             resetState()
+            // Bring back the search from last time (sets the query after the reset, so it re-runs),
+            // unless it was hidden longer than `query_retention_seconds`.
+            if QueryRetentionPolicy.shouldClear(hiddenAt: hiddenAt, seconds: retentionSeconds) {
+                keptQuery = ""
+            }
+            hiddenAt = nil
+            if !keptQuery.isEmpty {
+                query = keptQuery
+                keptQuery = ""
+            }
             var plain = Transaction()
             plain.disablesAnimations = true
             withTransaction(plain) {
@@ -1192,17 +1530,27 @@ struct SpotlightLauncherView: View {
         }
         pidToRestore = nil
 
+        // Dismissed (not launched) from a plain search: remember the text for the next open.
+        let plainSearch = scope == nil && browse == nil && activeCommand == nil
+        keptQuery = (!launched && plainSearch) ? query : ""
+
         let seconds = launched ? SpotlightMotion.launchSeconds : SpotlightMotion.dismissSeconds
         dismissTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Int(seconds * 1000) + 20))
             guard !Task.isCancelled else { return }
             window.orderOut(nil)
+            hiddenAt = Date()
             isOpen = false
             dismissing = false
             resetState()
             // Hidden: poll the clipboard less often; next time ps" is entered, take a fresh process snapshot.
             clipboardStore.setMonitoringMode(.background)
             processModel.invalidate()
+            // Hidden: drop preview bitmaps and highlighted text, then hand the
+            // freed pages back to the OS so an idle Lumio stays small.
+            HighlightedTextCache.purge()
+            await QuickLookPreviewService.shared.purge()
+            malloc_zone_pressure_relief(nil, 0)
         }
     }
 
@@ -1433,5 +1781,17 @@ private struct SpotlightModeHooks: ViewModifier {
             .onReceive(processModel.$candidates) { _ in onProcesses() }
             .onReceive(clipboardStore.$entries) { _ in onClips() }
             .onReceive(clipboardStore.$imageEntries) { _ in onImages() }
+    }
+}
+
+private struct SelectionZoomedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True during the one-shot zoom of the newly selected row.
+    var isSelectionZoomed: Bool {
+        get { self[SelectionZoomedKey.self] }
+        set { self[SelectionZoomedKey.self] = newValue }
     }
 }

@@ -23,10 +23,6 @@ nonisolated struct ToolActionRow {
     }
 }
 
-@_silgen_name("lumio_search_json")
-nonisolated
-private func lumio_search_json(_ query: UnsafePointer<CChar>?, _ limit: UInt32) -> UnsafeMutablePointer<CChar>?
-
 @_silgen_name("lumio_search_json_compact")
 nonisolated
 private func lumio_search_json_compact(_ query: UnsafePointer<CChar>?, _ limit: UInt32) -> UnsafeMutablePointer<CChar>?
@@ -55,40 +51,6 @@ private func lumio_translate_json(_ text: UnsafePointer<CChar>?, _ targetLang: U
 @_silgen_name("lumio_fuzzy_score")
 nonisolated
 private func lumio_fuzzy_score(_ query: UnsafePointer<CChar>?, _ title: UnsafePointer<CChar>?) -> Int64
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 @_silgen_name("lumio_classify_url_json")
 nonisolated
@@ -126,81 +88,9 @@ private func lumio_clipboard_delete(_ id: Int64) -> Bool
 nonisolated
 private func lumio_clipboard_clear() -> UInt32
 
-
-
-
-
-
-
-
-@_silgen_name("lumio_lunar_date_json")
-nonisolated
-private func lumio_lunar_date_json(_ year: Int64, _ month: Int64, _ day: Int64, _ tz: Double) -> UnsafeMutablePointer<CChar>?
-
-
-
-
-
-
-
-@_silgen_name("lumio_tool_action_json")
-nonisolated
-private func lumio_tool_action_json(_ action: UnsafePointer<CChar>?, _ candidateID: UnsafePointer<CChar>?, _ rowTitle: UnsafePointer<CChar>?, _ path: UnsafePointer<CChar>?, _ isDir: Bool, _ ancestorsJSON: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-
 @_silgen_name("lumio_perform_tool_action_json")
 nonisolated
 private func lumio_perform_tool_action_json(_ action: UnsafePointer<CChar>?, _ candidateID: UnsafePointer<CChar>?, _ rowTitle: UnsafePointer<CChar>?, _ path: UnsafePointer<CChar>?, _ isDir: Bool, _ ancestorsJSON: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-
-@_silgen_name("lumio_netspeed_run_json")
-nonisolated
-private func lumio_netspeed_run_json() -> UnsafeMutablePointer<CChar>?
-
-/// One measurement from the shared `core/netspeed` crate. The display strings
-/// are formatted in core so every shell prints the same text.
-nonisolated struct SpeedReading: Codable, Sendable, Equatable {
-    let downloadBitsPerSecond: Double
-    let uploadBitsPerSecond: Double
-    let latencyMs: Double?
-    let downloadDisplay: String
-    let uploadDisplay: String
-    let latencyDisplay: String
-    let downloadVerdict: String
-    let latencyVerdict: String
-    let latencyLevel: String?
-    let downloadSource: String?
-    var publicIp: String?
-    let provider: String?
-    let location: String?
-    let measuredAtUnix: Int
-
-    var measuredAt: Date {
-        Date(timeIntervalSince1970: TimeInterval(measuredAtUnix))
-    }
-}
-
-/// Stands in when the bridge cannot make sense of the reply at all; every other
-/// message the panel shows comes from core's `SpeedError`.
-private nonisolated let speedTestUnknownFailure = "Speed test failed"
-
-nonisolated struct SpeedTestEnvelope: Decodable {
-    let ok: Bool
-    let reading: SpeedReading?
-    let error: String?
-}
-
-nonisolated enum SpeedTestOutcome: Sendable {
-    case reading(SpeedReading)
-    case failure(String)
-}
-
-/// A resolved lunar date from the shared `core/lunar` crate (East Asian
-/// lunisolar calendar). `leap` marks the intercalary month of a 13-month year.
-nonisolated struct LunarDate: Decodable {
-    let day: Int
-    let month: Int
-    let year: Int
-    let leap: Bool
-}
 
 final class EngineBridge: @unchecked Sendable {
     nonisolated static let shared = EngineBridge()
@@ -242,17 +132,6 @@ final class EngineBridge: @unchecked Sendable {
         return fullPayload.results.map { LauncherResult($0, defaultKind: .app) }
     }
 
-
-
-
-
-
-
-
-
-
-
-
     nonisolated func recordUsage(candidateID: String, action: String) -> BridgeError? {
         let ptr = candidateID.withCString { idCstr in
             action.withCString { actionCstr in
@@ -287,41 +166,6 @@ final class EngineBridge: @unchecked Sendable {
         lumio_request_index_refresh()
     }
 
-    /// Lunar date from the shared core. `tzHours` is the viewer's UTC offset,
-    /// which selects the calendar variant (7 = Vietnamese, 8 = Chinese).
-    nonisolated func lunarDate(year: Int, month: Int, day: Int, tzHours: Double) -> LunarDate? {
-        guard let ptr = lumio_lunar_date_json(Int64(year), Int64(month), Int64(day), tzHours) else {
-            return nil
-        }
-        defer { lumio_free_cstring(ptr) }
-        guard let data = String(cString: ptr).data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(LunarDate.self, from: data)
-    }
-
-    /// Runs the shared core speed test. Blocks for 15 seconds and up, so call it
-    /// off the main thread. There is no cancel: core bounds each phase with its
-    /// own timeout.
-    nonisolated func speedTest() -> SpeedTestOutcome {
-        guard let ptr = lumio_netspeed_run_json() else {
-            return .failure(speedTestUnknownFailure)
-        }
-        defer { lumio_free_cstring(ptr) }
-
-        guard let data = String(cString: ptr).data(using: .utf8) else {
-            return .failure(speedTestUnknownFailure)
-        }
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let envelope = try? decoder.decode(SpeedTestEnvelope.self, from: data) else {
-            return .failure(speedTestUnknownFailure)
-        }
-        guard envelope.ok, let reading = envelope.reading else {
-            return .failure(envelope.error ?? speedTestUnknownFailure)
-        }
-        return .reading(reading)
-    }
-
     nonisolated func translate(text: String, targetLang: String = "en") -> TranslationResult? {
         let result = text.withCString { textCstr in
             targetLang.withCString { langCstr in
@@ -345,30 +189,6 @@ final class EngineBridge: @unchecked Sendable {
         return try? JSONDecoder().decode(TranslationResult.self, from: data)
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     nonisolated func fuzzyScore(query: String, title: String) -> Int? {
         let score = query.withCString { queryCstr in
             title.withCString { titleCstr in
@@ -377,13 +197,6 @@ final class EngineBridge: @unchecked Sendable {
         }
         return score == Int64.min ? nil : Int(score) // Int64.min = NO_MATCH sentinel
     }
-
-
-
-
-
-
-
 
     /// Classifies `query` as a URL, or nil to leave it as a search term.
     /// Network-free; shares the Rust core's tier rules and TLD list with linows.
@@ -401,21 +214,6 @@ final class EngineBridge: @unchecked Sendable {
     @discardableResult
     nonisolated func recordURLHit(url: String) -> Bool {
         url.withCString { lumio_record_url_hit($0) }
-    }
-
-
-
-    /// What `action` would do to a row, without doing it: the tool it would
-    /// start, or why it cannot. For labels and availability.
-    nonisolated func toolAction(
-        _ action: String, row: ToolActionRow, isDirectory: Bool
-    ) -> ToolAction? {
-        let ptr = row.withCStrings { candidate, title, path, ancestors in
-            action.withCString { action in
-                lumio_tool_action_json(action, candidate, title, path, isDirectory, ancestors)
-            }
-        }
-        return Self.decodeToolAction(ptr)
     }
 
     /// Runs `action` on a row. Shell actions are spawned detached inside core;
@@ -438,10 +236,6 @@ final class EngineBridge: @unchecked Sendable {
         guard let data = String(cString: ptr).data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(ToolAction.self, from: data)
     }
-
-
-
-
 
     /// Up to `limit` previously-opened URLs matching `query`, most-recent first.
     /// Opens the shared lumio.db - call off the main thread.
@@ -553,14 +347,6 @@ final class EngineBridge: @unchecked Sendable {
         Int(lumio_clipboard_clear())
     }
 
-
-
-
-
-
-
-
-
     nonisolated private func fallbackResults() -> [LauncherResult] {
         []
     }
@@ -617,43 +403,6 @@ nonisolated struct ToolAction: Decodable {
     /// A block declared this action for its own rows, so `tool` names the
     /// block: "Open in Projects" is not a label worth showing.
     let fromBlock: Bool
-}
-
-/// The row a block's placeholders expand against. One struct because the three
-/// always travel together, mirroring `RowArgs` on the Tauri side - and because
-/// they used to be three defaulted parameters, which let a call site drop the
-/// row and render `shortcuts run ''` while Enter still ran the real command.
-nonisolated struct RowRef {
-    let id: String
-    let title: String
-    let path: String
-
-    /// The selected row as the engine takes it. `id` is the candidate id: core
-    /// strips the `src:<block>:` namespace, so a block asking for `{id}` gets
-    /// the row's own id rather than the whole thing.
-    init(_ result: LauncherResult) {
-        id = result.id
-        title = result.title
-        path = result.path
-    }
-}
-
-
-
-
-
-
-/// How performing a block went. `errors` is empty when every step was spawned;
-/// a step's own exit code is its business, since nothing waits for it.
-nonisolated struct PerformBlockOutcome: Decodable {
-    let performed: Int
-    let errors: [String]
-    /// The target lists rows to pick from rather than steps to run. An explicit
-    /// flag, because "nothing performed" is also what a failure looks like.
-    let producesRows: Bool
-    /// Nothing declared and the row has a path, so it opens like any file. The
-    /// core decides this, not the row's kind.
-    let opensPath: Bool
 }
 
 /// Wire shape of a `url_history` row (see url-history spec), decoded with

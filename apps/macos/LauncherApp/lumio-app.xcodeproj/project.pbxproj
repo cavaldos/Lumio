@@ -7,17 +7,29 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		A18F90112FCC4D31001BAA87 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 		CE158B1D2F80D9AE001BAA87 /* Lumio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lumio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXBuildFile section */
-		A18F90122FCC4D31001BAA87 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A18F90112FCC4D31001BAA87 /* AppIntents.framework */; };
+		5A9C0A032F8F000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9C0A022F8F000000000001 /* Sparkle */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		5A9C0A042F8F000000000001 /* Exceptions for "lumio-app" folder in "Lumio" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CE158B1C2F80D9AE001BAA87 /* Lumio */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CE158B1F2F80D9AE001BAA87 /* lumio-app */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5A9C0A042F8F000000000001 /* Exceptions for "lumio-app" folder in "Lumio" target */,
+			);
 			path = "lumio-app";
 			sourceTree = "<group>";
 		};
@@ -28,7 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A18F90122FCC4D31001BAA87 /* AppIntents.framework in Frameworks */,
+				5A9C0A032F8F000000000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,6 +84,7 @@
 			);
 			name = "Lumio";
 			packageProductDependencies = (
+				5A9C0A022F8F000000000001 /* Sparkle */,
 			);
 			productName = "Lumio";
 			productReference = CE158B1D2F80D9AE001BAA87 /* Lumio.app */;
@@ -101,6 +114,9 @@
 			);
 			mainGroup = CE158B142F80D9AE001BAA87;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A9C0A012F8F000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CE158B1E2F80D9AE001BAA87 /* Products */;
 			projectDirPath = "";
@@ -287,14 +303,10 @@
 					ENABLE_PREVIEWS = YES;
 					ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "lumio-app/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Lumio;
-				INFOPLIST_KEY_CFBundleIconFile = AppIcon;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = NO;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash and read how many items it contains.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Lumio reads and toggles Bluetooth power from the launcher's quick actions.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumio creates and edits calendar events when you ask it to.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "Lumio finds who to message or FaceTime when you type a name.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Lumio creates and completes reminders when you ask it to.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				OTHER_LDFLAGS = (
@@ -330,17 +342,15 @@
 					CURRENT_PROJECT_VERSION = 1;
 					ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
 					ENABLE_APP_SANDBOX = NO;
-					ENABLE_PREVIEWS = YES;
+					DEAD_CODE_STRIPPING = YES;
+				ENABLE_PREVIEWS = NO;
+				STRIP_INSTALLED_PRODUCT = YES;
 					ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "lumio-app/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Lumio;
-				INFOPLIST_KEY_CFBundleIconFile = AppIcon;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = NO;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash and read how many items it contains.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Lumio reads and toggles Bluetooth power from the launcher's quick actions.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumio creates and edits calendar events when you ask it to.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "Lumio finds who to message or FaceTime when you type a name.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Lumio creates and completes reminders when you ask it to.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				OTHER_LDFLAGS = (
@@ -386,6 +396,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A9C0A012F8F000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A9C0A022F8F000000000001 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9C0A012F8F000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CE158B152F80D9AE001BAA87 /* Project object */;
 }

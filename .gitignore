@@ -1,4 +1,5 @@
 .DS_Store
+__pycache__/
 DerivedData/
 .build/
 dist/
@@ -30,7 +31,7 @@ docs/release-private.local.md
 docs/release-secrets.md
 docs/tmp-issue-tracker.md
 
-# internal feature specs - maintainer-only design notes; user docs live in docs/
+# internal feature specs - maintainer-only design notes
 specs/
 plans/
 # blogs
@@ -96,3 +97,4 @@ CLAUDE.md
 
 ## linows local review notes
 apps/linows/LINUX-REVIEW.md
+./skills-lock.json

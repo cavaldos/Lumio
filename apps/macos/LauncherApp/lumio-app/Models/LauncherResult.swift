@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 enum LauncherResultKind: String, Codable {
@@ -6,82 +5,18 @@ enum LauncherResultKind: String, Codable {
     case file
     case folder
     case clipboard
-    /// A running process row from the `ps"` finder. Carries `processPID` /
-    /// `processPorts`; detail (cmdline, memory, …) loads per-selection.
     case process
-    /// A row from a user-declared block that has no filesystem target: Enter
-    /// performs its steps rather than opening anything.
+    /// A row from a user-declared block that has no filesystem target.
     case action
-
-    /// Filesystem targets - the only kinds `Cmd+D`/`Cmd+P`/pick-to-pasteboard
-    /// operate on.
-    var isFileOrFolder: Bool {
-        self == .file || self == .folder
-    }
 }
 
+/// One search result from the Rust core (see `EngineBridge.search`).
 struct LauncherResult: Identifiable {
     let id: String
     let kind: LauncherResultKind
     let title: String
     let subtitle: String?
     let path: String
-    /// `var`, not `let`: most rows are built with their final rank, but the
-    /// call rows order themselves after the fact. Its POSITION is load-bearing
-    /// - the memberwise initializer is called positionally all over the app.
     var score: Int
-    var clipboardContent: String? = nil
-    var clipboardCapturedAt: Date? = nil
-    var clipboardCharacterCount: Int? = nil
-    var clipboardLineCount: Int? = nil
-    /// What re-copying a clipboard row actually pastes, when it differs from
-    /// `clipboardContent` (a labeled entry pastes its payload, not the label).
-    var clipboardPayload: String? = nil
-    /// Set only on `ci"` rows. A clipboard row with a path here IS an image row
-    /// (see `isClipboardImage`).
-    var clipboardImagePath: String? = nil
-    var clipboardImageThumbnailPath: String? = nil
-    var clipboardImagePixelSize: CGSize? = nil
-    var clipboardImageByteSize: Int? = nil
-    /// Set only for `.process` rows: the process id and its listening TCP ports.
-    var processPID: Int32? = nil
-    var processPorts: [Int]? = nil
-    /// Set on the synthetic rows that open a URL (a meeting to join, a way to
-    /// reach a person): what the preview shows without re-parsing the subtitle
-    /// it was written into. The URL itself rides in the result id.
-    var linkKindLabel: String? = nil
-    var linkDetail: String? = nil
-    /// What a declared source row asked to be drawn as. Beats its block's icon,
-    /// which is the whole point of it being per row.
     var icon: String? = nil
-}
-
-extension LauncherResult {
-    /// User sources removed: no row is a source row anymore.
-    var isSourceRow: Bool { false }
-
-    /// One definition for the row icon, the preview and the open handler, so
-    /// the three cannot disagree about what they are looking at.
-    var isClipboardImage: Bool {
-        kind == .clipboard && clipboardImagePath != nil
-    }
-}
-
-/// Where the synthesized "open this URL" row sits among the local results.
-enum URLRowPlacement {
-    /// A structural URL (one with a scheme or a path) cannot be a file or a
-    /// search term, so it leads.
-    ///
-    /// A bare host sits one below the best local match (issue #232): Enter still
-    /// opens that match, and the row stays one keypress away however many rows a
-    /// source contributes. It used to sit after every local result, which a
-    /// declared source can flood - browser history carries the host in every
-    /// subtitle, so typing an address buried the row for that address under
-    /// hundreds of pages from it.
-    static func merged(
-        url: LauncherResult, isBareHost: Bool, into ranked: [LauncherResult]
-    ) -> [LauncherResult] {
-        guard isBareHost else { return [url] + ranked }
-        return Array(ranked.prefix(1)) + [url] + ranked.dropFirst()
-    }
 }

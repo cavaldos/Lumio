@@ -163,11 +163,12 @@ enum SpotlightSpec {
 // resizing parts, a slightly bouncy spring for things that "pop" out.
 
 enum SpotlightMotion {
-    // Open: the glass cluster pops from slightly small to full size, with one gentle bounce.
-    static let appearScale: CGFloat = 0.92
-    static let appearOffsetY: CGFloat = -10
-    static let appear = Animation.spring(response: 0.42, dampingFraction: 0.72)
-    static let appearFade = Animation.easeOut(duration: 0.18)
+    // Open: the glass cluster springs from small to full size, overshoots a little (~3%) and
+    // settles — the macOS Spotlight "pop". Lower dampingFraction = more bounce.
+    static let appearScale: CGFloat = 0.82
+    static let appearOffsetY: CGFloat = -6
+    static let appear = Animation.spring(response: 0.36, dampingFraction: 0.6)
+    static let appearFade = Animation.easeOut(duration: 0.12)
 
     // Close: faster than open, the user already wants to move on. The window only orderOuts after
     // the fade finishes.
@@ -182,8 +183,9 @@ enum SpotlightMotion {
     /// Round buttons split off from the bar. A spring so the glass droplets look "liquid".
     static let morph = Animation.spring(response: 0.5, dampingFraction: 0.8)
     /// Round buttons merge back into the bar when typing starts: snappier than splitting, since the
-    /// user is waiting for results.
-    static let merge = Animation.spring(response: 0.3, dampingFraction: 0.86)
+    /// user is waiting for results. The bar widens to the right here — no spring, so the right edge
+    /// doesn't overshoot; only vertical motion bounces.
+    static let merge = Animation.timingCurve(0.22, 0.92, 0.24, 1, duration: 0.28)
     /// Typing while round buttons are showing: the panel waits until the bar has nearly finished growing
     /// before dropping down, so results fall straight down instead of sweeping diagonally left to right.
     static let expandAfterMerge = 0.12
@@ -194,8 +196,9 @@ enum SpotlightMotion {
         .spring(response: 0.4, dampingFraction: 0.62).delay(0.1 + Double(index) * 0.05)
     }
 
-    /// The panel expands down / collapses up when results appear / disappear (.38s --ease).
-    static let resize = Animation.timingCurve(0.22, 0.92, 0.24, 1, duration: 0.38)
+    /// The panel expands down / collapses up when results appear / disappear. A spring so the
+    /// bottom edge overshoots slightly and springs back, like Spotlight's results panel.
+    static let resize = Animation.spring(response: 0.4, dampingFraction: 0.78)
     static let contentIn = Animation.easeOut(duration: 0.22)
     static let contentOut = Animation.easeOut(duration: 0.14)
 
@@ -209,8 +212,7 @@ enum SpotlightMotion {
     }
 
     // Row selection: ONE selection bar slides between rows (matchedGeometryEffect),
-    // the newly selected row's icon zooms up one beat and back — like the legacy launcher
-    // (Motion.Selection).
+    // the newly selected row's icon zooms up one beat and back.
     static let selectionGlide = Animation.spring(response: 0.3, dampingFraction: 0.85)
     static let iconZoomScale: CGFloat = 1.16
     static let pillZoomScale: CGFloat = 1.015

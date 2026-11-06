@@ -34,7 +34,6 @@
 
 ## Checklist
 
-- [ ] I have read and agree to the CLA (CLA.md)
 - [ ] PR title is clear and scoped
 - [ ] Docs updated for user-visible changes
 - [ ] No secrets or private files included

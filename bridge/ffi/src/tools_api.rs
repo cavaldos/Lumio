@@ -6,18 +6,6 @@ use std::os::raw::c_char;
 
 use crate::state::{cstr_to_string, json_cstring_or_null};
 
-pub(crate) fn lumio_tool_action_json_impl(
-    action: *const c_char,
-    _candidate_id: *const c_char,
-    _row_title: *const c_char,
-    path: *const c_char,
-    is_dir: bool,
-    _ancestors_json: *const c_char,
-) -> *mut c_char {
-    let resolved = resolve(action, path, is_dir).map(|outcome| Resolved::from(outcome));
-    json_cstring_or_null(resolved.as_ref().and_then(json))
-}
-
 pub(crate) fn lumio_perform_tool_action_json_impl(
     action: *const c_char,
     _candidate_id: *const c_char,
@@ -69,9 +57,4 @@ fn performed(tool: &str, command: String) -> Resolved {
     } else {
         Resolved::failed(Some(tool.to_string()), "failed to spawn command".to_string())
     }
-}
-
-pub(crate) fn lumio_tool_actions_json_impl() -> *mut c_char {
-    let ids: Vec<&str> = Action::ALL.iter().map(|action| action.id()).collect();
-    json_cstring_or_null(serde_json::to_string(&ids).ok())
 }

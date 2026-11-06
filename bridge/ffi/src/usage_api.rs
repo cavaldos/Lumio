@@ -49,6 +49,7 @@ impl UsageRecordError {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn lumio_record_usage_impl(candidate_id: *const c_char, action: *const c_char) -> bool {
     validate_and_record_usage(candidate_id, action).is_ok()
 }

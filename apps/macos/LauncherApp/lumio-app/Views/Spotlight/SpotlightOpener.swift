@@ -44,7 +44,7 @@ enum SpotlightOpener {
             guard let text = item.payload else { return .message("Nothing to copy") }
             copy(text)
             return .message("Copied")
-        case .cmd, .prefix, .command, .clipImage, .lookup, .process:
+        case .cmd, .prefix, .command, .clipImage, .lookup, .translation, .process, .help:
             // These modes need view state (store, model): the view handles them.
             return .message("Nothing to open")
         }
@@ -71,7 +71,7 @@ enum SpotlightOpener {
         return .launched
     }
 
-    // MARK: - Actions (Tab)
+    // MARK: - Actions (⌘K)
 
     static func perform(_ action: SpotlightAction, on item: SpotlightItem) -> Outcome {
         guard let target = item.target else { return .message("No target") }
@@ -95,7 +95,9 @@ enum SpotlightOpener {
             guard let app = runningApp(at: target) else { return .message("\(item.name) isn't running") }
             app.terminate()
             return .launched
-        case .measureCPU, .killProcess, .copyPID:
+        case .measureCPU, .killProcess, .copyPID,
+             .openInEditor, .openInTerminal, .moveToTrash, .emptyTrash, .excludeApp:
+            // Need view state (process model, confirmation, async tool run): the view handles them.
             return .message("Not applicable")
         }
     }

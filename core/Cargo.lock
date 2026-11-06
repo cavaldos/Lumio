@@ -266,25 +266,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumio-lunar"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "lumio-matching"
 version = "0.1.0"
 dependencies = [
  "unicode-normalization",
-]
-
-[[package]]
-name = "lumio-netspeed"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]

@@ -7,9 +7,10 @@
 //    a" f" d" r" rc"   — core filters (go straight to EngineBridge, see SpotlightBackend)
 //    "                 — menu listing every prefix (PrefixSuggestion)
 //    c"  ci"           — text / image clipboard history (ClipboardHistoryStore)
-//    tw"               — word lookup: EN/VI/JA translation + system dictionary
+//    tw"               — word lookup: system dictionary (Dictionary.app style) + EN/VI/JA translation
+//    tr"               — translate text into EN / VI / JA (Apple Translation, see TextTranslator)
 //    ps"               — find / measure CPU / force quit processes (ProcessFinderModel)
-//    :                 — command menu; :kill  :speed  (or ⌘/ opens the most recent command)
+//    :                 — command menu; :kill  :emptytrash  :help  (or ⌘/ opens the most recent command)
 //
 //  Reuses the legacy launcher's modules as-is; only the rows are built Spotlight-style.
 //
@@ -24,6 +25,7 @@ enum SpotlightMode: Equatable {
     case clipboard(term: String)
     case clipboardImage(term: String)
     case lookup(word: String)
+    case translate(text: String)
     case process(term: String)
 
     private typealias Prefix = AppConstants.Launcher.QueryPrefix
@@ -39,6 +41,10 @@ enum SpotlightMode: Equatable {
             let word = String(trimmed.dropFirst(Prefix.translateWord.count))
             return .lookup(word: word.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        if lower.hasPrefix(Prefix.translate) {
+            let text = String(trimmed.dropFirst(Prefix.translate.count))
+            return .translate(text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         if trimmed.hasPrefix(Prefix.discovery) {
             return .prefixMenu(filter: String(trimmed.dropFirst(Prefix.discovery.count)))
         }
@@ -49,27 +55,30 @@ enum SpotlightMode: Equatable {
     /// Key hint in the panel footer for this mode.
     var footerHint: String {
         switch self {
-        case .search: "⏎ open   ⇥ actions"
+        case .search: "⏎ open   ⇥ filter   ⌘K actions"
         case .prefixMenu: "⏎ use prefix"
         case .commandMenu: "⏎ enter command"
         case .clipboard, .clipboardImage: "⏎ copy"
-        case .lookup: "definitions on the right"
-        case .process: "⏎ measure CPU   ⇥ actions"
+        case .lookup: "click a linked word to look it up"
+        case .translate: "⏎ copy translation"
+        case .process: "⏎ measure CPU   ⌘K actions"
         }
     }
 }
 
-/// Commands (`:kill`, `:speed`) — the catalog belongs to the legacy launcher.
+/// Commands (`:kill`, `:emptytrash`, `:help`).
 enum SpotlightCommands {
     static let kill = AppConstants.Launcher.Command.kill
-    static let speed = AppConstants.Launcher.Command.speed
+    static let emptyTrash = AppConstants.Launcher.Command.emptyTrash
+    static let help = AppConstants.Launcher.Command.help
 
     static var catalog: [AppCommand] { AppConstants.Launcher.commandCatalog }
 
     static func placeholder(for id: String) -> String {
         switch id {
         case kill: "Name, PID or port"
-        case speed: "⏎ re-run network speed test"
+        case emptyTrash: "⏎ empty the Trash"
+        case help: "Filter help"
         default: id
         }
     }
@@ -77,7 +86,6 @@ enum SpotlightCommands {
     static func detail(for command: AppCommand) -> String {
         switch command.id {
         case kill: "Force quit an app / process by name, PID or port"
-        case speed: "Measure download, upload speed and latency"
         default: command.detail
         }
     }
@@ -144,13 +152,37 @@ enum SpotlightModeRows {
         }
     }
 
+    /// tw": the words starting with the typed text in the enabled dictionaries, like the
+    /// Dictionary.app sidebar. The typed text always comes first, even when no dictionary
+    /// has it (a phrase to translate).
     static func lookup(_ word: String) -> [SpotlightItem] {
         guard !word.isEmpty else { return [] }
-        return [SpotlightItem(
-            id: "lookup|\(word)", name: word, kind: .lookup,
-            colors: "#ffb36e,#f06a2e", meta: "Translate + dictionary",
-            symbol: "character.book.closed", payload: word
-        )]
+        var words = DictionaryLookupService.suggestions(for: word)
+        if let index = words.firstIndex(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) {
+            words.insert(words.remove(at: index), at: 0)
+        } else {
+            words.insert(word, at: 0)
+        }
+        return words.map { headword in
+            SpotlightItem(
+                id: "lookup|\(headword)", name: headword, kind: .lookup,
+                colors: "#ffb36e,#f06a2e", meta: nil,
+                symbol: "character.book.closed", payload: headword
+            )
+        }
+    }
+
+    /// tr": one row per target language. The translations live in the view's state
+    /// (SpotlightTranslationBatch), so the rows stay put while they fill in.
+    static func translation(_ text: String, source: Locale.Language?) -> [SpotlightItem] {
+        guard !text.isEmpty else { return [] }
+        return TranslationLanguage.targets(from: source).map { language in
+            SpotlightItem(
+                id: "translate|\(language.code)", name: language.name, kind: .translation,
+                colors: "#7fb2ff,#3d63e0", meta: language.name,
+                symbol: "translate", payload: language.code
+            )
+        }
     }
 
     static func processes(_ model: ProcessFinderModel, term: String) -> [SpotlightItem] {
@@ -181,39 +213,76 @@ enum SpotlightModeRows {
         }
     }
 
-    // MARK: - Word lookup (tw")
+    /// `:emptytrash` — one row; the first Enter asks, the second empties.
+    static func emptyTrash(itemCount: Int?) -> [SpotlightItem] {
+        let detail = itemCount.map(DeleteTargetLogic.emptyTrashDetail(itemCount:)) ?? "Deleted permanently"
+        return [SpotlightItem(
+            id: "command|emptytrash", name: "Empty Trash", kind: .command,
+            colors: "#ff8a80,#d6453a", meta: detail, symbol: "trash.slash",
+            payload: SpotlightCommands.emptyTrash
+        )]
+    }
 
-    /// Like the legacy launcher's `fetchAllTranslations`: translate (network call) on a
-    /// background thread, look up the system dictionary for the translations on main.
-    static func fetchLookup(_ word: String) async -> LookupDefinition {
-        async let en = translate(word, to: "en")
-        async let vi = translate(word, to: "vi")
-        async let ja = translate(word, to: "ja")
-        let results = await [("English", en), ("Vietnamese", vi), ("Japanese", ja)]
-        return LookupDefinition(
-            query: word,
-            sourceLabel: "Input",
-            sections: results.map { label, translated in
-                LookupTranslationSection(
-                    label: label,
-                    translated: translated,
-                    dictionaryDefinition: translated.flatMap { DictionaryParser.parse(rawDefinition(for: $0) ?? "") },
-                    failed: translated == nil
+    /// `:help` — prefixes, commands and keyboard shortcuts of this launcher.
+    static func help(_ filter: String) -> [SpotlightItem] {
+        let prefixes = AppConstants.Launcher.PrefixSuggestion.menuEntries(matching: "").map {
+            ($0.displayWithArg, $0.description)
+        }
+        let commands = AppConstants.Launcher.commandCatalog.map { (":" + $0.id, SpotlightCommands.detail(for: $0)) }
+        let entries = prefixes + commands + helpShortcuts
+        let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return entries
+            .filter { needle.isEmpty || $0.0.lowercased().contains(needle) || $0.1.lowercased().contains(needle) }
+            .map { key, detail in
+                SpotlightItem(
+                    id: "help|\(key)", name: key, kind: .help,
+                    colors: "#a7aeb8,#5e6670", meta: detail, symbol: "keyboard"
                 )
             }
-        )
     }
 
-    private static func translate(_ text: String, to lang: String) async -> String? {
-        await Task.detached(priority: .userInitiated) {
-            EngineBridge.shared.translate(text: text, targetLang: lang)?.translated
-        }.value
+    private static let helpShortcuts: [(String, String)] = [
+        ("⌘K", "Actions for the selected row"),
+        ("⇥ / ⇧⇥", "Next / previous filter"),
+        ("⌘1 … ⌘4", "Browse Applications, Folders, Settings, Documents"),
+        ("⌘↩", "Search the web"),
+        ("⌘F", "Show in Finder"),
+        ("⌘E", "Open in editor"),
+        ("⌘T", "Open in terminal"),
+        ("⌘D", "Move to Trash · Empty Trash on the Trash pin · delete a clip"),
+        ("⌘H", "This help"),
+        ("⌘⇧H", "Hide the selected app from results"),
+        ("⌘/", "Open the last command"),
+        ("⌘⇧,", "Settings"),
+        ("Esc", "Leave the current mode, or close"),
+    ]
+
+    // MARK: - Translation (tw" bar, tr")
+
+    /// EN / VI / JA translations of a word, for the tw" bar.
+    static func fetchTranslations(_ word: String) async -> [SpotlightTranslation] {
+        let source = TextTranslator.detectLanguage(of: word)
+        let results = await translate(word, from: source, to: TranslationLanguage.all)
+        return TranslationLanguage.all.map { language in
+            SpotlightTranslation(label: language.name, code: language.shortCode, text: results[language.code]?.text)
+        }
     }
 
-    private static func rawDefinition(for text: String) -> String? {
-        let range = CFRange(location: 0, length: (text as NSString).length)
-        guard let unmanaged = DCSCopyTextDefinition(nil, text as CFString, range) else { return nil }
-        let raw = (unmanaged.takeRetainedValue() as String).trimmingCharacters(in: .whitespacesAndNewlines)
-        return raw.isEmpty ? nil : raw
+    /// Translates `text` into every target at once. Keyed by language code; a missing code failed.
+    static func translate(
+        _ text: String,
+        from source: Locale.Language?,
+        to targets: [TranslationLanguage]
+    ) async -> [String: TextTranslation] {
+        await withTaskGroup(of: (String, TextTranslation?).self) { group in
+            for target in targets {
+                group.addTask { (target.code, await TextTranslator.translate(text, from: source, to: target)) }
+            }
+            var results: [String: TextTranslation] = [:]
+            for await (code, translation) in group {
+                results[code] = translation
+            }
+            return results
+        }
     }
 }

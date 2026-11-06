@@ -15,7 +15,6 @@ struct lumio_appApp: App {
     // The launcher window is owned by AppDelegate (an AppKit NSWindow), not a
     // SwiftUI WindowGroup - see AppDelegate.makeLauncherWindow() for why. This
     // store is shared with that window's hosted ContentView.
-    private let themeStore = ThemeStore.shared
 
     init() {
         if let exitCode = handleCLIFlags() {
@@ -160,7 +159,7 @@ struct lumio_appApp: App {
             }
 
             CommandGroup(after: .appSettings) {
-                Button("Theme Settings") {
+                Button("Settings…") {
                     DispatchQueue.main.async {
                         NotificationCenter.default.post(name: .lookToggleSettingsRequested, object: nil)
                     }
@@ -174,28 +173,6 @@ struct lumio_appApp: App {
                 }
                 .keyboardShortcut(";", modifiers: [.command, .shift])
 
-                Divider()
-
-                Button("Zoom In") {
-                    DispatchQueue.main.async {
-                        themeStore.zoomIn()
-                    }
-                }
-                .keyboardShortcut("=", modifiers: [.command])
-
-                Button("Zoom Out") {
-                    DispatchQueue.main.async {
-                        themeStore.zoomOut()
-                    }
-                }
-                .keyboardShortcut("-", modifiers: [.command])
-
-                Button("Actual Size") {
-                    DispatchQueue.main.async {
-                        themeStore.resetZoom()
-                    }
-                }
-                .keyboardShortcut("0", modifiers: [.command])
             }
         }
     }

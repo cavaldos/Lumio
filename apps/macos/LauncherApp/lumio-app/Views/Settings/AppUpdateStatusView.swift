@@ -1,14 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Shared version + update-status UI, used by both Settings → About and the
-/// Help screen header so the two stay in sync (single source of the buttons,
-/// states, and release hint).
+/// Version + update controls for Settings > About. Sparkle (UpdateChecker)
+/// shows its own windows for the result and the install.
 struct AppUpdateStatusView: View {
     let themeStore: ThemeStore
     @ObservedObject private var updateChecker = UpdateChecker.shared
 
-    private var fontSize: CGFloat { CGFloat(themeStore.settings.fontSize) }
+    private var fontSize: CGFloat { CGFloat(AppConstants.ThemeUI.fontSize) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -18,39 +17,28 @@ struct AppUpdateStatusView: View {
                     .foregroundStyle(themeStore.fontColor())
                     .textSelection(.enabled)
 
-                if updateChecker.availableUpdate == nil, let status = updateChecker.statusMessage {
-                    Text(status)
-                        .font(themeStore.uiFont(size: fontSize - 2, weight: .regular))
-                        .foregroundStyle(themeStore.mutedTextColor())
-                        .lineLimit(1)
-                }
-
                 Spacer(minLength: 0)
 
-                pill(updateChecker.isChecking ? "Checking…" : "Check for Updates") {
-                    updateChecker.checkForUpdates(force: true)
+                if updateChecker.isEnabled {
+                    pill("Check for Updates") {
+                        updateChecker.checkForUpdates()
+                    }
+                    .disabled(!updateChecker.canCheckForUpdates)
                 }
-                .disabled(updateChecker.isChecking)
             }
 
-            if let update = updateChecker.availableUpdate {
-                HStack(spacing: 8) {
-                    Text("Update available: Lumio \(update.version)")
-                        .font(themeStore.uiFont(size: fontSize - 1, weight: .semibold))
-                        .foregroundStyle(themeStore.fontColor())
-
-                    pill("Update") { updateChecker.startUpdate() }
-                        .help("Opens the GitHub Release page")
-                    pill("Notes") { NSWorkspace.shared.open(update.releaseURL) }
-                    pill("Dismiss") { updateChecker.dismissCurrent() }
-
-                    Spacer(minLength: 0)
+            if updateChecker.isEnabled {
+                Toggle(isOn: Binding(
+                    get: { updateChecker.automaticallyChecksForUpdates },
+                    set: { updateChecker.automaticallyChecksForUpdates = $0 }
+                )) {
+                    Text("Check for updates automatically")
+                        .font(themeStore.uiFont(size: fontSize - 1, weight: .regular))
                 }
-
-                Text("Download the zip from the GitHub Release and replace Lumio.app")
+            } else {
+                Text("Updates are off in dev builds")
                     .font(themeStore.uiFont(size: fontSize - 2, weight: .regular))
                     .foregroundStyle(themeStore.mutedTextColor())
-                    .textSelection(.enabled)
             }
         }
     }

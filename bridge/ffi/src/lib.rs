@@ -1,18 +1,14 @@
 #![allow(unsafe_code)]
 
-
 mod answers_api;
 
 mod clipboard_api;
-mod lunar_api;
 mod matching_api;
 
 mod modes_api;
-mod netspeed_api;
 
 mod runtime_config;
 mod search_api;
-mod seed_api;
 
 mod state;
 mod tools_api;
@@ -21,16 +17,7 @@ mod url_history_api;
 mod usage_api;
 
 use lumio_engine::QueryEngine;
-use search_api::FfiSearchResult;
 use std::os::raw::c_char;
-
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_search_count(query_len: u32) -> FfiSearchResult {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        search_api::lumio_search_count_impl(query_len)
-    }))
-    .unwrap_or(FfiSearchResult { count: 0 })
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lumio_search_json(query: *const c_char, limit: u32) -> *mut c_char {
@@ -46,22 +33,6 @@ pub extern "C" fn lumio_search_json_compact(query: *const c_char, limit: u32) ->
         search_api::lumio_search_json_compact_impl(query, limit)
     }))
     .unwrap_or(std::ptr::null_mut())
-}
-
-/// Natural-language file recall over Lumio's own index. Returns the same JSON as
-/// `lumio_search_json`, or null when the query is not a file-recall query. Free
-/// with `lumio_free_cstring`.
-
-/// File recall from structured params JSON `{terms?, types?, when?, location?}`
-/// (the model's `recall` step). Same payload shape as `lumio_search_files_json`;
-/// null when the params are unusable. Free with `lumio_free_cstring`.
-
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_record_usage(candidate_id: *const c_char, action: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        usage_api::lumio_record_usage_impl(candidate_id, action)
-    }))
-    .unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
@@ -96,14 +67,6 @@ pub extern "C" fn lumio_reload_config() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn lumio_seed_uwp_apps_json(json: *const c_char) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        seed_api::lumio_seed_uwp_apps_json_impl(json)
-    }))
-    .unwrap_or(false)
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn lumio_request_index_refresh() -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         state::request_background_index_refresh()
@@ -129,51 +92,6 @@ pub extern "C" fn lumio_modes_parse_json(argv_json: *const c_char) -> *mut c_cha
     .unwrap_or(std::ptr::null_mut())
 }
 
-/// Lunar date JSON (`{day, month, year, leap}`) for a Gregorian `(year, month,
-/// day)` at UTC offset `tz` hours. Free the result with `lumio_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_lunar_date_json(year: i64, month: i64, day: i64, tz: f64) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        lunar_api::lumio_lunar_date_json_impl(year, month, day, tz)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// The call request in `query` (`{"name":"mom","modality":null}`), or the
-/// literal `null` for an ordinary search. Tier-1 grammar, cheap enough to call
-/// on every keystroke. Free the result with `lumio_free_cstring`.
-
-/// The modality a bare "call" means (a `Modality` id). Free with
-/// `lumio_free_cstring`.
-
-/// The URL that dials `handle` with `modality` (a `Modality` id such as
-/// `face_time_audio`). Null when the modality is unknown. Free the result with
-/// `lumio_free_cstring`.
-
-/// The join request in `query` (`{}` for a bare "join", `{"name": "..."}` when
-/// it names a meeting), or the literal `null` for an ordinary search. Tier-1
-/// grammar, cheap enough to call on every keystroke. Free the result with
-/// `lumio_free_cstring`.
-
-/// What a `join` found in the events the shell fetched.
-///
-/// `events_json` is an array of `{title, startUnixS, endUnixS, url?, location?,
-/// notes?, allDay?}`. `name` narrows to meetings whose title carries those
-/// words; pass an empty string for "whatever is next". Returns
-/// `{"meetings":[...],"withoutLink":[...]}`, the second list naming events that
-/// matched but carry no join link. Free the result with `lumio_free_cstring`.
-
-/// A full speed test as JSON (`{"ok":true,"reading":{...}}` or
-/// `{"ok":false,"error":"..."}`). Blocks for 15 seconds and up, so call it off
-/// the UI thread. Free the result with `lumio_free_cstring`.
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_netspeed_run_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        netspeed_api::lumio_netspeed_run_json_impl,
-    ))
-    .unwrap_or(std::ptr::null_mut())
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn lumio_free_cstring(ptr: *mut c_char) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -188,56 +106,6 @@ pub extern "C" fn lumio_translate_json(
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         translate_api::lumio_translate_json_impl(text, target_lang)
-    }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Resolves a shared instant answer (currency/weather/crypto) for `query`,
-/// returning an owned JSON C string - an `Answer` object on a hit, or the JSON
-/// literal `null` otherwise. Free the result with `lumio_free_cstring`.
-
-/// `{id, name, steps}` for the user-declared block a candidate id belongs to,
-/// so the panel can show what Enter will perform. `null` when the row is not a
-/// block row.
-
-/// The rows of `block_id` produced against the selected row, for descending
-/// into a `then` target that lists rather than performs. Returns
-/// `{rows, truncated, error}`; each row's `candidateId` encodes the levels it
-/// came through, so two parents never share a row.
-///
-/// Runs the block live on every call. An error means do not descend.
-
-/// Every declared block as `{id, name, icon}`, for the shell's row-icon cache.
-
-/// What `action` ("edit", "terminal", "reveal") does to the row at `path`, as
-/// `{kind, tool, command, path, reason, key}` where `kind` is "shell",
-/// "application", "system_default", or "unavailable". Null for an unknown
-/// action or empty path.
-///
-/// Reads the declared tools from the cached config, so Cmd+Shift+; is all a
-/// user needs after editing them.
-///
-/// A block that declares `edit` / `terminal` / `reveal` wins for its own rows,
-/// so pass the row's id, title and ancestors: its verb expands like every other
-/// command it declares.
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_tool_action_json(
-    action: *const c_char,
-    candidate_id: *const c_char,
-    row_title: *const c_char,
-    path: *const c_char,
-    is_dir: bool,
-    ancestors_json: *const c_char,
-) -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tools_api::lumio_tool_action_json_impl(
-            action,
-            candidate_id,
-            row_title,
-            path,
-            is_dir,
-            ancestors_json,
-        )
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -264,15 +132,6 @@ pub extern "C" fn lumio_perform_tool_action_json(
             ancestors_json,
         )
     }))
-    .unwrap_or(std::ptr::null_mut())
-}
-
-/// Every action id `lumio_tool_action_json` accepts, as a JSON array.
-#[unsafe(no_mangle)]
-pub extern "C" fn lumio_tool_actions_json() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        tools_api::lumio_tool_actions_json_impl,
-    ))
     .unwrap_or(std::ptr::null_mut())
 }
 
@@ -402,23 +261,6 @@ pub extern "C" fn lumio_clipboard_clear() -> u32 {
     ))
     .unwrap_or(0)
 }
-
-/// Quick Action descriptors JSON for the result `(result_id, kind)` (or `[]`).
-
-/// The empty-state launchpad layout as `{columns, rows, tiles}` (or `[]`).
-/// The layout is fixed and input-free, so this takes no arguments. Free the
-/// result with `lumio_free_cstring`.
-
-/// JSON array of strings describing anything wrong with `~/.lumio/super-actions.toml`
-/// (or `[]`). Free the result with `lumio_free_cstring`.
-
-/// Free with `lumio_free_cstring`.
-
-/// Spawns and blocks: call off the UI thread. Free with `lumio_free_cstring`.
-
-/// Returns `{"error": ...}`. Free with `lumio_free_cstring`.
-
-/// Definitional entity JSON for `query` (a JSON string or `null`).
 
 #[cfg(test)]
 mod tests {
@@ -577,7 +419,6 @@ mod tests {
 
         let id = CString::new("app:smoke.test").expect("id cstring");
         let action = CString::new("open").expect("action cstring");
-        assert!(lumio_record_usage(id.as_ptr(), action.as_ptr()));
 
         let usage_ptr = lumio_record_usage_json(id.as_ptr(), action.as_ptr());
         assert!(!usage_ptr.is_null());
@@ -593,7 +434,6 @@ mod tests {
         );
 
         let empty = CString::new("").expect("empty cstring");
-        assert!(!lumio_record_usage(empty.as_ptr(), action.as_ptr()));
         let invalid_ptr = lumio_record_usage_json(empty.as_ptr(), action.as_ptr());
         assert!(!invalid_ptr.is_null());
         let invalid_raw = unsafe { CStr::from_ptr(invalid_ptr) }
@@ -639,7 +479,7 @@ mod tests {
             .iter()
             .find(|candidate| candidate.id.as_ref() == "app:smoke.test")
             .expect("smoke candidate exists");
-        assert_eq!(updated.use_count, 2);
+        assert_eq!(updated.use_count, 1);
         assert!(updated.last_used_at_unix_s.is_some());
 
         let _ = fs::remove_file(&db_path);
@@ -736,121 +576,5 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         env::temp_dir().join(format!("lumio-ffi-smoke-{nanos}.db"))
-    }
-
-    #[test]
-    fn ffi_seed_uwp_apps_json_inserts_and_search_finds() {
-        let _guard = test_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        // Both sides of the guard, for the reason the smoke test above gives.
-        state::wait_for_index_refresh_for_test();
-
-        let db_path = unique_test_db_path();
-        let _ = fs::remove_file(&db_path);
-
-        state::set_db_path_for_test(&db_path);
-        assert!(lumio_reload_config());
-        // The reload restarts the watchers and can spawn a refresh of its own,
-        // neither wanted while this seeds and prunes the same database.
-        state::stop_index_watchers_for_test();
-        state::wait_for_index_refresh_for_test();
-
-        // The JSON shape the seeding API accepts.
-        let json = CString::new(
-            r#"[
-                {"aumid": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App", "title": "Terminal"},
-                {"aumid": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App", "title": "Notepad"}
-            ]"#,
-        )
-        .expect("seed json");
-        assert!(lumio_seed_uwp_apps_json(json.as_ptr()));
-
-        // Round-trip via sqlite - make sure the rows actually persisted with the right shape.
-        let stored = SqliteStore::open(&db_path)
-            .expect("reopen sqlite")
-            .load_candidates(None)
-            .expect("load candidates");
-        let terminal = stored
-            .iter()
-            .find(|c| c.id.as_ref() == "app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App")
-            .expect("seeded terminal candidate");
-        assert_eq!(terminal.title.as_ref(), "Terminal");
-        assert_eq!(
-            terminal.path.as_ref(),
-            "shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
-        );
-        assert_eq!(terminal.use_count, 0);
-        assert_eq!(terminal.last_used_at_unix_s, None);
-
-        // Search has to surface the seeded entry - without this, the user can't find Terminal
-        // via the launcher even though it sits in the DB.
-        let query = CString::new("terminal").expect("query");
-        let ptr = lumio_search_json(query.as_ptr(), 10);
-        assert!(!ptr.is_null());
-        let raw = unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned();
-        lumio_free_cstring(ptr);
-        let payload: serde_json::Value = serde_json::from_str(&raw).expect("valid search payload");
-        let has_terminal = payload
-            .get("results")
-            .and_then(|value| value.as_array())
-            .is_some_and(|results| {
-                results.iter().any(|item| {
-                    item.get("id")
-                        .and_then(|value| value.as_str())
-                        .is_some_and(|id| {
-                            id == "app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
-                        })
-                })
-            });
-        assert!(
-            has_terminal,
-            "expected seeded UWP Terminal in search results, got: {raw}"
-        );
-
-        // Re-seeding must be idempotent and preserve use_count after a launch.
-        let id = CString::new("app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App").expect("id");
-        let action = CString::new("open_app").expect("action");
-        assert!(lumio_record_usage(id.as_ptr(), action.as_ptr()));
-        assert!(lumio_seed_uwp_apps_json(json.as_ptr())); // second seed
-        let after = SqliteStore::open(&db_path)
-            .expect("reopen")
-            .load_candidates(None)
-            .expect("load");
-        let after_terminal = after
-            .iter()
-            .find(|c| c.id.as_ref() == "app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App")
-            .expect("still here");
-        assert_eq!(
-            after_terminal.use_count, 1,
-            "re-seeding must preserve use_count via ON CONFLICT"
-        );
-
-        // Re-seed with Notepad omitted - simulates the user uninstalling that UWP app
-        // between runs. The vanished row must be pruned so it doesn't keep showing up
-        // in search forever (delete_stale_candidates can't reach rows written with
-        // indexed_at_unix_s = i64::MAX).
-        let json_terminal_only = CString::new(
-            r#"[{"aumid": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App", "title": "Terminal"}]"#,
-        )
-        .expect("seed json terminal only");
-        assert!(lumio_seed_uwp_apps_json(json_terminal_only.as_ptr()));
-
-        let after_prune = SqliteStore::open(&db_path)
-            .expect("reopen for prune check")
-            .load_candidates(None)
-            .expect("load after prune");
-        let ids_after_prune: Vec<&str> = after_prune.iter().map(|c| c.id.as_ref()).collect();
-        assert!(ids_after_prune.contains(&"app:uwp:Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"));
-        assert!(
-            !ids_after_prune.contains(&"app:uwp:Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"),
-            "Notepad should have been pruned after disappearing from the seed"
-        );
-
-        state::wait_for_index_refresh_for_test();
-        let _ = fs::remove_file(&db_path);
     }
 }

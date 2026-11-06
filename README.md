@@ -1,98 +1,154 @@
-# Lumio
+<div align="center">
+    <img src="apps/macos/LauncherApp/lumio-app/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width=200 height=200>
+    <h1>Lumio — Free & Open-Source Keyboard Launcher for macOS</h1>
+    <p>Open apps, files and folders, search your clipboard history, look up words and translate text without leaving the keyboard. A fast, <strong>local-first Spotlight alternative</strong> with a Rust core and a native SwiftUI interface.<br>✨ <strong>Liquid Glass on macOS 26</strong></p>
+</div>
 
-<img src="assets/icon.png" alt="Lumio icon" width="96" />
+<div align="center">
 
-A keyboard-first, local-first launcher for macOS. Open apps, files, folders, clipboard history, and quick commands without leaving the keyboard.
+[![Download](https://img.shields.io/badge/download-latest-brightgreen?style=flat-square)](https://github.com/cavaldos/Lumio/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/cavaldos/Lumio/total?style=flat-square)](https://github.com/cavaldos/Lumio/releases)
+![Platform](https://img.shields.io/badge/platform-macOS-blue?style=flat-square)
+![Requirements](https://img.shields.io/badge/requirements-macOS%2015%2B-fa4e49?style=flat-square)
+[![GitHub stars](https://img.shields.io/github/stars/cavaldos/Lumio?style=flat-square)](https://github.com/cavaldos/Lumio/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/cavaldos/Lumio?style=flat-square)](https://github.com/cavaldos/Lumio/network/members)
+[![License](https://img.shields.io/github/license/cavaldos/Lumio?style=flat-square)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor%20%E2%9D%A4%EF%B8%8F-8A2BE2?style=flat-square)](https://ko-fi.com/calvados)
 
-[![Latest release](https://img.shields.io/github/v/release/cavaldos/Lumio)](https://github.com/cavaldos/Lumio/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/cavaldos/Lumio/total)](https://github.com/cavaldos/Lumio/releases)
-[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
+<br>
 
-🎬 [Demo video](https://www.youtube.com/watch?v=NBB5bmjnLFU) · 📖 [User guide](docs/user-guide.md)
+<a href="https://ko-fi.com/calvados" target="_blank">
+    <img src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Support me on Ko-fi" style="height: 60px !important;width: 217px !important;">
+</a>
 
-Results land as fast as you can type. A Rust core under a native SwiftUI app, riding the system WebView instead of shipping a browser like Electron does. No background daemons. Your index, clipboard, and history stay on your machine; no telemetry.
+</div>
 
-> If this is useful, ⭐ star the repo — it's the single biggest signal that helps the project keep shipping.
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="assets/lumio-ui/1.png" alt="Lumio screenshot 1"></td>
+    <td><img src="assets/lumio-ui/2.png" alt="Lumio screenshot 2"></td>
+    <td><img src="assets/lumio-ui/3.png" alt="Lumio screenshot 3"></td>
+  </tr>
+</table>
 
 ## Install
 
-Download `Lumio-<version>-macOS.zip` from the [latest release](https://github.com/cavaldos/Lumio/releases/latest), unzip, and move `Lumio.app` to `/Applications`.
+Requires macOS 15 or later on Apple Silicon.
 
-Or via curl:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cavaldos/Lumio/main/scripts/install-lumio.sh | bash
-```
-
-Then bind `Cmd+Space` to Lumio (disable Spotlight's shortcut in `System Settings > Keyboard > Keyboard Shortcuts > Spotlight`).
-
-<details>
-<summary>Pin a version, update, uninstall</summary>
+**Homebrew** (recommended, updates with `brew upgrade`):
 
 ```bash
-# pin a specific version
-curl -fsSL https://raw.githubusercontent.com/cavaldos/Lumio/main/scripts/install-lumio.sh | bash -s -- --version <version>
-
-# update: download the newer zip and replace Lumio.app, or re-run the installer
-
-# uninstall
-rm -rf "/Applications/Lumio.app"
+brew tap cavaldos/tap
+brew install --cask cavaldos/tap/lumio
 ```
 
-If Lumio is fully quit and Spotlight is still unbound, relaunch via:
+This also adds a `lumio` command to your shell.
+
+**Manual:**
+
+1. Download [`Lumio.dmg`](https://github.com/cavaldos/Lumio/releases/latest/download/Lumio.dmg) from the [latest release](https://github.com/cavaldos/Lumio/releases/latest).
+2. Open it and drag `Lumio.app` into `Applications`.
+3. Clear the quarantine flag. Releases are ad-hoc signed and not notarized, so Gatekeeper would otherwise block the first launch:
 
 ```bash
-open "/Applications/Lumio.app"
+xattr -dr com.apple.quarantine /Applications/Lumio.app
 ```
 
-</details>
+Then open Lumio and press **`Option+Space`**. Optionally add the `lumio` command: `ln -sf /Applications/Lumio.app/Contents/MacOS/Lumio /opt/homebrew/bin/lumio`.
 
-## Shortcuts
+**Updates.** Lumio updates itself: it checks once a day and asks before installing a new version. Check right away from Settings → About → **Check for Updates**, where you can also turn the daily check off. Homebrew installs can also update with `brew upgrade --cask lumio`.
+
+For local development, see [CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
+
+## Uninstall
+
+**Homebrew:**
+
+```bash
+brew uninstall --cask lumio
+```
+
+Add `--zap` to also remove the settings and data.
+
+**Manual:** quit Lumio, then remove the app, its command and its data:
+
+```bash
+rm -rf /Applications/Lumio.app /opt/homebrew/bin/lumio
+rm -rf ~/.lumio "$HOME/Library/Application Support/lumio"
+```
+
+## Usage
 
 | Action | Shortcut |
-| ------ | -------- |
-| Toggle launcher | `Cmd+Space` |
+| --- | --- |
+| Show / hide Lumio | `Option+Space` |
+| Settings | `Cmd+Shift+Space` |
 | Open / run | `Enter` |
-| Web search | `Cmd+Enter` |
-| Reveal in Finder | `Cmd+F` |
-| Edit in your editor | `Cmd+E` |
-| Open a terminal there | `Cmd+T` |
-| Action menu | `Cmd+K` |
-| Move to Trash | `Cmd+D` |
-| Command mode (`speed`, `kill`) | `Cmd+/` |
-| Settings | `Cmd+Shift+,` |
-| Back / hide | `Escape` |
-| Switch to running app N | `Cmd+1`..`Cmd+9` |
-| Hide selected app from Lumio | `Cmd+Shift+H` |
+| Search the web | `Cmd+Enter` |
+| Show in Finder | `Cmd+F` |
+| Open in your editor / terminal | `Cmd+E` / `Cmd+T` |
+| Actions for the selected item | `Cmd+K` |
+| Move to Trash (delete a clip in clipboard mode) | `Cmd+D` |
+| Hide the selected app from results | `Cmd+Shift+H` |
+| Browse Applications / Folders / Settings / Documents | `Cmd+1` … `Cmd+4` |
+| Cycle result filters | `Tab` / `Shift+Tab` |
+| Command mode | `Cmd+/` |
+| Help | `Cmd+H` |
+| Close | `Esc` |
 
-`Cmd+E` and `Cmd+T` need a tool named in `~/.lumio/config` (`text_editor`, `code_editor`, `terminal`), and `file_manager` retargets `Cmd+F`. Declare nothing and each falls back to the system default — see [Preferred tools](docs/user-guide.md#preferred-tools).
+Select a word in any app before pressing `Option+Space` and Lumio opens straight on its dictionary entry (needs Accessibility, asked once).
 
-Full reference: [docs/user-guide.md](docs/user-guide.md).
+**Prefixes.** Type `"` to list them all.
 
-## Themes
+| Prefix | Does |
+| --- | --- |
+| `a"` `f"` `d"` | Apps, files or folders only |
+| `rc"` | Recent files and folders, newest first |
+| `r"` | Regex search |
+| `c"` `ci"` | Clipboard history: text, images |
+| `tw"` | Dictionary lookup |
+| `tr"` | Translate text into English, Vietnamese or Japanese |
+| `ps"` | Find running processes, measure CPU, force quit |
 
-Built-in: Catppuccin, Tokyo Night, Rose Pine, Gruvbox, Dracula, Kanagawa, Kindle, Liquid, plus Custom.
-Kindle is the one light preset — paper, ink, and a serif face.
-Liquid renders on macOS 26's Liquid Glass and is hidden on older releases.
-Switch in `Settings > Appearance`.
+**Commands.** Type `:` or press `Cmd+/`: `:kill <name, PID or port>`, `:emptytrash`, `:help`.
 
-## Docs
+## Configuration
 
-- [User guide](docs/user-guide.md) — features, shortcuts, configuration, permissions, troubleshooting
-- [Architecture](docs/architecture.md) — how the Swift app + Rust core fit together
-- [Features](docs/features.md) — what's shipped, what's planned
-- [Contributing](CONTRIBUTING.md) — how to contribute
-- [Development](DEVELOPMENT.md) — building locally, repo layout, release process
+Settings live in `~/.lumio/config`, created on first launch: which folders to index, scan depth and limits, ignore patterns, search aliases (`alias_code=Visual Studio Code|Cursor|Zed`), clipboard history size, and the editor and terminal behind `Cmd+E` / `Cmd+T`. Change them from Settings (`Cmd+Shift+Space`), or edit the file and press `Cmd+Shift+;` to reload.
+
+## Permissions
+
+Lumio works without any special permission. Two are asked for only when you use the feature:
+
+- **Accessibility**: to read the selected word for a dictionary lookup.
+- **Automation (Finder)**: to empty the Trash, which macOS protects.
+
+## Contributing
+
+Contributions are welcome! Please read the [contribution guidelines](CONTRIBUTING.md) before submitting a pull request.
+
+## Support
+
+<a href="https://ko-fi.com/calvados" target="_blank">
+    <img src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Support me on Ko-fi" style="height: 36px !important;width: 130px !important;">
+</a>
+
+<a href="https://www.paypal.com/paypalme/nnkhanh29" target="_blank">
+    <img src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_200x51.png" alt="Donate with PayPal" style="height: 36px !important;">
+</a>
+
+## Acknowledgments
+
+A fork of [look](https://github.com/kunkka19xx/look) by [kunkka19xx](https://github.com/kunkka19xx). Huge thanks for the original work this project builds on.
 
 ## License
 
-Copyright (C) 2026 cavaldos
+[GPL-3.0](LICENSE). Lumio is and will always remain open-source and free.
 
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version. See [LICENSE](LICENSE) for the full text.
+## Star History
 
-## Contributors
-
-Thanks to everyone who has contributed — see the [contributor graph](https://github.com/cavaldos/Lumio/graphs/contributors).
+<a href="https://star-history.com/#cavaldos/Lumio&Date">
+    <img src="https://api.star-history.com/svg?repos=cavaldos/Lumio&type=Date" alt="Star History Chart" width="500">
+</a>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle updates (UpdateChecker.swift). scripts/notify-update.sh publishes
+	     the feed after each release; SUPublicEDKey verifies the downloads and must
+	     match the SPARKLE_PRIVATE_KEY secret (shared with Ice). -->
+	<key>SUFeedURL</key>
+	<string>https://cavaldos.github.io/lumio-releases/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>5giXQMfuJxsXCpuCn1XxL2IFkBoSiNMiP4rNwAanT7A=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

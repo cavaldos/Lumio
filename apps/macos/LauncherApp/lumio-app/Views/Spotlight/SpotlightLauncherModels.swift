@@ -6,7 +6,7 @@ import Foundation
 enum SpotlightKind: String, CaseIterable, Identifiable {
     case app, folder, doc, setting, url, web, calc, cmd
     // Modes carried over from the legacy launcher (prefix / command).
-    case prefix, command, clip, clipImage, lookup, process
+    case prefix, command, clip, clipImage, lookup, translation, process, help
     var id: String { rawValue }
 
     var label: String {
@@ -24,14 +24,17 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         case .clip: "Clipboard"
         case .clipImage: "Copied Images"
         case .lookup: "Lookup"
+        case .translation: "Translations"
         case .process: "Processes"
+        case .help: "Help"
         }
     }
 }
 
-/// What can be done with an item when you Tab into it.
+/// What can be done with an item when you open its actions (⌘K).
 enum SpotlightAction: String {
-    case open, reveal, copyPath, hideApp, quitApp
+    case open, reveal, copyPath, openInEditor, openInTerminal, moveToTrash, emptyTrash
+    case hideApp, quitApp, excludeApp
     // Process rows (ps").
     case measureCPU, killProcess, copyPID
 
@@ -40,8 +43,13 @@ enum SpotlightAction: String {
         case .open: "Open"
         case .reveal: "Show in Finder"
         case .copyPath: "Copy Path"
+        case .openInEditor: "Open in Editor  ⌘E"
+        case .openInTerminal: "Open in Terminal  ⌘T"
+        case .moveToTrash: "Move to Trash  ⌘D"
+        case .emptyTrash: "Empty Trash  ⌘D"
         case .hideApp: "Hide App"
         case .quitApp: "Quit App"
+        case .excludeApp: "Hide from Results  ⌘⇧H"
         case .measureCPU: "Measure CPU"
         case .killProcess: "Force Quit"
         case .copyPID: "Copy PID"
@@ -53,8 +61,13 @@ enum SpotlightAction: String {
         case .open: "arrow.up.forward.app"
         case .reveal: "folder"
         case .copyPath: "doc.on.doc"
+        case .openInEditor: "pencil"
+        case .openInTerminal: "terminal"
+        case .moveToTrash: "trash"
+        case .emptyTrash: "trash.slash"
         case .hideApp: "eye.slash"
         case .quitApp: "xmark.circle"
+        case .excludeApp: "nosign"
         case .measureCPU: "gauge.with.dots.needle.50percent"
         case .killProcess: "xmark.octagon"
         case .copyPID: "number"
@@ -83,7 +96,7 @@ struct SpotlightItem: Identifiable, Equatable {
     var symbol: String? = nil
     /// Candidate id in the core, used to record usage. nil for synthesized rows.
     var candidateID: String? = nil
-    /// Action row (Tab mode).
+    /// Action row (⌘K actions mode).
     var action: SpotlightAction? = nil
     /// Process (ps" / :kill).
     var pid: Int32? = nil
@@ -93,7 +106,12 @@ struct SpotlightItem: Identifiable, Equatable {
     /// Text clipboard row: id in ClipboardHistoryStore.
     var clipID: UUID? = nil
 
-    /// Can be Tabbed into to see actions.
+    /// A real file or folder on disk (not a URL scheme), the target of editor/terminal/trash.
+    var isFileTarget: Bool {
+        (kind == .doc || kind == .folder) && target?.hasPrefix("/") == true
+    }
+
+    /// Has an actions view (⌘K).
     var supportsActions: Bool {
         if kind == .process { return pid != nil }
         return (kind == .app || kind == .doc || kind == .folder) && target != nil

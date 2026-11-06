@@ -64,11 +64,20 @@ enum SpotlightBackend {
 
     // MARK: - Core results → display rows
 
-    static func rows(from results: [LauncherResult], for request: SpotlightRequest) -> [SpotlightItem] {
+    static func rows(
+        from results: [LauncherResult],
+        for request: SpotlightRequest,
+        recentURLs: [URLHistoryEntry] = []
+    ) -> [SpotlightItem] {
+        // Pinned rows go on top, except below a same-named app (Music.app stays ahead of ~/Music).
+        var candidates = results.compactMap(item(from:))
+        for pin in pinned(for: request).reversed() {
+            let rival = candidates.firstIndex { $0.kind == .app && $0.name.lowercased() == pin.name.lowercased() }
+            candidates.insert(pin, at: rival.map { $0 + 1 } ?? 0)
+        }
         var seen = Set<String>()
         var rows: [SpotlightItem] = []
-        for result in results {
-            guard let item = item(from: result) else { continue }
+        for item in candidates {
             if let browse = request.browse, item.kind != browse { continue }
             guard seen.insert(dedupeKey(item)).inserted else { continue }
             rows.append(item)
@@ -101,6 +110,16 @@ enum SpotlightBackend {
                 rows.insert(row, at: min(1, rows.count))
             }
         }
+        // Previously opened links matching the text, after the best result.
+        let liveURL = EngineBridge.shared.classifyURL(query: term)?.url
+        let recents = recentURLs.filter { $0.url != liveURL }.map { entry in
+            SpotlightItem(
+                id: "url|\(entry.url)", name: entry.url, kind: .url,
+                colors: "#8fb8ff,#3a6fd8", meta: "Recently opened",
+                target: entry.url, symbol: "clock.arrow.circlepath"
+            )
+        }
+        rows.insert(contentsOf: recents, at: min(1, rows.count))
         let web = SpotlightItem(
             id: "web|\(term)", name: term, kind: .web,
             colors: "#8fb8ff,#3a6fd8", meta: "Search the web", symbol: "globe"
@@ -144,6 +163,47 @@ enum SpotlightBackend {
         }
     }
 
+    // MARK: - Pinned rows (quick folders, Finder)
+
+    /// Desktop, Documents, …, Applications, Trash and Finder: shown on top when the text
+    /// matches their name, since the indexer doesn't cover them (or ranks them low).
+    private static func pinned(for request: SpotlightRequest) -> [SpotlightItem] {
+        typealias QuickFolder = AppConstants.Launcher.QuickFolder
+        typealias Finder = AppConstants.Launcher.Finder
+        var scope = LauncherSearchLogic.pinnedLookupScope(for: request.term)
+        switch request.browse {
+        case nil: break
+        case .folder: scope = scope == .unscoped ? .folders : .disabled
+        case .app: scope = scope == .unscoped ? .apps : .disabled
+        default: scope = .disabled
+        }
+        guard let needle = LauncherSearchLogic.normalizedPinnedLookupQuery(for: request.term, scope: scope)
+        else { return [] }
+
+        var rows: [SpotlightItem] = []
+        if scope == .unscoped || scope == .folders {
+            for entry in QuickFolder.entries {
+                let title = entry.title.lowercased()
+                guard title.contains(needle)
+                    || (title.hasPrefix(needle) && needle.count >= QuickFolder.minPrefixMatchLength)
+                else { continue }
+                let path = entry.resolvedPath(homeDirectory: NSHomeDirectory())
+                guard FileManager.default.fileExists(atPath: path) else { continue }
+                rows.append(SpotlightItem(
+                    id: QuickFolder.idPrefix + title, name: entry.title, kind: .folder,
+                    meta: entry.subtitle ?? QuickFolder.pinnedSubtitle, target: path, iconPath: path
+                ))
+            }
+        }
+        if LauncherSearchLogic.shouldInjectFinder(normalizedQuery: needle, scope: scope) {
+            rows.insert(SpotlightItem(
+                id: Finder.pinnedResultID, name: "Finder", kind: .app,
+                target: Finder.appPath, iconPath: Finder.appPath
+            ), at: 0)
+        }
+        return rows
+    }
+
     /// Prefixes the core understands natively (see core/engine/src/query.rs).
     private static func hasEnginePrefix(_ term: String) -> Bool {
         typealias P = AppConstants.Launcher.QueryPrefix
@@ -165,14 +225,19 @@ enum SpotlightBackend {
         title.hasSuffix(".app") ? String(title.dropLast(4)) : title
     }
 
-    // MARK: - Actions (Tab)
+    // MARK: - Actions (⌘K)
 
     static func actionRows(for item: SpotlightItem, filter: String) -> [SpotlightItem] {
         var actions: [SpotlightAction] = item.kind == .process
             ? [.measureCPU, .killProcess, .copyPID]
             : [.open, .reveal, .copyPath]
-        if item.kind == .app, let path = item.target, SpotlightOpener.runningApp(at: path) != nil {
-            actions += [.hideApp, .quitApp]
+        if item.isFileTarget {
+            actions += [.openInEditor, .openInTerminal]
+            if let trash = trashAction(for: item) { actions.append(trash) }
+        }
+        if item.kind == .app, let path = item.target {
+            if SpotlightOpener.runningApp(at: path) != nil { actions += [.hideApp, .quitApp] }
+            actions.append(.excludeApp)
         }
         let needle = fold(filter.trimmingCharacters(in: .whitespacesAndNewlines))
         return actions
@@ -184,6 +249,18 @@ enum SpotlightBackend {
                     symbol: action.symbol, action: action
                 )
             }
+    }
+
+    /// ⌘D on a row: Empty Trash on the Trash pin, Move to Trash on any other deletable file/folder,
+    /// nil for protected paths (/, home) and the other quick-folder pins.
+    static func trashAction(for item: SpotlightItem) -> SpotlightAction? {
+        guard item.isFileTarget, let path = item.target else { return nil }
+        let home = NSHomeDirectory()
+        if DeleteTargetLogic.isTrashPath(path, homeDirectory: home) { return .emptyTrash }
+        if DeleteTargetLogic.isQuickFolderPin(item.id) || DeleteTargetLogic.isProtected(path, homeDirectory: home) {
+            return nil
+        }
+        return .moveToTrash
     }
 
     /// Folds case + diacritics (and đ → d) so "cafe" matches "Café".

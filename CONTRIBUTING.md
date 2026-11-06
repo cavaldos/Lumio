@@ -1,137 +1,90 @@
 # Contributing to Lumio
 
-Thanks for contributing.
+Thanks for contributing! Bug reports, ideas and pull requests are all welcome.
 
-## Contributor License Agreement
+## Issues
 
-Code contributions require a signed [Contributor License Agreement](CLA.md). It
-is a license grant, so you keep the copyright to your work and grant the project
-maintainer the right to relicense it, which keeps the option of a commercially
-licensed build open without having to track down every contributor later. On
-your first pull request the CLA assistant bot will post a comment; reply to it
-once and the signature covers everything you send afterwards.
+Search existing issues first. A good bug report has:
 
-## Before you open an issue
+- what you expected and what happened
+- numbered steps to reproduce, and how often it happens (`always`, `sometimes`, `once`)
+- macOS version, Lumio version (or commit), Apple Silicon or Intel
+- logs, screenshots or the crash text if you have them
 
-- search existing issues first to avoid duplicates
-- use a clear title with area prefix when possible (`ui:`, `engine:`, `indexing:`, `ffi:`)
-- include enough context so someone else can reproduce quickly
-
-## Bug reports
-
-A good bug report must include:
-
-- expected behavior
-- actual behavior
-- exact reproduction steps (numbered)
-- frequency (`always`, `sometimes`, `once`)
-- environment details:
-  - OS + version (macOS 15.x)
-  - lumio app version or commit SHA
-  - install method: Xcode run, zip install
-  - architecture (`arm64` / `x86_64`)
-- logs or screenshots if available
-
-If crash related, include:
-
-- crash dialog text
-- stack trace or Xcode console output
-- whether it happens on clean launch
-
-## Feature requests
-
-Please include:
-
-- problem statement (what pain exists today)
-- proposed behavior
-- alternatives considered
-- impact/risk (perf, UX, safety)
-
-User-facing feature documentation lives in `docs/` (`features.md`, `user-guide.md`) and is enough for end users and most contributors. Maintainers may also keep internal design specs under `specs/` (purpose, behavior, edge cases, non-goals); that directory is `.gitignore`d and not required reading.
+For a feature request, describe the problem first, then the behavior you'd like.
 
 ## Development setup
 
-[DEVELOPMENT.md](DEVELOPMENT.md) has the full prerequisites and build walkthrough. In short: Rust stable plus GNU Make plus Xcode on macOS.
+**Requirements:** macOS 15+, Xcode 26 (its SDK is needed for Liquid Glass), Rust stable and nightly (the Xcode build phase builds the Rust bridge with `cargo +nightly`), GNU Make.
 
-Before opening a PR, run the checks:
+```text
+apps/macos/LauncherApp/   Swift app (Xcode project: lumio-app.xcodeproj)
+core/                     Rust: query engine, indexing, matching, ranking, storage, tools
+bridge/ffi/               Rust FFI bridge linked into the app
+scripts/                  build.sh (local DMG), release.sh, notify-update.sh, lumiodev, Makefile.mac
+assets/                   app icon (icon-source.png is the original)
+tools/perf/               benchmarks (separate crate, never bundled)
+```
+
+Build and run (from the repo root):
+
+```bash
+make app-run       # Debug build, launched with ~/.lumio/config.dev
+make app-run-dev   # installs a side-by-side "/Applications/Lumio Dev.app" and runs it
+make help          # every target
+```
+
+Run the checks before opening a PR:
 
 ```bash
 cargo test --workspace --manifest-path core/Cargo.toml
 cargo test --manifest-path bridge/ffi/Cargo.toml
 ```
 
-## Branch and PR flow
+## App icon
 
-- `main` is the only long-lived branch; every PR targets it
-- `main` must stay releasable at all times, since there is no staging branch behind it
-- releases are cut by pushing a `vX.Y.Z` tag (`./scripts/release.sh vX.Y.Z`), so nothing needs to be frozen on a branch
-
-Suggested local flow:
+Replace `assets/icon-source.png` with the new artwork (1024 px or larger), then run:
 
 ```bash
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-git checkout -b feat/short-description
+make icons
 ```
 
-Before opening PR:
+`assets/generate-icons.py` removes a solid background (the edge turns transparent, with no leftover fringe), trims the empty margin, centers the shape on Apple's macOS icon grid and writes `assets/icon.png` plus every size in `AppIcon.appiconset`. Run `pipx run assets/generate-icons.py --help` for the options (`--padding 0` fills the whole canvas).
 
-- rebase onto latest `main`
-- run local checks from the Development setup section
-- ensure docs are updated when behavior changes
+## Pull requests
 
-## Git guidelines for contributors
+- branch from `main` and target `main`; it is the only long-lived branch and must stay releasable
+- keep the change focused; no unrelated formatting
+- rebase onto the latest `main` (or merge `origin/main` whole) before asking for review
+- update the README when user-visible behavior changes
+- explain *why* in the PR description, and add before/after screenshots for UI changes
 
-- always branch from `main`; do not develop directly on `main`
-- keep branches short-lived and focused to reduce merge conflicts
-- update your branch from `main` before requesting review:
+Commit prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+
+## Building a DMG locally
 
 ```bash
-git fetch origin
-git checkout <your-branch>
-git rebase origin/main
+./scripts/build.sh            # release/Lumio.dmg (Release, Apple Silicon, ad-hoc signed)
+./scripts/build.sh v1.2.3     # same, with the version shown in About
 ```
 
-- if your branch is shared and you want to avoid rewriting history, merge instead of rebase:
+CI builds the release with this same script.
+
+## Releasing (maintainers)
 
 ```bash
-git fetch origin
-git checkout <your-branch>
-git merge origin/main
+# 1. Commit and push to main, then tag (runs cargo tests + build.sh first):
+./scripts/release.sh v1.2.3
+
+# 2. Nothing else. CI (release.yml) builds Lumio.dmg, publishes the GitHub release
+#    and runs notify-update.sh. Only if its `notify-users` job fails, run by hand:
+./scripts/notify-update.sh v1.2.3
 ```
 
-- do not merge or cherry-pick individual `main` commits into your branch to catch up. Your PR then carries duplicate copies of commits that already exist upstream, and each one becomes a conflict. Rebase (or merge `origin/main` whole) instead
-- if GitHub shows "This branch has conflicts": resolve locally, run checks, then push the resolution commit
-- avoid force-pushing shared branches unless maintainers explicitly agree
-- when adding limits/thresholds for safety or validation, prefer named constants over magic numbers
-
-## CI behavior
-
-CI runs for pushes to `main` and for pull requests targeting `main`.
-
-- Rust jobs (`lint`, `test`, `cargo-audit`, release `build`) run only when Rust-related paths change
-- secrets scanning (`gitleaks`) always runs
-- macOS app build runs only for PRs to `main` when Swift files change
-- release-style Rust build artifacts run only on push to `main`
-
-## Pull request checklist
-
-- scope is focused and minimal
-- base branch is `main`
-- docs updated when behavior changes
-- no unrelated formatting-only changes
-- tests/checks pass locally
-- PR description explains why this change is needed
-
-## Commit style
-
-Keep commits small and descriptive.
-
-Recommended prefixes:
-
-- `fix:` bug fix
-- `feat:` new behavior
-- `docs:` documentation
-- `refactor:` internal cleanup without behavior change
-- `test:` tests only
+- The version comes from the tag: `vX.Y.Z`, never reused, and newer than the last release (Sparkle only offers newer versions). `release.sh` refuses a dirty tree or a commit that isn't on `origin/main`. `--skip-checks` skips the local tests and build.
+- `notify-update.sh` tells users two ways, like Ice:
+  - **Sparkle** (in-app): adds the release to `appcast.xml` in [cavaldos/lumio-releases](https://github.com/cavaldos/lumio-releases), served at `https://cavaldos.github.io/lumio-releases/appcast.xml` (`SUFeedURL`). Installed apps check it daily, then download, verify and install the update.
+  - **Homebrew**: points the `lumio` cask in [cavaldos/homebrew-tap](https://github.com/cavaldos/homebrew-tap) at the new `Lumio.dmg`.
+- Updates are signed with the same EdDSA key as Ice (`~/.sparkle/sparkle-priv.pem`; its public half is `SUPublicEDKey` in `lumio-app/Info.plist`). Never lose or rotate it: installed apps reject updates signed with another key.
+- The `notify-users` job needs three repo secrets: `SPARKLE_PRIVATE_KEY` (that key file), `LUMIO_RELEASES_DEPLOY_KEY` and `HOMEBREW_TAP_DEPLOY_KEY` (private halves of write deploy keys on the two repos). Running `notify-update.sh` by hand needs `gh auth login`, Sparkle's `generate_appcast` and your own push access instead.
+- Sparkle is off in Debug builds and in Lumio Dev (`make app-run-dev`, `lumiodev`), so it never replaces a dev build with a release.

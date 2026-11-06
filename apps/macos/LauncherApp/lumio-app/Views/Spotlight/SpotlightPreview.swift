@@ -21,8 +21,10 @@ struct SpotlightPreviewView: View {
     var processDetail: ProcessDetail? = nil
     var processCPU: Double? = nil
     var measuringCPU = false
-    /// tw" — translation + dictionary results (nil while looking up).
-    var lookup: LookupDefinition? = nil
+    /// tw" — a linked word in a dictionary entry was clicked.
+    var onLookup: (String) -> Void = { _ in }
+    /// tr" — translations of the typed text.
+    var translation = SpotlightTranslationBatch()
 
     @State private var info = Info()
     @State private var folder: FolderListing?
@@ -35,6 +37,17 @@ struct SpotlightPreviewView: View {
     }
 
     var body: some View {
+        if item.kind == .lookup {
+            // Dictionary.app layout: the entry has its own headword, so no header / details.
+            SpotlightDictionaryView(word: item.payload ?? item.name, onLookup: onLookup)
+        } else if item.kind == .translation, let target = TranslationLanguage.named(item.payload) {
+            SpotlightTranslationView(batch: translation, target: target)
+        } else {
+            standard
+        }
+    }
+
+    private var standard: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
             content
@@ -134,7 +147,16 @@ struct SpotlightPreviewView: View {
         case .prefix:
             note(item.meta ?? "", key: "⏎", action: "use prefix \(item.payload ?? "")")
         case .command:
-            note(item.meta ?? "", key: "⏎", action: "enter command")
+            if item.id == "command|emptytrash" {
+                note(item.meta ?? "", key: "⏎ ⏎", action: "empty the Trash")
+            } else {
+                note(item.meta ?? "", key: "⏎", action: "enter command")
+            }
+        case .help:
+            Text(item.meta ?? "")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         case .clip:
             textBox(item.payload ?? item.name)
         case .clipImage:
@@ -145,18 +167,9 @@ struct SpotlightPreviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        case .lookup:
-            if let lookup {
-                LookupDefinitionPanelView(definition: lookup, themeStore: ThemeStore.shared)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 20)
-            }
         case .process:
             processContent
-        case .app, .cmd:
+        case .app, .cmd, .lookup, .translation:
             EmptyView()
         }
     }

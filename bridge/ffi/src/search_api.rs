@@ -6,14 +6,8 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::Instant;
 
-const MAX_SEARCH_COUNT_QUERY_LEN: u32 = 1000;
 const DEFAULT_SEARCH_LIMIT: u32 = 20;
 const MAX_SEARCH_LIMIT: u32 = 100;
-
-#[repr(C)]
-pub struct FfiSearchResult {
-    pub count: u32,
-}
 
 #[derive(serde::Serialize)]
 struct FfiSearchPayload<'a> {
@@ -71,15 +65,6 @@ impl SearchError {
         match self {
             Self::SerializeFailed => "Failed to serialize search results",
         }
-    }
-}
-
-pub(crate) fn lumio_search_count_impl(query_len: u32) -> FfiSearchResult {
-    let len = query_len.min(MAX_SEARCH_COUNT_QUERY_LEN);
-    let query = "x".repeat(len as usize);
-    let results = with_engine(|engine| engine.search(&query, DEFAULT_SEARCH_LIMIT as usize));
-    FfiSearchResult {
-        count: results.len() as u32,
     }
 }
 

@@ -1,4 +1,7 @@
 name: Release
+# Started by ./scripts/release.sh vX.Y.Z (tag push). Builds Lumio.dmg, publishes
+# the GitHub Release, then notify-users publishes the Sparkle appcast and the
+# Homebrew cask.
 on:
   push:
     tags: ["v*"]
@@ -28,32 +31,56 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
           echo "macOS SDK: $(xcrun --show-sdk-version --sdk macosx)"
-      - name: Derive version from tag
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag '$TAG' must look like vX.Y.Z (e.g. v1.0.0)"
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Building version $VERSION"
-      - name: Build app
-        run: |
-          ./scripts/release-macos-app.sh "$VERSION"
-          echo "APP_PATH=.build/release-macos/DerivedData/Build/Products/Release/Lumio.app" >> $GITHUB_ENV
-          echo "ZIP_PATH=dist/Lumio-${VERSION}-macOS.zip" >> $GITHUB_ENV
-      - name: Zip and publish to GitHub Release
-        run: |
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict "$APP_PATH"
-          rm -f "$ZIP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
-          shasum -a 256 "$ZIP_PATH"
+      - name: Install Rust nightly
+        # The Xcode "Build Rust FFI" phase runs `cargo +nightly`.
+        run: rustup toolchain install nightly --profile minimal
+      - name: Build Lumio.dmg
+        # Same script as local builds; it rejects tags that aren't vX.Y.Z.
+        run: ./scripts/build.sh "$GITHUB_REF_NAME"
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/Lumio-*-macOS.zip
+          files: release/Lumio.dmg
           generate_release_notes: true
-# Release flow:
-#   ./scripts/release.sh vX.Y.Z   (lints/builds first, then tags + pushes here)
-# ponytail: ad-hoc signing is for internal testing only, public releases need Developer ID + notarization (see docs/apple-developer-release-guide.md)
+  # Publishes appcast.xml (Sparkle: installed apps see the update) and points
+  # the Homebrew cask at the new DMG. Needs three repo secrets:
+  #   SPARKLE_PRIVATE_KEY        EdDSA key matching SUPublicEDKey (same key as Ice)
+  #   LUMIO_RELEASES_DEPLOY_KEY  private half of a write deploy key on cavaldos/lumio-releases
+  #   HOMEBREW_TAP_DEPLOY_KEY    private half of a write deploy key on cavaldos/homebrew-tap
+  # Manual fallback: ./scripts/notify-update.sh vX.Y.Z
+  notify-users:
+    needs: release
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Sparkle tools
+        env:
+          SPARKLE_VERSION: "2.10.1" # keep in sync with Package.resolved
+        run: |
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" \
+            | tar -xJ -C "$RUNNER_TEMP/sparkle"
+          echo "$RUNNER_TEMP/sparkle/bin" >> $GITHUB_PATH
+      - name: Publish appcast + Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          RELEASES_KEY: ${{ secrets.LUMIO_RELEASES_DEPLOY_KEY }}
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$SPARKLE_KEY" ] || [ -z "$RELEASES_KEY" ] || [ -z "$TAP_KEY" ]; then
+            echo "::error::Set SPARKLE_PRIVATE_KEY, LUMIO_RELEASES_DEPLOY_KEY and HOMEBREW_TAP_DEPLOY_KEY, or run ./scripts/notify-update.sh $GITHUB_REF_NAME by hand"
+            exit 1
+          fi
+          KEYS="$RUNNER_TEMP/keys"
+          mkdir -m 700 "$KEYS"
+          trap 'rm -rf "$KEYS"' EXIT
+          printf '%s' "$SPARKLE_KEY" > "$KEYS/sparkle.pem"
+          printf '%s\n' "$RELEASES_KEY" > "$KEYS/releases"
+          printf '%s\n' "$TAP_KEY" > "$KEYS/tap"
+          chmod 600 "$KEYS"/*
+          # Pinned from https://api.github.com/meta
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$KEYS/known_hosts"
+          SSH="ssh -o IdentitiesOnly=yes -o UserKnownHostsFile=$KEYS/known_hosts"
+          LUMIO_RELEASES_SSH="$SSH -i $KEYS/releases" HOMEBREW_TAP_SSH="$SSH -i $KEYS/tap" \
+            ./scripts/notify-update.sh "$GITHUB_REF_NAME" --key "$KEYS/sparkle.pem"
+# ponytail: ad-hoc signing is for internal testing only, public releases need Developer ID + notarization

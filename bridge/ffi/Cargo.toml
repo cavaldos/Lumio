@@ -14,12 +14,23 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 lumio-answers = { path = "../../core/answers" }
 lumio-engine = { path = "../../core/engine" }
 lumio-indexing = { path = "../../core/indexing" }
-lumio-lunar = { path = "../../core/lunar" }
 lumio-matching = { path = "../../core/matching" }
-lumio-netspeed = { path = "../../core/netspeed" }
 lumio-ranking = { path = "../../core/ranking" }
 lumio-storage = { path = "../../core/storage" }
 lumio-tools = { path = "../../core/tools" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "8"
+
+[profile.release]
+# Smaller, faster static lib for the app bundle. Keep panic = "unwind": every
+# export wraps its body in catch_unwind.
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = true
+
+# Build scripts and proc-macros (serde_derive) are loaded by rustc as dylibs:
+# stripping them breaks the load on macOS ("mis-aligned LINKEDIT").
+[profile.release.build-override]
+strip = false
