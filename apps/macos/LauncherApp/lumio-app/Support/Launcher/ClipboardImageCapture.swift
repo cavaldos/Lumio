@@ -38,20 +38,22 @@ nonisolated enum ClipboardImageFiles {
     private typealias Constants = AppConstants.Launcher.ClipboardImage
 
     /// Core owns the location and sweeps it, so this side asks rather than
-    /// assembling a path.
-    private static let directory: URL? = EngineBridge.shared.clipboardImagesDirectory()
+    /// assembling a path. The image helper is handed it instead of asking again.
+    static let directoryURL: URL? = EngineBridge.shared.clipboardImagesDirectory()
 
     static func fileURL(forHash hash: String) -> URL? {
-        url(forHash: hash, thumbnail: false)
+        url(forHash: hash, thumbnail: false, in: directoryURL)
     }
 
     static func thumbnailURL(forHash hash: String) -> URL? {
-        url(forHash: hash, thumbnail: true)
+        url(forHash: hash, thumbnail: true, in: directoryURL)
     }
 
     /// Normalizes to PNG and writes the image and its thumbnail under the hash
     /// of the normalized bytes. A re-copy finds both files there already.
-    static func store(_ data: Data) -> StoredClipboardImage? {
+    /// Runs in the clipboard image helper process (`ClipboardImageWorker`), never in the
+    /// launcher: decoding a screenshot is tens of MB.
+    static func store(_ data: Data, in directory: URL) -> StoredClipboardImage? {
         // Dimensions off the header first: the byte limit does not bound what
         // those bytes decode to, and everything below this decodes them.
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -62,7 +64,8 @@ nonisolated enum ClipboardImageFiles {
             return nil
         }
         let hash = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
-        guard let fileURL = fileURL(forHash: hash), let thumbnailURL = thumbnailURL(forHash: hash)
+        guard let fileURL = url(forHash: hash, thumbnail: false, in: directory),
+            let thumbnailURL = url(forHash: hash, thumbnail: true, in: directory)
         else {
             return nil
         }
@@ -78,7 +81,7 @@ nonisolated enum ClipboardImageFiles {
     }
 
     /// Core sweeps by hash prefix, so every name has to start with one.
-    private static func url(forHash hash: String, thumbnail: Bool) -> URL? {
+    private static func url(forHash hash: String, thumbnail: Bool, in directory: URL?) -> URL? {
         guard !hash.isEmpty, let directory else { return nil }
         let suffix = thumbnail ? Constants.thumbnailSuffix : ""
         return directory.appendingPathComponent("\(hash)\(suffix).\(Constants.fileExtension)")
@@ -161,6 +164,15 @@ enum ClipboardImagePasteboard {
         fileCandidate(from: pasteboard) ?? rawCandidate(from: pasteboard, types: types)
     }
 
+    /// Whether `candidate` would find an image, without reading a single pixel or file byte:
+    /// the launcher's poll only decides, the image helper does the reading.
+    static func mayHoldImage(
+        _ pasteboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        imageFileURL(from: pasteboard) != nil
+            || types.contains(.png) || types.contains(.tiff)
+    }
+
     /// For pixels with no filename: the app and the time, so a list of them can
     /// still be told apart.
     static func label(forSourceNamed sourceName: String?, capturedAt: Date) -> String {
@@ -177,25 +189,27 @@ enum ClipboardImagePasteboard {
     }()
 
     private static func fileCandidate(from pasteboard: NSPasteboard) -> ClipboardImageCandidate? {
-        let urls =
-            pasteboard.readObjects(
-                forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        // Size from the directory entry, before the read: this is the main
-        // thread, and reading a huge file to reject it would freeze it.
-        guard
-            let url = urls.first(where: { url in
-                guard
-                    let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey]),
-                    values.contentType?.conforms(to: .image) == true
-                else {
-                    return false
-                }
-                return (values.fileSize ?? 0) <= Constants.maxImageBytes
-            }), let data = try? Data(contentsOf: url)
-        else {
+        guard let url = imageFileURL(from: pasteboard), let data = try? Data(contentsOf: url) else {
             return nil
         }
         return ClipboardImageCandidate(data: data, fileName: url.lastPathComponent)
+    }
+
+    /// An image file on the clipboard (copied in Finder), checked from its directory entry:
+    /// a huge file is rejected without being read.
+    private static func imageFileURL(from pasteboard: NSPasteboard) -> URL? {
+        let urls =
+            pasteboard.readObjects(
+                forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.first(where: { url in
+            guard
+                let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey]),
+                values.contentType?.conforms(to: .image) == true
+            else {
+                return false
+            }
+            return (values.fileSize ?? 0) <= Constants.maxImageBytes
+        })
     }
 
     private static func rawCandidate(

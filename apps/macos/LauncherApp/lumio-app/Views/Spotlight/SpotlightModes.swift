@@ -3,7 +3,7 @@
 //  lumio-app
 //
 //  The legacy launcher's tools, running inside the Spotlight launcher. Each one is a tab
-//  after OCR (see SpotlightKind.toolTabs); the old `x"` prefixes are gone:
+//  before OCR (see SpotlightKind.toolTabs); the old `x"` prefixes are gone:
 //
 //    Clipboard           — copied text and images in one list, newest first (ClipboardHistoryStore)
 //    Dictionary          — word lookup: system dictionary + EN/VI/JA translation

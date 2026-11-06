@@ -41,11 +41,14 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Tabs after OCR: each switches the launcher into a tool (replaces the old `x"` prefixes).
+    /// Tool tabs: each switches the launcher into a tool (replaces the old `x"` prefixes).
     static let toolTabs: [SpotlightKind] = [.clip, .lookup, .translation, .process]
 
-    /// Tabs that run their own search instead of filtering the current results.
-    static let modeTabs: [SpotlightKind] = [.content] + toolTabs
+    /// Tabs that run their own search instead of filtering the current results, in the order
+    /// chosen in Settings (`tab_order`; OCR last by default).
+    static var modeTabs: [SpotlightKind] {
+        TabOrder.normalized(ThemeStore.shared.settings.tabOrder).compactMap(SpotlightKind.init(rawValue:))
+    }
 
     var tabLabel: String {
         switch self {

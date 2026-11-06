@@ -232,9 +232,12 @@ struct SpotlightLauncherView: View {
             refresh()
         }
         .onChange(of: scope?.id) { refresh() }
-        .onChange(of: browse) {
+        .onChange(of: browse) { _, tab in
             sel = 0
             filter = nil
+            // The OCR worker only ever starts here: opening the OCR tab brings the index up to
+            // date (new / changed files, at most every 15 min). Nothing else runs OCR.
+            if tab == .content { ContentIndex.shared.refreshIfStale() }
             refresh()
         }
         .onChange(of: filter) { sel = 0 }
@@ -525,7 +528,7 @@ struct SpotlightLauncherView: View {
 
     private static let allPillID = "pill-all"
 
-    /// Tab / Shift+Tab: move to the next / previous pill (All → Applications → … → OCR → tools → All).
+    /// Tab / Shift+Tab: move to the next / previous pill (All → Applications → … → tools → OCR → All).
     /// Landing on OCR or a tool switches to its search; leaving goes back to the name search.
     private func cycleFilter(_ step: Int) {
         let options: [SpotlightKind?] = [nil] + kinds + SpotlightKind.modeTabs.map(Optional.some)
@@ -1102,7 +1105,7 @@ struct SpotlightLauncherView: View {
         let backendReloaded = EngineBridge.shared.reloadConfig()
         clipboardStore.reloadFromConfig()
         loadRetention()
-        ContentIndex.shared.refreshIfStale(force: true)
+        ContentIndex.shared.reloadConfig()
         guard isOpen else { return }
         if !backendReloaded {
             toast("Config reload failed")
@@ -1543,8 +1546,6 @@ struct SpotlightLauncherView: View {
             // Like the legacy launcher: each open asks the core to refresh the index in the background
             // (the first time it also loads the engine from SQLite) — run in the background so animation isn't delayed.
             Task.detached(priority: .utility) { _ = EngineBridge.shared.requestIndexRefresh() }
-            // Text inside images / PDFs: picks up files added since the last pass (at most every 15 min).
-            ContentIndex.shared.refreshIfStale()
             // While open, poll the clipboard more often (like the legacy launcher).
             clipboardStore.setMonitoringMode(.foreground)
             // Fresh open: go to the hidden state WITHOUT animation, position the window, and only then
@@ -1636,12 +1637,8 @@ struct SpotlightLauncherView: View {
             // Hidden: poll the clipboard less often; next time ps" is entered, take a fresh process snapshot.
             clipboardStore.setMonitoringMode(.background)
             processModel.invalidate()
-            // Hidden: drop preview bitmaps and highlighted text, then hand the
-            // freed pages back to the OS so an idle Lumio stays small.
-            HighlightedTextCache.purge()
-            SpotlightLookupCache.purgeEntries()
-            await QuickLookPreviewService.shared.purge()
-            malloc_zone_pressure_relief(nil, 0)
+            // Hidden: drop every cache that is only there for speed on screen.
+            await MemoryTrim.releaseCaches()
         }
     }
 

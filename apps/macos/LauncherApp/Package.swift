@@ -27,6 +27,8 @@ let package = Package(
                 "Models/LauncherResult.swift",
                 "Support/ContentIndex/ContentSearchText.swift",
                 "Support/ContentIndex/ContentIndexConfig.swift",
+                "Support/ContentIndex/ContentIndexWorkerMessage.swift",
+                "Support/Launcher/TabOrder.swift",
             ]
         ),
         .testTarget(

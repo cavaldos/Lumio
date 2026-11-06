@@ -17,6 +17,11 @@ struct lumio_appApp: App {
     // store is shared with that window's hosted ContentView.
 
     init() {
+        // The OCR worker (`--content-index-worker`) runs its pass and exits here. First, so the
+        // mode parser below never sees the flag (it would reject it as an unknown mode).
+        ContentIndexWorker.runIfRequested()
+        ClipboardImageWorker.runIfRequested()
+
         if let exitCode = handleCLIFlags() {
             fflush(stdout)
             exit(exitCode)

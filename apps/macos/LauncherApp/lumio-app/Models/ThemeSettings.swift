@@ -25,6 +25,8 @@ struct ThemeSettings: Codable, Equatable {
     var launchAtLogin: Bool = true
     /// Language codes the translator offers (tr" rows, tw" bar).
     var translationLanguages: [String] = TranslationLanguage.defaultCodes
+    /// Order of the tool tabs in the launcher (`tab_order`), SpotlightKind raw values.
+    var tabOrder: [String] = TabOrder.defaultCodes
 
     static let `default` = ThemeSettings()
 
@@ -40,5 +42,6 @@ struct ThemeSettings: Codable, Equatable {
         backendLogLevel = try c.decodeIfPresent(BackendLogLevel.self, forKey: .backendLogLevel) ?? d.backendLogLevel
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages
+        tabOrder = TabOrder.normalized(try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? d.tabOrder)
     }
 }

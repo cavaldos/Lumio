@@ -24,10 +24,10 @@ lumio-app/
 - **Panel and hotkey.** `LauncherPanelWindow` is a non-activating floating panel; `GlobalHotKeyManager` registers `Option+Space`. `SingleInstanceLock` keeps one copy running.
 - **Search.** `EngineBridge` talks to the Rust core. `LauncherSearchLogic` and `SpotlightBackend` turn results into rows and handle filters.
 - **Actions.** `SpotlightOpener`, `ToolLauncher` and `TrashService` open, reveal, run or delete the selected item.
-- **Clipboard.** `ClipboardHistoryStore` captures text and images and stores them through the bridge.
+- **Clipboard.** `ClipboardHistoryStore` captures text and images and stores them through the bridge. A copied image is read, converted to PNG and thumbnailed by `ClipboardImageWorker` (the app binary started with `--clipboard-image-worker`), so a screenshot's tens of MB never enter the launcher process.
 - **Lookups.** `DictionaryLookupService` and `TextTranslator` back the dictionary and translation views; `SelectedTextReader` reads the selected word through Accessibility.
 - **Processes.** `ProcessFinderModel`, `ProcessScoring` and `ProcessService` list, rank and force quit running processes.
-- **OCR.** `ContentIndex` reads text out of images and PDFs with Apple's Vision framework.
+- **OCR.** `ContentIndex` searches text read out of images and PDFs. The reading (Apple's Vision framework, PDFKit) happens in `ContentIndexWorker`, the app binary started with `--content-index-worker` when the OCR tab is opened; it exits when its pass is done.
 - **Updates.** Sparkle checks `appcast.xml` once a day; `UpdateChecker` and `AppUpdateStatusView` drive the UI. Sparkle is off in Debug and Lumio Dev builds.
 
 ## Rust build phase

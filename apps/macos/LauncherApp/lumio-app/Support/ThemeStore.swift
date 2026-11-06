@@ -108,6 +108,7 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "backend_log_level", value: settings.backendLogLevel.rawValue)
         ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
         ConfigFileLines.upsert(&lines, key: "translation_languages", value: settings.translationLanguages.joined(separator: ","))
+        ConfigFileLines.upsert(&lines, key: TabOrder.configKey, value: TabOrder.render(settings.tabOrder))
 
         do {
             try ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)
@@ -225,6 +226,8 @@ final class ThemeStore: ObservableObject {
                 if let parsed = parseBackendLogLevel(value) { settings.backendLogLevel = parsed }
             case "launch_at_login":
                 if let parsed = parseBool(value) { settings.launchAtLogin = parsed }
+            case TabOrder.configKey:
+                settings.tabOrder = TabOrder.parse(value)
             case "translation_languages":
                 let codes = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 let known = codes.filter { TranslationLanguage.named($0) != nil }
@@ -396,6 +399,8 @@ backend_log_level=error
 launch_at_login=true
 # Translator languages (tr" / tw"), 1-5 codes. Choices: en,vi,fr,ja,ko,zh-Hans,zh-Hant,es,de,it,pt,ru,th,id,hi,ar
 translation_languages=vi,en,fr
+# Order of the launcher's tabs: clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
+tab_order=clip,lookup,translation,process,content
 skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv
 
 # Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3

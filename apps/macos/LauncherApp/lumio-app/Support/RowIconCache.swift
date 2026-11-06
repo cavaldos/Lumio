@@ -12,8 +12,9 @@ nonisolated enum RowIconCache {
     // strict-concurrency without an actor wrapper, as in `HighlightedTextCache`.
     nonisolated(unsafe) private static let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
-        // Several screenfuls, so scrolling does not evict icons about to return.
-        c.countLimit = 256
+        // A few screenfuls, so scrolling does not evict icons about to return. Each entry
+        // is an NSWorkspace image carrying every size and appearance of the icon.
+        c.countLimit = 128
         return c
     }()
 
@@ -32,6 +33,12 @@ nonisolated enum RowIconCache {
         guard let image = NSImage(contentsOfFile: path) else { return nil }
         cache.setObject(image, forKey: path as NSString)
         return image
+    }
+
+    /// Drops every icon. Called when the launcher hides: within one session the cache stops
+    /// icons flickering; across sessions NSWorkspace answers from its own cache in microseconds.
+    static func purge() {
+        cache.removeAllObjects()
     }
 
     /// For rows with no path of their own (synthetic rows, system symbols).

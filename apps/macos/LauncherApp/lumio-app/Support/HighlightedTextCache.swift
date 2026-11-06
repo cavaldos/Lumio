@@ -9,7 +9,7 @@ nonisolated enum HighlightedTextCache {
     /// Attribute runs (one per highlighted token) dominate the real footprint,
     /// so cost is estimated per character rather than counted per entry.
     private static let cacheCountLimit = 32
-    private static let cacheCostLimitBytes = 16 * 1024 * 1024
+    private static let cacheCostLimitBytes = 8 * 1024 * 1024
     private static let estimatedBytesPerCharacter = 10
 
     nonisolated(unsafe) private static let cache: NSCache<NSString, NSAttributedString> = {

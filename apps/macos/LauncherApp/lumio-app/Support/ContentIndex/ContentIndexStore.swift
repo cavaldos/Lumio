@@ -46,6 +46,11 @@ nonisolated final class ContentIndexStore: @unchecked Sendable {
             return nil
         }
         db = handle
+        // The launcher and the OCR worker share this file: wait for the other one's write
+        // instead of failing with "database is locked".
+        sqlite3_busy_timeout(handle, 3000)
+        // Searches touch a few pages; the default 2 MB cache would just sit in the launcher.
+        exec("PRAGMA cache_size=-512")
         guard prepareSchema() else {
             sqlite3_close(handle)
             db = nil
@@ -155,12 +160,19 @@ nonisolated final class ContentIndexStore: @unchecked Sendable {
 
     // MARK: - Search side
 
-    /// Files that have searchable text.
+    /// Files that have searchable text. Counts FTS5's docsize table (one small row per file)
+    /// rather than `texts`, which would read every stored text through the page cache.
     func textCount() -> Int {
         lock.lock(); defer { lock.unlock() }
         var count = 0
-        query("SELECT count(*) FROM texts") { stmt in count = Int(sqlite3_column_int64(stmt, 0)) }
+        query("SELECT count(*) FROM texts_docsize") { stmt in count = Int(sqlite3_column_int64(stmt, 0)) }
         return count
+    }
+
+    /// Hands the connection's page cache back (the launcher was hidden).
+    func releaseMemory() {
+        lock.lock(); defer { lock.unlock() }
+        sqlite3_db_release_memory(db)
     }
 
     /// Files whose text contains every 3+ character word of `term`, best match first.

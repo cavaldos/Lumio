@@ -42,11 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // .lookToggleWindowRequested observer is live and Option+Space toggles it.
         makeLauncherWindow()
 
-        // Start reading text inside images / PDFs a little after launch, not during login rush.
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(20))
-            ContentIndex.shared.refreshIfStale()
-        }
+        // OCR is not started here: its worker process runs only when the OCR tab is opened.
+        MemoryTrim.watchMemoryPressure()
 
         // Settings open in a separate window.
         settingsObserver = NotificationCenter.default.addObserver(
@@ -57,6 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Sparkle: daily update checks, download + install on the user's OK.
         UpdateChecker.shared.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // The worker would also exit on its own (its stdin closes with us); this is just sooner.
+        ContentIndex.shared.stopWorker()
     }
 
     /// Build the launcher window in AppKit, host ContentView in it, and leave it hidden.

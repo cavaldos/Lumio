@@ -12,8 +12,8 @@ actor QuickLookPreviewService {
 
     /// Decompressed retina thumbnails run several MB each, so the cache is
     /// bounded by estimated bitmap bytes, not just entry count.
-    private static let cacheCountLimit = 64
-    private static let cacheCostLimitBytes = 48 * 1024 * 1024
+    private static let cacheCountLimit = 16
+    private static let cacheCostLimitBytes = 16 * 1024 * 1024
     private static let bytesPerPixel = 4
 
     private let cache: NSCache<NSString, NSImage> = {

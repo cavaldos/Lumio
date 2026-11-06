@@ -11,18 +11,24 @@ private actor ClipboardWriter {
         EngineBridge.shared.recordClipboard(content: content, appBundleID: appBundleID)
     }
 
-    /// One hop off the main thread: hashing and encoding a screenshot would
-    /// stutter the poll loop that found it.
-    func recordImage(data: Data, label: String, appBundleID: String?)
-        -> (stored: StoredClipboardImage, storeID: Int64)?
+    /// Reading, decoding and encoding the image happen in a helper process
+    /// (`ClipboardImageWorker`): a screenshot is tens of MB that the launcher
+    /// would otherwise keep mapped. Only the row is recorded here.
+    /// `fallbackLabel` names raw pixels; an image copied as a file is named after it.
+    func recordImage(changeCount: Int, appBundleID: String?, fallbackLabel: String) async
+        -> (stored: StoredClipboardImage, storeID: Int64, label: String)?
     {
-        guard let stored = ClipboardImageFiles.store(data),
+        guard let result = await ClipboardImageWorker.capture(changeCount: changeCount) else {
+            return nil
+        }
+        let label = result.fileName ?? fallbackLabel
+        guard
             let storeID = EngineBridge.shared.recordClipboardImage(
-                label: label, imageHash: stored.hash, appBundleID: appBundleID)
+                label: label, imageHash: result.hash, appBundleID: appBundleID)
         else {
             return nil
         }
-        return (stored, storeID)
+        return (result.stored, storeID, label)
     }
 
     func delete(id: Int64) {
@@ -421,27 +427,23 @@ final class ClipboardHistoryStore: ObservableObject {
     private func captureImageIfPresent(
         _ pasteboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
     ) -> Bool {
-        guard let candidate = ClipboardImagePasteboard.candidate(from: pasteboard, types: types)
-        else {
+        // Decided from the types alone: no pixels are read in this process. The
+        // copy WAS an image, so it never falls through to the text branch,
+        // whether or not the helper finds it worth keeping (too big, say).
+        guard ClipboardImagePasteboard.mayHoldImage(pasteboard, types: types) else {
             return false
-        }
-        // The copy WAS an image, so it never falls through to the text branch,
-        // whether or not it is one worth keeping.
-        guard candidate.data.count <= AppConstants.Launcher.ClipboardImage.maxImageBytes else {
-            return true
         }
 
         let source = NSWorkspace.shared.frontmostApplication
         let capturedAt = Date()
-        let label =
-            candidate.fileName
-            ?? ClipboardImagePasteboard.label(
-                forSourceNamed: source?.localizedName, capturedAt: capturedAt)
+        let fallbackLabel = ClipboardImagePasteboard.label(
+            forSourceNamed: source?.localizedName, capturedAt: capturedAt)
         let appBundleID = source?.bundleIdentifier
+        let changeCount = pasteboard.changeCount
         let generation = historyGeneration
         enqueueWrite { [weak self] in
             let recorded = await ClipboardWriter.shared.recordImage(
-                data: candidate.data, label: label, appBundleID: appBundleID)
+                changeCount: changeCount, appBundleID: appBundleID, fallbackLabel: fallbackLabel)
             guard let self, let recorded else { return }
             guard await generation == self.historyGeneration else {
                 // Cleared while in flight: forget it on disk too, or the clip
@@ -451,7 +453,7 @@ final class ClipboardHistoryStore: ObservableObject {
             }
             await self.prependImage(
                 ClipboardImageEntry(
-                    label: label,
+                    label: recorded.label,
                     hash: recorded.stored.hash,
                     capturedAt: capturedAt,
                     pixelSize: recorded.stored.pixelSize,
@@ -488,12 +490,17 @@ final class ClipboardHistoryStore: ObservableObject {
 
     /// Both pixels and a file, so it pastes into an editor and into Finder
     /// alike. Marks the change seen so the poller skips Lumio's own write.
+    /// The stored PNG bytes go on the pasteboard as they are: handing it an
+    /// NSImage made AppKit decode the whole image to TIFF in this process.
     @discardableResult
     func copyImage(entry: ClipboardImageEntry) -> Bool {
-        guard let url = entry.fileURL, let image = NSImage(contentsOf: url) else { return false }
+        guard let url = entry.fileURL, let png = try? Data(contentsOf: url) else { return false }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        let wrote = pasteboard.writeObjects([image, url as NSURL])
+        let item = NSPasteboardItem()
+        item.setData(png, forType: .png)
+        item.setString(url.absoluteString, forType: .fileURL)
+        let wrote = pasteboard.writeObjects([item])
         lastChangeCount = pasteboard.changeCount
         return wrote
     }

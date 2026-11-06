@@ -166,12 +166,10 @@ struct SpotlightPreviewView: View {
         case .clip:
             textBox(item.payload ?? item.name)
         case .clipImage:
-            if let path = item.target, let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // A pane-sized thumbnail, not the original: decoding a copied 4K
+            // screenshot at full size is ~33 MB, on every render.
+            if let path = item.target {
+                QuickLookPreviewImage(path: path, maxHeight: .infinity)
             }
         case .process:
             processContent

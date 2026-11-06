@@ -235,6 +235,14 @@ extension ThemeSettingsView {
                         .overlay(themeStore.dividerColor())
                         .padding(.vertical, 4)
 
+                    sectionHeader("Tabs")
+
+                    tabOrderRow
+
+                    Divider()
+                        .overlay(themeStore.dividerColor())
+                        .padding(.vertical, 4)
+
                     sectionHeader("Translation")
 
                     translationLanguagesRow
@@ -328,6 +336,72 @@ extension ThemeSettingsView {
     }
 
     static let aboutAnchorID = "lumio-about-section"
+
+    /// The launcher's tool tabs in their current order, each with arrows to move it.
+    var tabOrderRow: some View {
+        let order = TabOrder.normalized(settings.tabOrder)
+        return HStack(alignment: .top, spacing: 10) {
+            Text("Tab Order")
+                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                .foregroundStyle(themeStore.secondaryTextColor())
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(Array(order.enumerated()), id: \.element) { index, code in
+                        tabOrderChip(code: code, isFirst: index == 0, isLast: index == order.count - 1)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Text("Order of the tabs after All in the launcher. Save Config to keep it.")
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                        .foregroundStyle(themeStore.mutedTextColor())
+                    if order != TabOrder.defaultCodes {
+                        Button("Reset") {
+                            settings.tabOrder = TabOrder.defaultCodes
+                        }
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func tabOrderChip(code: String, isFirst: Bool, isLast: Bool) -> some View {
+        HStack(spacing: 4) {
+            tabOrderArrow("chevron.left", disabled: isFirst) {
+                settings.tabOrder = TabOrder.moving(code, by: -1, in: settings.tabOrder)
+            }
+            Text(SpotlightKind(rawValue: code)?.tabLabel ?? code)
+                .lineLimit(1)
+                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .semibold))
+                .foregroundStyle(themeStore.fontColor())
+            tabOrderArrow("chevron.right", disabled: isLast) {
+                settings.tabOrder = TabOrder.moving(code, by: 1, in: settings.tabOrder)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(
+            themeStore.liftColor(opacity: Self.activeFillOpacity),
+            in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+        )
+    }
+
+    private func tabOrderArrow(_ symbol: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(themeStore.secondaryTextColor())
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.3 : 1)
+    }
 
     /// Language chips for tr" / tw": tap to add or remove, 1-5 at a time.
     var translationLanguagesRow: some View {
