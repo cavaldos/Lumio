@@ -244,7 +244,7 @@ enum SpotlightModeRows {
     private static let helpShortcuts: [(String, String)] = [
         ("⌘K", "Actions for the selected row"),
         ("⇥ / ⇧⇥", "Next / previous filter"),
-        ("⌘1 … ⌘4", "Browse Applications, Folders, Settings, Documents"),
+        ("⌘1 … ⌘4", "Browse Applications, Folders, Documents, OCR (text in images & PDFs)"),
         ("⌘↩", "Search the web"),
         ("⌘F", "Show in Finder"),
         ("⌘E", "Open in editor"),

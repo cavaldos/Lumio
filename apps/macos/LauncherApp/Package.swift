@@ -25,6 +25,8 @@ let package = Package(
                 "Support/Launcher/QueryRetentionPolicy.swift",
                 "Support/SingleInstanceLock.swift",
                 "Models/LauncherResult.swift",
+                "Support/ContentIndex/ContentSearchText.swift",
+                "Support/ContentIndex/ContentIndexConfig.swift",
             ]
         ),
         .testTarget(

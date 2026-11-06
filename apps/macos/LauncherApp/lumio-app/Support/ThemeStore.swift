@@ -368,6 +368,10 @@ ignored_patterns_sample=
 # ignored_patterns_sqlite=~/Documents/git/project/**/*.db-wal|~/Documents/git/project/**/*.db-shm
 # ignored_patterns_temp=~/Downloads/*.tmp|~/Downloads/**/*.part
 lazy_indexing_enabled=true
+# OCR tab: search text inside images and PDFs under file_scan_roots.
+# false also deletes the stored text. content_index_limit = most files read, newest first.
+content_index_enabled=true
+content_index_limit=3000
 backend_log_level=error
 launch_at_login=true
 skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv

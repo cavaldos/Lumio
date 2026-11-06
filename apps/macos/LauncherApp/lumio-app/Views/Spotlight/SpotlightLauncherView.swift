@@ -27,8 +27,8 @@ struct SpotlightLauncherView: View {
     static let quickItems: [SpotlightQuickItem] = [
         SpotlightQuickItem(kind: .app, icon: "square.grid.2x2", label: "Applications"),
         SpotlightQuickItem(kind: .folder, icon: "folder", label: "Folders"),
-        SpotlightQuickItem(kind: .setting, icon: "gearshape", label: "Settings"),
         SpotlightQuickItem(kind: .doc, icon: "doc.text", label: "Documents"),
+        SpotlightQuickItem(kind: .content, icon: "text.viewfinder", label: "OCR"),
     ]
 
     @Environment(\.colorScheme) private var colorScheme
@@ -54,6 +54,9 @@ struct SpotlightLauncherView: View {
     @State private var scrollTarget: String?
     /// The core search in flight (nil = results already match the input).
     @State private var searchTask: Task<Void, Never>?
+    /// OCR tab while the index is still being built: searches again shortly, so new matches
+    /// and the progress line show up without typing.
+    @State private var ocrPollTask: Task<Void, Never>?
     /// Enter pressed before results for the latest text arrived: open as soon as they do.
     @State private var activateWhenReady = false
 
@@ -108,14 +111,20 @@ struct SpotlightLauncherView: View {
 
     private var results: [SpotlightItem] {
         guard let filter else { return all }
-        return all.filter { $0.kind == filter }
+        return all.filter { $0.kind.pillGroup == filter }
     }
 
+    /// Pills for the groups present in the results. OCR is not one of them: its pill is always
+    /// shown (last), since it switches to a different search rather than filtering this one.
     private var kinds: [SpotlightKind] {
         var seen: [SpotlightKind] = []
-        for item in all where !seen.contains(item.kind) { seen.append(item.kind) }
+        for item in all where item.kind != .content && !seen.contains(item.kind.pillGroup) {
+            seen.append(item.kind.pillGroup)
+        }
         return seen
     }
+
+    private var inOCR: Bool { browse == .content }
 
     private var panelWidth: CGFloat { idle ? Metric.idleWidth : Metric.panelWidth }
 
@@ -154,6 +163,7 @@ struct SpotlightLauncherView: View {
     private var placeholder: String {
         if let scope { return "Actions for \(scope.name)" }
         if let activeCommand { return SpotlightCommands.placeholder(for: activeCommand) }
+        if inOCR { return "Search text in images & PDFs" }
         if let browse { return "Search in \(browse.label)" }
         return "Lumio Search"
     }
@@ -474,7 +484,9 @@ struct SpotlightLauncherView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Metric.pillGap) {
-                    pillButton(label: "All", active: filter == nil) { filter = nil }
+                    pillButton(label: "All", active: filter == nil && !inOCR) {
+                        if inOCR { leaveOCR() } else { filter = nil }
+                    }
                         .id(Self.allPillID)
                     ForEach(kinds) { kind in
                         pillButton(label: kind.label, active: filter == kind) {
@@ -482,6 +494,10 @@ struct SpotlightLauncherView: View {
                         }
                         .id(kind.rawValue)
                     }
+                    pillButton(label: SpotlightKind.content.label, active: inOCR) {
+                        toggleBrowse(.content)
+                    }
+                        .id(SpotlightKind.content.rawValue)
                 }
                 .padding(.horizontal, 14)
             }
@@ -491,18 +507,34 @@ struct SpotlightLauncherView: View {
                     proxy.scrollTo(kind?.rawValue ?? Self.allPillID)
                 }
             }
+            .onChange(of: inOCR) { _, ocr in
+                withAnimation(motion(SpotlightMotion.chip)) {
+                    proxy.scrollTo(ocr ? SpotlightKind.content.rawValue : Self.allPillID)
+                }
+            }
         }
     }
 
     private static let allPillID = "pill-all"
 
-    /// Tab / Shift+Tab: move to the next / previous filter pill (All → Applications → … → All).
+    /// Tab / Shift+Tab: move to the next / previous filter pill (All → Applications → … → OCR → All).
+    /// Landing on OCR switches to the OCR search; leaving it goes back to the name search.
     private func cycleFilter(_ step: Int) {
-        let options: [SpotlightKind?] = [nil] + kinds
-        guard options.count > 1 else { return }
-        let current = options.firstIndex(of: filter) ?? 0
-        let next = (current + step + options.count) % options.count
-        filter = options[next]
+        let options: [SpotlightKind?] = [nil] + kinds + [.content]
+        let current = inOCR ? options.count - 1 : (options.firstIndex(of: filter) ?? 0)
+        let next = options[(current + step + options.count) % options.count]
+        if next == .content {
+            toggleBrowse(.content)
+        } else if inOCR {
+            leaveOCR()
+            filter = next
+        } else {
+            filter = next
+        }
+    }
+
+    private func leaveOCR() {
+        withAnimation(motion(SpotlightMotion.chip)) { browse = nil }
     }
 
     private func pillButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -734,6 +766,8 @@ struct SpotlightLauncherView: View {
     private func refresh() {
         searchTask?.cancel()
         searchTask = nil
+        ocrPollTask?.cancel()
+        ocrPollTask = nil
         // Has text: the 4 round buttons merge back into the bar immediately, without waiting for results.
         pokeIdle()
 
@@ -753,6 +787,10 @@ struct SpotlightLauncherView: View {
         if browse == nil, refreshMode(SpotlightMode.parse(query)) { return }
 
         let request = SpotlightRequest(text: query, browse: browse)
+        if inOCR {
+            searchContent(request.term)
+            return
+        }
         guard !request.isEmpty else {
             // Empty field: collapse the panel. `all` is kept so the list fades out with the panel.
             activateWhenReady = false
@@ -783,6 +821,35 @@ struct SpotlightLauncherView: View {
             guard !Task.isCancelled else { return }
             searchTask = nil
             publish(SpotlightBackend.rows(from: found, for: request, recentURLs: recents))
+        }
+    }
+
+    /// OCR tab: search the text inside images / PDFs (ContentIndex) instead of names.
+    private func searchContent(_ term: String) {
+        // First keystroke searches immediately; further typing waits a short beat.
+        let debounce: Duration = expanded ? SpotlightBackend.debounce : .zero
+        let limit = SpotlightBackend.resultLimit
+        searchTask = Task { @MainActor in
+            if debounce > .zero {
+                try? await Task.sleep(for: debounce)
+                guard !Task.isCancelled else { return }
+            }
+            let (hits, status) = await Task.detached(priority: .userInitiated) {
+                (ContentIndex.shared.search(term, limit: limit), ContentIndex.shared.status())
+            }.value
+            guard !Task.isCancelled else { return }
+            searchTask = nil
+            publish(SpotlightBackend.contentRows(hits: hits, term: term, status: status))
+            // Only while nothing is listed: re-publishing real rows would reset the selection.
+            if hits.isEmpty, status.indexing { scheduleOCRPoll() }
+        }
+    }
+
+    private func scheduleOCRPoll() {
+        ocrPollTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, isOpen, inOCR else { return }
+            refresh()
         }
     }
 
@@ -1020,6 +1087,7 @@ struct SpotlightLauncherView: View {
         let backendReloaded = EngineBridge.shared.reloadConfig()
         clipboardStore.reloadFromConfig()
         loadRetention()
+        ContentIndex.shared.refreshIfStale(force: true)
         guard isOpen else { return }
         if !backendReloaded {
             toast("Config reload failed")
@@ -1138,6 +1206,9 @@ struct SpotlightLauncherView: View {
             }
             return
         case .help:
+            return
+        case .content where item.target == nil:
+            // OCR tab status row: nothing to open.
             return
         case .clipImage:
             if let hash = item.payload,
@@ -1462,6 +1533,8 @@ struct SpotlightLauncherView: View {
             // Like the legacy launcher: each open asks the core to refresh the index in the background
             // (the first time it also loads the engine from SQLite) — run in the background so animation isn't delayed.
             Task.detached(priority: .utility) { _ = EngineBridge.shared.requestIndexRefresh() }
+            // Text inside images / PDFs: picks up files added since the last pass (at most every 15 min).
+            ContentIndex.shared.refreshIfStale()
             // While open, poll the clipboard more often (like the legacy launcher).
             clipboardStore.setMonitoringMode(.foreground)
             // Fresh open: go to the hidden state WITHOUT animation, position the window, and only then

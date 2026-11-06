@@ -103,7 +103,7 @@ struct SpotlightPreviewView: View {
     private var badgeColor: Color {
         switch item.kind {
         case .app: .accentColor
-        case .doc: .green
+        case .doc, .content: .green
         case .folder: .orange
         case .url, .web: .blue
         default: .gray
@@ -115,13 +115,19 @@ struct SpotlightPreviewView: View {
     @ViewBuilder
     private var content: some View {
         switch item.kind {
-        case .doc:
+        case .doc, .content:
             if let path = item.target {
                 if QuickLookPreviewService.isTextFile(path: path) {
                     SpotlightCodePreview(path: path)
                 } else {
                     QuickLookPreviewImage(path: path, maxHeight: .infinity)
                 }
+            } else if item.kind == .content {
+                // OCR tab status row.
+                Text(item.meta ?? "")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .folder:
             if let folder, let path = item.target {
@@ -312,7 +318,7 @@ struct SpotlightPreviewView: View {
         case .clip, .clipImage, .process:
             info.detail = item.meta
             return info
-        case .app, .doc, .folder:
+        case .app, .doc, .content, .folder:
             break
         default:
             return info
@@ -328,7 +334,7 @@ struct SpotlightPreviewView: View {
             info.version = bundle?.infoDictionary?["CFBundleShortVersionString"] as? String
                 ?? bundle?.infoDictionary?["CFBundleVersion"] as? String
             info.detail = info.version.map { "Version \($0)" }
-        case .doc:
+        case .doc, .content:
             if let size = attrs?[.size] as? Int64 {
                 info.detail = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
             }

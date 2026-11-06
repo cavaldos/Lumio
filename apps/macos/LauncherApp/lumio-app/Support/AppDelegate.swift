@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // .lookToggleWindowRequested observer is live and Option+Space toggles it.
         makeLauncherWindow()
 
+        // Start reading text inside images / PDFs a little after launch, not during login rush.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(20))
+            ContentIndex.shared.refreshIfStale()
+        }
+
         // Settings open in a separate window.
         settingsObserver = NotificationCenter.default.addObserver(
             forName: .lookToggleSettingsRequested, object: nil, queue: .main

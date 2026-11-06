@@ -5,9 +5,10 @@
 //  Connects the Spotlight launcher to the Rust core (EngineBridge → bridge/ffi → QueryEngine).
 //
 //  Flow of a single search:
-//  1. `engineQuery(for:)` builds the query string for the core. The 4 round buttons use the core's
-//     own filter prefixes: a" (app), d" (folder), f" (file). System settings
-//     are apps with a `setting:` id, so they go through a" and are filtered again.
+//  1. `engineQuery(for:)` builds the query string for the core. The round buttons use the core's
+//     own filter prefixes: a" (app), d" (folder), f" (file). System settings are apps with a
+//     `setting:` id; they show under the Applications pill. The OCR tab skips the core and
+//     searches ContentIndex (text inside images / PDFs) instead, see `contentRows`.
 //  2. The view calls `EngineBridge.search` on a background thread (the core holds the engine read lock).
 //  3. `rows(from:for:)` turns the core's results into display rows, then adds the
 //     synthesized rows: calculation, open URL (classified by the core), search the web.
@@ -33,8 +34,6 @@ struct SpotlightEngineQuery: Sendable {
 enum SpotlightBackend {
     /// Maximum number of rows shown (same as the legacy launcher).
     static let resultLimit = 40
-    /// The core returns at most 100 rows per call (MAX_SEARCH_LIMIT in bridge/ffi).
-    private static let engineMaxLimit = 100
     /// When typing rapidly, wait a short beat; the first keystroke searches immediately.
     static let debounce: Duration = .milliseconds(45)
 
@@ -52,11 +51,6 @@ enum SpotlightBackend {
             return SpotlightEngineQuery(text: "d\"" + term, limit: resultLimit)
         case .doc:
             return SpotlightEngineQuery(text: "f\"" + term, limit: resultLimit)
-        case .setting:
-            // Empty field: "settings" is a settings-style query; the core puts every settings
-            // item on top instead of mixing them with apps as when browsing plain a".
-            let text = term.isEmpty ? "settings" : term
-            return SpotlightEngineQuery(text: "a\"" + text, limit: engineMaxLimit)
         default:
             return SpotlightEngineQuery(text: term, limit: resultLimit)
         }
@@ -163,6 +157,44 @@ enum SpotlightBackend {
         }
     }
 
+    /// A file matched by its content: the snippet around the match replaces the folder line.
+    static func item(from hit: ContentHit) -> SpotlightItem {
+        SpotlightItem(
+            id: "content|" + hit.path, name: (hit.path as NSString).lastPathComponent, kind: .content,
+            meta: hit.snippet ?? PathDisplay.directory(of: hit.path), target: hit.path, iconPath: hit.path
+        )
+    }
+
+    // MARK: - OCR tab
+
+    /// OCR tab: files whose text matches, or one status row (type more / no match / still
+    /// indexing / turned off) when there is nothing to list.
+    static func contentRows(hits: [ContentHit], term: String, status: ContentIndexStatus) -> [SpotlightItem] {
+        let rows = hits.map(item(from:))
+        if !rows.isEmpty { return rows }
+
+        let title: String
+        if !status.enabled {
+            title = "OCR search is turned off"
+        } else if term.count < ContentSearchText.minQueryLength {
+            title = "Type 3+ characters to search text in images & PDFs"
+        } else {
+            title = "No text matches “\(term)”"
+        }
+        return [SpotlightItem(
+            id: "content|status", name: title, kind: .content,
+            colors: "#a7aeb8,#5e6670", meta: statusLine(status), symbol: "text.viewfinder"
+        )]
+    }
+
+    private static func statusLine(_ status: ContentIndexStatus) -> String {
+        guard status.enabled else { return "Set content_index_enabled=true in ~/.lumio/config" }
+        let indexed = "\(status.filesWithText.formatted()) files with text"
+        guard status.indexing else { return indexed }
+        let remaining = status.pending > 0 ? " — \(status.pending.formatted()) left" : ""
+        return indexed + " · reading files\(remaining)…"
+    }
+
     // MARK: - Pinned rows (quick folders, Finder)
 
     /// Desktop, Documents, …, Applications, Trash and Finder: shown on top when the text
@@ -215,7 +247,9 @@ enum SpotlightBackend {
     private static func dedupeKey(_ item: SpotlightItem) -> String {
         switch item.kind {
         case .app: "app:" + item.name.lowercased()
-        case .doc, .folder: item.kind.rawValue + ":" + (item.target ?? item.id).lowercased()
+        // Name and content matches of one file collapse into a single row.
+        case .doc, .content: "doc:" + (item.target ?? item.id).lowercased()
+        case .folder: "folder:" + (item.target ?? item.id).lowercased()
         default: item.id
         }
     }

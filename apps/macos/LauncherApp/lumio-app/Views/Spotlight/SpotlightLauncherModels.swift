@@ -4,7 +4,7 @@ import Foundation
 // SpotlightBackend; SpotlightData is now just sample data for the motion lab.
 
 enum SpotlightKind: String, CaseIterable, Identifiable {
-    case app, folder, doc, setting, url, web, calc, cmd
+    case app, folder, doc, content, setting, url, web, calc, cmd
     // Modes carried over from the legacy launcher (prefix / command).
     case prefix, command, clip, clipImage, lookup, translation, process, help
     var id: String { rawValue }
@@ -14,6 +14,7 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         case .app: "Applications"
         case .folder: "Folders"
         case .doc: "Documents"
+        case .content: "OCR"
         case .setting: "Settings"
         case .url: "Links"
         case .web: "Web"
@@ -29,6 +30,15 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         case .help: "Help"
         }
     }
+
+    /// Filter pill a row belongs to. System Settings rows have no pill of their own:
+    /// they sit under Applications.
+    var pillGroup: SpotlightKind {
+        self == .setting ? .app : self
+    }
+
+    /// A file on disk matched by name (.doc) or by its text (.content).
+    var isDocument: Bool { self == .doc || self == .content }
 }
 
 /// What can be done with an item when you open its actions (⌘K).
@@ -108,13 +118,13 @@ struct SpotlightItem: Identifiable, Equatable {
 
     /// A real file or folder on disk (not a URL scheme), the target of editor/terminal/trash.
     var isFileTarget: Bool {
-        (kind == .doc || kind == .folder) && target?.hasPrefix("/") == true
+        (kind.isDocument || kind == .folder) && target?.hasPrefix("/") == true
     }
 
     /// Has an actions view (⌘K).
     var supportsActions: Bool {
         if kind == .process { return pid != nil }
-        return (kind == .app || kind == .doc || kind == .folder) && target != nil
+        return (kind == .app || kind.isDocument || kind == .folder) && target != nil
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }

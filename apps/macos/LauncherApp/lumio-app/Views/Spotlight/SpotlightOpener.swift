@@ -38,7 +38,7 @@ enum SpotlightOpener {
             let url = target
             Task.detached(priority: .utility) { _ = EngineBridge.shared.recordURLHit(url: url) }
             return .launched
-        case .app, .setting, .doc, .folder:
+        case .app, .setting, .doc, .content, .folder:
             return openTarget(of: item)
         case .clip:
             guard let text = item.payload else { return .message("Nothing to copy") }
@@ -173,7 +173,7 @@ enum SpotlightOpener {
     private static func recordUsage(_ item: SpotlightItem) {
         guard let candidateID = item.candidateID else { return }
         let action = switch item.kind {
-        case .doc: "open_file"
+        case .doc, .content: "open_file"
         case .folder: "open_folder"
         default: "open_app"
         }
