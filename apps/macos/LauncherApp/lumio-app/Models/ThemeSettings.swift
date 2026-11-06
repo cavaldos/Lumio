@@ -27,6 +27,8 @@ struct ThemeSettings: Codable, Equatable {
     var translationLanguages: [String] = TranslationLanguage.defaultCodes
     /// Order of the tool tabs in the launcher (`tab_order`), SpotlightKind raw values.
     var tabOrder: [String] = TabOrder.defaultCodes
+    /// Global shortcuts: HotKeyAction raw value → `cmd+shift+v` ("" = off).
+    var hotkeys: [String: String] = HotKeyAction.defaultValues
 
     static let `default` = ThemeSettings()
 
@@ -43,5 +45,12 @@ struct ThemeSettings: Codable, Equatable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages
         tabOrder = TabOrder.normalized(try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? d.tabOrder)
+        let savedHotkeys = try c.decodeIfPresent([String: String].self, forKey: .hotkeys) ?? [:]
+        hotkeys = d.hotkeys.merging(savedHotkeys) { _, saved in saved }
+    }
+
+    /// The shortcut set for `action`; nil when it is off or unreadable.
+    func hotKey(for action: HotKeyAction) -> KeyCombo? {
+        KeyCombo.parse(hotkeys[action.rawValue] ?? action.defaultValue)
     }
 }

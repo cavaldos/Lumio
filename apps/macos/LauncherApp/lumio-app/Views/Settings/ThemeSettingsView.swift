@@ -149,6 +149,8 @@ struct ThemeSettingsView: View {
             // settings is shown; otherwise it would swallow Cmd+Shift+, and Esc
             // for the rest of the app.
             guard appUIState.showsThemeSettings else { return event }
+            // Recording a shortcut: every key (Esc included) belongs to the recorder.
+            guard !ShortcutSettingsSection.isRecording else { return event }
 
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 

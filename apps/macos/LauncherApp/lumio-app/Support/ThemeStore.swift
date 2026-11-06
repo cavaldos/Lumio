@@ -11,7 +11,12 @@ final class ThemeStore: ObservableObject {
     static let shared = ThemeStore()
 
     @Published var settings: ThemeSettings {
-        didSet { save() }
+        didSet {
+            save()
+            if oldValue.hotkeys != settings.hotkeys {
+                NotificationCenter.default.post(name: .lookHotKeysChanged, object: nil)
+            }
+        }
     }
 
     @Published private(set) var excludedFolderPaths: [String] = []
@@ -109,6 +114,9 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
         ConfigFileLines.upsert(&lines, key: "translation_languages", value: settings.translationLanguages.joined(separator: ","))
         ConfigFileLines.upsert(&lines, key: TabOrder.configKey, value: TabOrder.render(settings.tabOrder))
+        for action in HotKeyAction.allCases {
+            ConfigFileLines.upsert(&lines, key: action.configKey, value: settings.hotKey(for: action)?.configValue ?? "")
+        }
 
         do {
             try ConfigFileLines.render(lines).write(to: path, atomically: true, encoding: .utf8)
@@ -233,7 +241,13 @@ final class ThemeStore: ObservableObject {
                 let known = codes.filter { TranslationLanguage.named($0) != nil }
                 if !known.isEmpty { settings.translationLanguages = Array(known.prefix(TranslationLanguage.maxSelected)) }
             default:
-                continue
+                // hotkey_<action>: empty = off; a value that doesn't parse is ignored like any bad line.
+                guard let action = HotKeyAction.named(configKey: key) else { continue }
+                if value.isEmpty {
+                    settings.hotkeys[action.rawValue] = ""
+                } else if let combo = KeyCombo.parse(value) {
+                    settings.hotkeys[action.rawValue] = combo.configValue
+                }
             }
         }
     }
@@ -401,6 +415,10 @@ launch_at_login=true
 translation_languages=vi,en,fr
 # Order of the launcher's tabs: clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
 tab_order=clip,lookup,translation,process,content
+# Global shortcuts: hotkey_<action>=cmd+shift+v (modifiers: cmd, opt, ctrl, shift; empty = off).
+# Actions: launcher, settings, clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
+hotkey_launcher=opt+space
+hotkey_settings=cmd+shift+space
 skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv
 
 # Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3

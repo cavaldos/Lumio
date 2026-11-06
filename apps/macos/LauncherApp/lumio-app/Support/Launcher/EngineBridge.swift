@@ -258,8 +258,14 @@ final class EngineBridge: @unchecked Sendable {
         let contentHash: String
         let appBundleID: String?
         let copiedAtUnixS: Int64
+        /// Optional: an older core sends neither.
+        let firstCopiedAtUnixS: Int64?
+        let copyCount: Int?
 
         var copiedAt: Date { Date(timeIntervalSince1970: TimeInterval(copiedAtUnixS)) }
+        var firstCopiedAt: Date {
+            Date(timeIntervalSince1970: TimeInterval(firstCopiedAtUnixS ?? copiedAtUnixS))
+        }
     }
 
     /// Remembers a clip and returns its row id, or nil when nothing was

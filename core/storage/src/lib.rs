@@ -98,7 +98,12 @@ pub struct ClipboardEntry {
     /// For an image, the hash of the pixels, which also names the file.
     pub content_hash: String,
     pub app_bundle_id: Option<String>,
+    /// Last time it was copied; the list is ordered by this.
     pub copied_at_unix_s: i64,
+    /// First time it was copied. Rows from before this column read as their last copy.
+    pub first_copied_at_unix_s: i64,
+    /// How many times it was copied, re-copies included.
+    pub copy_count: i64,
 }
 
 pub struct SqliteStore {
@@ -564,23 +569,30 @@ impl SqliteStore {
         // Replaced, not updated: an in-place update keeps the old id, and
         // within the same second the id breaks the recency tie - so a re-copy
         // would sort below something older.
-        let previous_app: Option<String> = tx
+        // The row being replaced hands over its app, first copy time and copy count.
+        let previous: Option<(Option<String>, i64, i64)> = tx
             .query_row(
-                "SELECT app_bundle_id FROM clipboard_entries WHERE content_hash = ?1",
+                "SELECT app_bundle_id, COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count
+                 FROM clipboard_entries WHERE content_hash = ?1",
                 params![hash],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .optional()?
-            .flatten();
+            .optional()?;
+        let (previous_app, first_copied, copy_count) = match previous {
+            Some((app, first, count)) => (app, first, count.max(0) + 1),
+            None => (None, now, 1),
+        };
         tx.execute(
             "DELETE FROM clipboard_entries WHERE content_hash = ?1",
             params![hash],
         )?;
         let app = app_bundle_id.map(str::to_string).or(previous_app);
         tx.execute(
-            "INSERT INTO clipboard_entries(content, content_hash, kind, app_bundle_id, copied_at_unix_s)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![content, hash, kind, app, now],
+            "INSERT INTO clipboard_entries(
+                 content, content_hash, kind, app_bundle_id, copied_at_unix_s,
+                 first_copied_at_unix_s, copy_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![content, hash, kind, app, now, first_copied, copy_count],
         )?;
         let row_id = tx.last_insert_rowid();
         let cap = if kind == CLIPBOARD_KIND_IMAGE {
@@ -624,9 +636,12 @@ impl SqliteStore {
                 content_hash: row.get(3)?,
                 app_bundle_id: row.get(4)?,
                 copied_at_unix_s: row.get(5)?,
+                first_copied_at_unix_s: row.get(6)?,
+                copy_count: row.get(7)?,
             })
         };
-        let select = "SELECT id, content, kind, content_hash, app_bundle_id, copied_at_unix_s
+        let select = "SELECT id, content, kind, content_hash, app_bundle_id, copied_at_unix_s,
+                             COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count
                       FROM clipboard_entries WHERE kind = ?1";
         let rows = if query.is_empty() {
             let mut stmt = self.conn.prepare(&format!(
@@ -961,6 +976,16 @@ impl SqliteStore {
         // it, so it is NULL for almost every row. Additive on existing DBs.
         ensure_column_exists(&self.conn, "candidates", "icon", "TEXT")?;
 
+        // Clip details shown in the clipboard preview. Additive on existing DBs:
+        // old rows have no first copy time (read as their last) and count as one copy.
+        ensure_column_exists(&self.conn, "clipboard_entries", "first_copied_at_unix_s", "INTEGER")?;
+        ensure_column_exists(
+            &self.conn,
+            "clipboard_entries",
+            "copy_count",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
+
         Ok(())
     }
 }
@@ -1092,6 +1117,11 @@ mod tests {
         assert_eq!(all[0].content, "first clip");
         // The source app is kept from the first capture rather than nulled.
         assert_eq!(all[0].app_bundle_id.as_deref(), Some("com.apple.Safari"));
+        // Re-copying counts, and keeps the time of the first copy.
+        assert_eq!(all[0].copy_count, 2);
+        assert!(all[0].first_copied_at_unix_s <= all[0].copied_at_unix_s);
+        assert_eq!(all[1].copy_count, 1);
+        assert_eq!(all[1].first_copied_at_unix_s, all[1].copied_at_unix_s);
 
         // Substring search, case-insensitive, newest first.
         let found = store

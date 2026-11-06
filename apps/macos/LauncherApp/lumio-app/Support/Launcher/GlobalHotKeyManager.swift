@@ -6,28 +6,29 @@ nonisolated private let hotkeyLog = Logger(subsystem: "com.cavaldos.Lumio", cate
 
 @MainActor
 final class GlobalHotKeyManager {
-    /// One global shortcut: the Carbon id it registers under, its keys, and
-    /// the notification it posts when pressed.
+    /// One global shortcut: the Carbon id it registers under, its keys, and what it does.
     nonisolated private struct Binding: Sendable {
         let id: UInt32
-        let keyCode: UInt32
-        let carbonModifiers: UInt32
-        let modifierFlags: NSEvent.ModifierFlags
-        let notification: Notification.Name
-        let label: String
+        let combo: KeyCombo
+        let action: HotKeyAction
+
+        var label: String { "\(action.rawValue)=\(combo.configValue)" }
+
+        /// Toggle the launcher / settings, or open the launcher on a tab.
+        @MainActor func post() {
+            switch action {
+            case .launcher:
+                NotificationCenter.default.post(name: .lookToggleWindowRequested, object: nil)
+            case .settings:
+                NotificationCenter.default.post(name: .lookToggleSettingsRequested, object: nil)
+            default:
+                NotificationCenter.default.post(name: .lookOpenTabRequested, object: action.rawValue)
+            }
+        }
     }
 
-    /// Option+Space toggles the launcher; Cmd+Shift+Space opens settings.
-    private static let bindings: [Binding] = [
-        Binding(
-            id: 1, keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(optionKey),
-            modifierFlags: [.option], notification: .lookToggleWindowRequested,
-            label: "Option+Space"),
-        Binding(
-            id: 2, keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey | shiftKey),
-            modifierFlags: [.command, .shift], notification: .lookToggleSettingsRequested,
-            label: "Cmd+Shift+Space"),
-    ]
+    /// The shortcuts set in Settings (Option+Space and Cmd+Shift+Space by default).
+    private static var bindings: [Binding] = []
 
     // nonisolated(unsafe) so the nonisolated deinit can release these
     // (they're Carbon/AppKit handles - not actually Sendable, but they're
@@ -71,7 +72,22 @@ final class GlobalHotKeyManager {
         }
     }
 
-    func registerToggleHotKey() {
+    /// Registers the shortcuts in the current settings, replacing the old ones.
+    func registerFromSettings() {
+        let settings = ThemeStore.shared.settings
+        var seen = Set<KeyCombo>()
+        Self.bindings = HotKeyAction.allCases.enumerated().compactMap { index, action in
+            // One combo can only do one thing; Settings already refuses duplicates.
+            guard let combo = settings.hotKey(for: action), combo.isUsableGlobally,
+                  seen.insert(combo).inserted
+            else { return nil }
+            return Binding(id: UInt32(index + 1), combo: combo, action: action)
+        }
+        retryAttempts = 0
+        register()
+    }
+
+    private func register() {
         retryWorkItem?.cancel()
         retryWorkItem = nil
         unregister()
@@ -80,8 +96,8 @@ final class GlobalHotKeyManager {
         for binding in Self.bindings {
             var ref: EventHotKeyRef?
             let status = RegisterEventHotKey(
-                binding.keyCode,
-                binding.carbonModifiers,
+                binding.combo.keyCode,
+                binding.combo.carbonModifiers,
                 EventHotKeyID(signature: fourCharCode("LUMIO"), id: binding.id),
                 GetEventDispatcherTarget(),
                 0,
@@ -116,9 +132,11 @@ final class GlobalHotKeyManager {
 
                     let id = hotKeyId.id
                     DispatchQueue.main.async {
-                        guard let binding = GlobalHotKeyManager.bindings.first(where: { $0.id == id }) else { return }
-                        hotkeyLog.notice("CARBON hotkey \(binding.label, privacy: .public) fired (app active=\(NSApp.isActive))")
-                        NotificationCenter.default.post(name: binding.notification, object: nil)
+                        MainActor.assumeIsolated {
+                            guard let binding = GlobalHotKeyManager.bindings.first(where: { $0.id == id }) else { return }
+                            hotkeyLog.notice("CARBON hotkey \(binding.label, privacy: .public) fired (app active=\(NSApp.isActive))")
+                            binding.post()
+                        }
                     }
                     return noErr
                 },
@@ -140,19 +158,28 @@ final class GlobalHotKeyManager {
         // app doesn't need to know which path delivered the event.
         // Local monitors are always called on the main thread.
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let keyCode = UInt32(event.keyCode)
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let keyCode = event.keyCode
+            let flags = event.modifierFlags
             let handled = MainActor.assumeIsolated { () -> Bool in
-                guard let binding = Self.bindings.first(where: {
-                    keyCode == $0.keyCode && flags == $0.modifierFlags
-                }) else {
+                guard let binding = Self.bindings.first(where: { $0.combo.matches(keyCode: keyCode, flags: flags) }) else {
                     return false
                 }
                 hotkeyLog.notice("LOCAL monitor \(binding.label, privacy: .public) fired (app active=\(NSApp.isActive))")
-                NotificationCenter.default.post(name: binding.notification, object: nil)
+                binding.post()
                 return true
             }
             return handled ? nil : event   // consume - don't let any field eat the space
+        }
+    }
+
+    /// While Settings records a shortcut, the current ones must not fire (or swallow the keys).
+    func setPaused(_ paused: Bool) {
+        if paused {
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            unregister()
+        } else {
+            register()
         }
     }
 
@@ -167,7 +194,7 @@ final class GlobalHotKeyManager {
         let delay = min(3.0, 0.5 * Double(retryAttempts))
         hotkeyLog.notice("scheduling hotkey re-registration attempt \(self.retryAttempts) in \(delay)s")
         let work = DispatchWorkItem { [weak self] in
-            self?.registerToggleHotKey()
+            self?.register()
         }
         retryWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)

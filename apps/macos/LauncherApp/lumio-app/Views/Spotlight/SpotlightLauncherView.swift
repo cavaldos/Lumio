@@ -79,6 +79,12 @@ struct SpotlightLauncherView: View {
     @State private var introUntil = Date.distantPast
     @State private var toastMsg: String?
     @State private var mouseGate = MouseGate()
+    /// Clipboard: the side preview (full text + details) is open. It opens after resting on a row
+    /// for `clipPreviewDelay`, then follows the selection until the tab is left.
+    @State private var clipPreviewShown = false
+    @State private var clipPreviewTask: Task<Void, Never>?
+    /// Row under the mouse pointer, so leaving it cancels the pending clipboard preview.
+    @State private var hoveredRow: Int?
 
     // Legacy launcher modes (prefix / command) — reusing the legacy modules as-is.
     /// Clipboard watcher (c" / ci"). Must live with the launcher: the legacy launcher isn't
@@ -137,8 +143,20 @@ struct SpotlightLauncherView: View {
     /// preview, which needs room for code / images even with just one or two results.
     /// tw" shows dictionary entries, which need the full height whatever the number of words.
     private var rowSlots: Int {
-        isLookup ? Metric.maxVisibleRows : max(results.count, Metric.minRowsWithPreview)
+        isLookup || isClipboard ? Metric.maxVisibleRows : max(results.count, Metric.minRowsWithPreview)
     }
+
+    /// Clipboard tab: one full-width list of one-line clips, no preview, like Maccy.
+    private var isClipboard: Bool { browse == .clip && scope == nil && activeCommand == nil }
+
+    /// Clipboard: the list fills the panel until the side preview opens.
+    private var showsPreview: Bool { !isClipboard || clipPreviewShown }
+
+    private static let clipPreviewDelay: Duration = .seconds(1)
+
+    /// Clipboard rows: a line of text, or a taller row for an image thumbnail.
+    private static let clipRowHeight: CGFloat = 30
+    private static let clipImageRowHeight: CGFloat = 64
 
     /// tw": the list is a narrow column of words, like the Dictionary.app sidebar.
     private var isLookup: Bool { all.first?.kind == .lookup }
@@ -160,7 +178,7 @@ struct SpotlightLauncherView: View {
 
     /// Icon at the end of the bar: the item whose actions are being viewed, otherwise the top result.
     private var topHit: SpotlightItem? { scope ?? results.first }
-    private var showsTopHit: Bool { expanded && topHit != nil }
+    private var showsTopHit: Bool { expanded && topHit != nil && !isClipboard }
     private var chipLabel: String? {
         scope?.name ?? activeCommand.map { ":" + $0 } ?? browse?.label
     }
@@ -235,6 +253,7 @@ struct SpotlightLauncherView: View {
         .onChange(of: browse) { _, tab in
             sel = 0
             filter = nil
+            closeClipPreview()
             // The OCR worker only ever starts here: opening the OCR tab brings the index up to
             // date (new / changed files, at most every 15 min). Nothing else runs OCR.
             if tab == .content { ContentIndex.shared.refreshIfStale() }
@@ -254,6 +273,9 @@ struct SpotlightLauncherView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lookHideLauncherRequested)) { _ in
             hide()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lookOpenTabRequested)) { note in
+            if let raw = note.object as? String, let tab = SpotlightKind(rawValue: raw) { openFromHotKey(tab) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lookActivateLauncherRequested)) { _ in
             show()
@@ -445,15 +467,21 @@ struct SpotlightLauncherView: View {
                 .frame(height: Metric.pillsHeight)
                 .padding(.top, Metric.lowerTopInset)
             // Split INSIDE the panel: list on the left, preview on the right.
+            // Clipboard: just the list, full width.
             HStack(spacing: 0) {
                 listView
-                    .frame(width: listPaneWidth)
-                Rectangle()
-                    .fill(palette.divider)
-                    .frame(width: 1)
-                    .padding(.vertical, 8)
-                previewPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(width: showsPreview ? listPaneWidth : Metric.panelWidth)
+                if showsPreview {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(palette.divider)
+                            .frame(width: 1)
+                            .padding(.vertical, 8)
+                        previewPane
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .transition(.opacity)
+                }
             }
             .frame(height: SpotlightSpec.listHeight(rows: rowSlots))
             footer
@@ -468,7 +496,10 @@ struct SpotlightLauncherView: View {
     /// Right half of the panel: preview of the selected row (or the item whose actions are open).
     private var previewPane: some View {
         ZStack(alignment: .topLeading) {
-            if let item = previewItem {
+            if let item = previewItem, item.kind == .clip || item.kind == .clipImage {
+                SpotlightClipPreview(item: item, details: clipDetails(for: item))
+                    .id(item.id)
+            } else if let item = previewItem {
                 SpotlightPreviewView(
                     item: item,
                     processDetail: item.pid.flatMap { processModel.details[$0] },
@@ -602,8 +633,15 @@ struct SpotlightLauncherView: View {
                                     .onHover { hovering in
                                         // Ignore hovers caused by the list changing under a stationary
                                         // pointer — only accept them when the mouse actually moves.
-                                        if hovering, mouseGate.moved(), sel != index {
-                                            withAnimation(motion(SpotlightMotion.selectionGlide)) { sel = index }
+                                        if hovering, mouseGate.moved() {
+                                            if sel != index {
+                                                withAnimation(motion(SpotlightMotion.selectionGlide)) { sel = index }
+                                            }
+                                            hoveredRow = index
+                                            scheduleClipPreview()
+                                        } else if !hovering, hoveredRow == index {
+                                            hoveredRow = nil
+                                            clipPreviewTask?.cancel()
                                         }
                                     }
                             }
@@ -627,6 +665,8 @@ struct SpotlightLauncherView: View {
     private func rowView(_ item: SpotlightItem, selected: Bool) -> some View {
         if item.kind == .lookup {
             wordRow(item, selected: selected)
+        } else if item.kind == .clip || item.kind == .clipImage {
+            clipRow(item, selected: selected)
         } else if item.kind == .translation {
             standardRow(translationRow(item), selected: selected)
         } else {
@@ -660,6 +700,37 @@ struct SpotlightLauncherView: View {
                 reduceMotion: reduceMotion
             ))
             .contentShape(Rectangle())
+    }
+
+    /// Clipboard: just the copied text on one line, or a thumbnail of the image. The full text
+    /// and details open in the side preview (see `scheduleClipPreview`).
+    private func clipRow(_ item: SpotlightItem, selected: Bool) -> some View {
+        let isImage = item.kind == .clipImage
+        return Group {
+            if isImage, let path = item.iconPath, let image = RowIconCache.thumbnail(forFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .frame(maxHeight: Self.clipImageRowHeight - 12)
+            } else {
+                Text(item.name)
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(height: isImage ? Self.clipImageRowHeight : Self.clipRowHeight)
+        .modifier(SpotlightSelection(
+            isSelected: selected,
+            fill: palette.rowSel,
+            namespace: selectionSpace,
+            reduceMotion: reduceMotion
+        ))
+        .contentShape(Rectangle())
     }
 
     private func standardRow(_ item: SpotlightItem, selected: Bool) -> some View {
@@ -705,6 +776,44 @@ struct SpotlightLauncherView: View {
             reduceMotion: reduceMotion
         ))
         .contentShape(Rectangle())
+    }
+
+    /// Clipboard: what the side preview lists under the clip (app, copy times, count).
+    private func clipDetails(for item: SpotlightItem) -> ClipboardClipDetails? {
+        if item.kind == .clip, let id = item.clipID,
+           let entry = clipboardStore.entries.first(where: { $0.id == id })
+        {
+            return ClipboardClipDetails(
+                appBundleID: entry.appBundleID, firstCopiedAt: entry.firstCapturedAt,
+                lastCopiedAt: entry.capturedAt, copyCount: entry.copyCount
+            )
+        }
+        if item.kind == .clipImage, let hash = item.payload,
+           let entry = clipboardStore.imageEntries.first(where: { $0.id == hash })
+        {
+            return ClipboardClipDetails(
+                appBundleID: entry.appBundleID, firstCopiedAt: entry.firstCapturedAt,
+                lastCopiedAt: entry.capturedAt, copyCount: entry.copyCount, imageSize: item.meta
+            )
+        }
+        return nil
+    }
+
+    /// Clipboard: resting on a row (mouse or arrow keys) for `clipPreviewDelay` opens the side preview.
+    private func scheduleClipPreview() {
+        guard isClipboard, !clipPreviewShown else { return }
+        clipPreviewTask?.cancel()
+        clipPreviewTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.clipPreviewDelay)
+            guard !Task.isCancelled, isOpen, !dismissing, isClipboard else { return }
+            withAnimation(motion(SpotlightMotion.chip)) { clipPreviewShown = true }
+        }
+    }
+
+    private func closeClipPreview() {
+        clipPreviewTask?.cancel()
+        clipPreviewTask = nil
+        clipPreviewShown = false
     }
 
     /// Secondary line under the name. Apps don't need one (the name is enough); action rows show the item name.
@@ -1132,6 +1241,25 @@ struct SpotlightLauncherView: View {
         openTab(launch.tab, text: launch.text)
     }
 
+    /// A tab's global shortcut (Settings ▸ Shortcuts): open the launcher straight on that tab, or
+    /// close it when that tab is already in front. Dictionary / Translate start from the text
+    /// selected in the app in front, like Option+Space does.
+    private func openFromHotKey(_ tab: SpotlightKind) {
+        if isOpen, !dismissing, NSApp.isActive, browse == tab, scope == nil, activeCommand == nil {
+            hide()
+            return
+        }
+        var text = ""
+        if tab == .lookup || tab == .translation,
+           let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        {
+            text = SelectedTextReader.selection(in: front) ?? ""
+        }
+        show()
+        openTab(tab, text: text)
+    }
+
     /// Shows the results. Expands the panel if it isn't already.
     private func publish(_ rows: [SpotlightItem]) {
         var plain = Transaction()
@@ -1188,6 +1316,7 @@ struct SpotlightLauncherView: View {
             sel = (sel + delta + results.count) % results.count
         }
         scrollTarget = results[sel].id
+        scheduleClipPreview()
     }
 
     /// Enter.
@@ -1489,6 +1618,8 @@ struct SpotlightLauncherView: View {
             trashCount = nil
             translation = SpotlightTranslationBatch()
             panelHeight = Metric.barHeight
+            closeClipPreview()
+            hoveredRow = nil
         }
     }
 

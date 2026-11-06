@@ -235,6 +235,14 @@ extension ThemeSettingsView {
                         .overlay(themeStore.dividerColor())
                         .padding(.vertical, 4)
 
+                    sectionHeader("Shortcuts")
+
+                    ShortcutSettingsSection(settings: $settings)
+
+                    Divider()
+                        .overlay(themeStore.dividerColor())
+                        .padding(.vertical, 4)
+
                     sectionHeader("Tabs")
 
                     tabOrderRow

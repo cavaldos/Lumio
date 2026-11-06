@@ -43,7 +43,13 @@ private actor ClipboardWriter {
 struct ClipboardHistoryEntry: Identifiable, Equatable {
     let id: UUID
     let content: String
+    /// Last time it was copied.
     let capturedAt: Date
+    /// First time it was copied, and how many times since (re-copies included).
+    let firstCapturedAt: Date
+    let copyCount: Int
+    /// App it was copied from, when known.
+    let appBundleID: String?
     /// Derived once at capture time, not per render: rescanning full content on
     /// every body evaluation stutters keyboard navigation.
     let title: String
@@ -62,12 +68,18 @@ struct ClipboardHistoryEntry: Identifiable, Equatable {
         id: UUID = UUID(),
         content: String,
         capturedAt: Date = Date(),
+        firstCapturedAt: Date? = nil,
+        copyCount: Int = 1,
+        appBundleID: String? = nil,
         payload: String? = nil,
         storeID: Int64? = nil
     ) {
         self.id = id
         self.content = content
         self.capturedAt = capturedAt
+        self.firstCapturedAt = firstCapturedAt ?? capturedAt
+        self.copyCount = copyCount
+        self.appBundleID = appBundleID
         self.storeID = storeID
         self.title = Self.makeTitle(from: content)
         self.lineCount = Self.makeLineCount(from: content)
@@ -260,7 +272,9 @@ final class ClipboardHistoryStore: ObservableObject {
             if self.entries.isEmpty {
                 self.entries = stored.text.map {
                     ClipboardHistoryEntry(
-                        content: $0.content, capturedAt: $0.copiedAt, storeID: $0.id)
+                        content: $0.content, capturedAt: $0.copiedAt,
+                        firstCapturedAt: $0.firstCopiedAt, copyCount: $0.copyCount ?? 1,
+                        appBundleID: $0.appBundleID, storeID: $0.id)
                 }
             }
             if self.imageEntries.isEmpty {
@@ -284,6 +298,8 @@ final class ClipboardHistoryStore: ObservableObject {
             label: stored.content,
             hash: stored.contentHash,
             capturedAt: stored.copiedAt,
+            firstCapturedAt: stored.firstCopiedAt,
+            copyCount: stored.copyCount ?? 1,
             pixelSize: ClipboardImageFiles.pixelSize(ofFileAt: url) ?? .zero,
             byteSize: byteSize,
             appBundleID: stored.appBundleID,
@@ -292,8 +308,7 @@ final class ClipboardHistoryStore: ObservableObject {
 
     /// Off the main thread, but the row id comes BACK: without it `deleteEntry`
     /// has nothing to remove on disk and the clip returns next launch.
-    private func persist(_ content: String, entryID: UUID) {
-        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    private func persist(_ content: String, entryID: UUID, app: String?) {
         enqueueWrite { [weak self] in
             let storeID = await ClipboardWriter.shared.record(content: content, appBundleID: app)
             guard let self, let storeID else { return }
@@ -315,6 +330,9 @@ final class ClipboardHistoryStore: ObservableObject {
             id: existing.id,
             content: existing.content,
             capturedAt: existing.capturedAt,
+            firstCapturedAt: existing.firstCapturedAt,
+            copyCount: existing.copyCount,
+            appBundleID: existing.appBundleID,
             payload: existing.payload,
             storeID: storeID)
     }
@@ -408,19 +426,22 @@ final class ClipboardHistoryStore: ObservableObject {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
 
+        let app = Self.sourceAppBundleID()
         let captured: ClipboardHistoryEntry
         if let existingIndex = entries.firstIndex(where: { $0.content == text }) {
             // Keep the existing id so SwiftUI identity survives the re-capture.
             let existing = entries.remove(at: existingIndex)
             captured = ClipboardHistoryEntry(
-                id: existing.id, content: text, storeID: existing.storeID)
+                id: existing.id, content: text,
+                firstCapturedAt: existing.firstCapturedAt, copyCount: existing.copyCount + 1,
+                appBundleID: app ?? existing.appBundleID, storeID: existing.storeID)
         } else {
-            captured = ClipboardHistoryEntry(content: text)
+            captured = ClipboardHistoryEntry(content: text, appBundleID: app)
         }
         prepend(captured)
         // Re-copying replaces the stored row, so the id is re-attached here
         // rather than assumed to be the one this entry already carried.
-        persist(text, entryID: captured.id)
+        persist(text, entryID: captured.id, app: app)
     }
 
     /// Files and records a copied image, reporting whether the copy was one.
@@ -456,6 +477,8 @@ final class ClipboardHistoryStore: ObservableObject {
                     label: recorded.label,
                     hash: recorded.stored.hash,
                     capturedAt: capturedAt,
+                    firstCapturedAt: capturedAt,
+                    copyCount: 1,
                     pixelSize: recorded.stored.pixelSize,
                     byteSize: recorded.stored.byteSize,
                     appBundleID: appBundleID,
@@ -467,9 +490,25 @@ final class ClipboardHistoryStore: ObservableObject {
     /// Drops any older row for the same pixels: the store dedupes by hash, so
     /// two rows here would be one row on disk.
     private func prependImage(_ entry: ClipboardImageEntry) {
+        var entry = entry
+        if let existing = imageEntries.first(where: { $0.hash == entry.hash }) {
+            // A re-copy: same first copy time and app as before, one more copy.
+            entry = ClipboardImageEntry(
+                label: entry.label, hash: entry.hash, capturedAt: entry.capturedAt,
+                firstCapturedAt: existing.firstCapturedAt, copyCount: existing.copyCount + 1,
+                pixelSize: entry.pixelSize, byteSize: entry.byteSize,
+                appBundleID: entry.appBundleID ?? existing.appBundleID, storeID: entry.storeID)
+        }
         imageEntries.removeAll { $0.hash == entry.hash }
         imageEntries.insert(entry, at: 0)
         Self.trim(&imageEntries, to: maxImageEntries)
+    }
+
+    /// The app in front when something was copied. Lumio itself doesn't count (re-copying a clip
+    /// from the launcher): nil keeps the app the clip first came from.
+    private static func sourceAppBundleID() -> String? {
+        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        return app == Bundle.main.bundleIdentifier ? nil : app
     }
 
     func searchImages(_ term: String) -> [ClipboardImageEntry] {

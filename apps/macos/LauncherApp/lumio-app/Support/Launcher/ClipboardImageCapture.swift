@@ -13,7 +13,11 @@ nonisolated struct ClipboardImageEntry: Identifiable, Equatable {
     /// Identity of the pixels, and so of the row: a re-copy lands on the row it
     /// already had rather than a new one.
     let hash: String
+    /// Last time it was copied.
     let capturedAt: Date
+    /// First time it was copied, and how many times since (re-copies included).
+    let firstCapturedAt: Date
+    let copyCount: Int
     let pixelSize: CGSize
     let byteSize: Int
     let appBundleID: String?

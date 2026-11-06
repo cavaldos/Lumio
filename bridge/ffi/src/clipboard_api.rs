@@ -46,6 +46,10 @@ struct ClipboardEntryJSON {
     app_bundle_id: Option<String>,
     #[serde(rename = "copiedAtUnixS")]
     copied_at_unix_s: i64,
+    #[serde(rename = "firstCopiedAtUnixS")]
+    first_copied_at_unix_s: i64,
+    #[serde(rename = "copyCount")]
+    copy_count: i64,
 }
 
 impl From<ClipboardEntry> for ClipboardEntryJSON {
@@ -56,6 +60,8 @@ impl From<ClipboardEntry> for ClipboardEntryJSON {
             content_hash: entry.content_hash,
             app_bundle_id: entry.app_bundle_id,
             copied_at_unix_s: entry.copied_at_unix_s,
+            first_copied_at_unix_s: entry.first_copied_at_unix_s,
+            copy_count: entry.copy_count,
         }
     }
 }

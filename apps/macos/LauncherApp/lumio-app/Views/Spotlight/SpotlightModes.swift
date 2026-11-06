@@ -64,7 +64,7 @@ enum SpotlightMode: Equatable {
         switch self {
         case .search: "⏎ open   ⇥ filter   ⌘K actions"
         case .commandMenu: "⏎ enter command"
-        case .clipboard: "⏎ copy"
+        case .clipboard: "⏎ copy   ⌘D delete"
         case .lookup: "click a linked word to look it up"
         case .translate: "⏎ copy translation"
         case .process: "⏎ measure CPU   ⌘K actions"
@@ -107,13 +107,6 @@ enum SpotlightCommands {
 
 /// Builds the rows for each mode.
 enum SpotlightModeRows {
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
     static func commandMenu(_ filter: String) -> [SpotlightItem] {
         AppConstants.Launcher.commandCatalog(matching: filter).enumerated().map { index, command in
             SpotlightItem(
@@ -124,7 +117,7 @@ enum SpotlightModeRows {
         }
     }
 
-    /// Clipboard tab: copied text and images in one list, newest first (like Maccy).
+    /// Clipboard tab: copied text and images in one list, newest first, one line each (like Maccy).
     static func clipboardAll(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
         let texts = zip(store.search(term).map(\.capturedAt), clipboard(store, term: term))
         let images = zip(store.searchImages(term).map(\.capturedAt), clipboardImages(store, term: term))
@@ -138,7 +131,6 @@ enum SpotlightModeRows {
             SpotlightItem(
                 id: "clip|\(entry.id.uuidString)", name: entry.title, kind: .clip,
                 colors: "#c3a6ff,#7a52d6",
-                meta: "\(entry.characterCount) characters · \(timeFormatter.string(from: entry.capturedAt))",
                 symbol: "doc.on.clipboard", payload: entry.payload ?? entry.content, clipID: entry.id
             )
         }

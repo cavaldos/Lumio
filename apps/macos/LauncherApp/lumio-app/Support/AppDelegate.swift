@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // .lookToggleWindowRequested → toggleWindowVisibility() path just works.
     private var launcherWindow: NSWindow?
     private var settingsObserver: NSObjectProtocol?
+    private var hotKeyObservers: [NSObjectProtocol] = []
 
     // Grace period allows macOS "Quit & Reopen" handoff to release the previous process lock.
     private static let relaunchGracePeriodSeconds: TimeInterval = 0.8
@@ -33,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        hotKeyManager.registerToggleHotKey()
+        hotKeyManager.registerFromSettings()
+        observeHotKeySettings()
         NSApp.setActivationPolicy(.accessory)
 
         // Create the launcher window ourselves (hidden) so the launcher view mounts
@@ -54,6 +56,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Sparkle: daily update checks, download + install on the user's OK.
         UpdateChecker.shared.start()
+    }
+
+    /// Shortcuts changed in Settings take effect right away; recording one pauses them all.
+    private func observeHotKeySettings() {
+        let center = NotificationCenter.default
+        hotKeyObservers = [
+            center.addObserver(forName: .lookHotKeysChanged, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.hotKeyManager.registerFromSettings() }
+            },
+            center.addObserver(forName: .lookHotKeyRecordingChanged, object: nil, queue: .main) { [weak self] note in
+                let recording = note.object as? Bool ?? false
+                MainActor.assumeIsolated { self?.hotKeyManager.setPaused(recording) }
+            },
+        ]
     }
 
     func applicationWillTerminate(_ notification: Notification) {

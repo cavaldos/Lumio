@@ -17,4 +17,10 @@ extension Notification.Name {
     static let lookToggleSettingsRequested = Notification.Name("lumio.toggleSettingsRequested")
     static let lookActivateLauncherRequested = Notification.Name("lumio.activateLauncherRequested")
     static let lookHideLauncherRequested = Notification.Name("lumio.hideLauncherRequested")
+    /// A tab's global shortcut was pressed; `object` is the SpotlightKind raw value.
+    static let lookOpenTabRequested = Notification.Name("lumio.openTabRequested")
+    /// The global shortcuts in Settings changed: register them again.
+    static let lookHotKeysChanged = Notification.Name("lumio.hotKeysChanged")
+    /// Settings is recording a shortcut (`object` = Bool): pause the global ones meanwhile.
+    static let lookHotKeyRecordingChanged = Notification.Name("lumio.hotKeyRecordingChanged")
 }
