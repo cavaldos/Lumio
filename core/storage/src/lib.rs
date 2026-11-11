@@ -104,6 +104,8 @@ pub struct ClipboardEntry {
     pub first_copied_at_unix_s: i64,
     /// How many times it was copied, re-copies included.
     pub copy_count: i64,
+    /// Pinned clips list first and are never pruned.
+    pub pinned: bool,
 }
 
 pub struct SqliteStore {
@@ -570,17 +572,18 @@ impl SqliteStore {
         // within the same second the id breaks the recency tie - so a re-copy
         // would sort below something older.
         // The row being replaced hands over its app, first copy time and copy count.
-        let previous: Option<(Option<String>, i64, i64)> = tx
+        let previous: Option<(Option<String>, i64, i64, bool)> = tx
             .query_row(
-                "SELECT app_bundle_id, COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count
+                "SELECT app_bundle_id, COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count,
+                        pinned
                  FROM clipboard_entries WHERE content_hash = ?1",
                 params![hash],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()?;
-        let (previous_app, first_copied, copy_count) = match previous {
-            Some((app, first, count)) => (app, first, count.max(0) + 1),
-            None => (None, now, 1),
+        let (previous_app, first_copied, copy_count, pinned) = match previous {
+            Some((app, first, count, pinned)) => (app, first, count.max(0) + 1, pinned),
+            None => (None, now, 1, false),
         };
         tx.execute(
             "DELETE FROM clipboard_entries WHERE content_hash = ?1",
@@ -590,9 +593,9 @@ impl SqliteStore {
         tx.execute(
             "INSERT INTO clipboard_entries(
                  content, content_hash, kind, app_bundle_id, copied_at_unix_s,
-                 first_copied_at_unix_s, copy_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![content, hash, kind, app, now, first_copied, copy_count],
+                 first_copied_at_unix_s, copy_count, pinned)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![content, hash, kind, app, now, first_copied, copy_count, pinned],
         )?;
         let row_id = tx.last_insert_rowid();
         let cap = if kind == CLIPBOARD_KIND_IMAGE {
@@ -602,12 +605,13 @@ impl SqliteStore {
         };
         // Only the overflow: `WHERE id NOT IN (SELECT ... LIMIT cap)` would
         // scan the whole table on every copy, for nothing until the 5,001st.
-        // Per kind, so the two histories cannot evict each other.
+        // Per kind, so the two histories cannot evict each other. Pinned
+        // clips neither count toward the cap nor get pruned.
         tx.execute(
             "DELETE FROM clipboard_entries
-             WHERE kind = ?1 AND (copied_at_unix_s, id) < (
+             WHERE kind = ?1 AND pinned = 0 AND (copied_at_unix_s, id) < (
                SELECT copied_at_unix_s, id FROM clipboard_entries
-               WHERE kind = ?1
+               WHERE kind = ?1 AND pinned = 0
                ORDER BY copied_at_unix_s DESC, id DESC
                LIMIT 1 OFFSET ?2
              )",
@@ -638,14 +642,16 @@ impl SqliteStore {
                 copied_at_unix_s: row.get(5)?,
                 first_copied_at_unix_s: row.get(6)?,
                 copy_count: row.get(7)?,
+                pinned: row.get(8)?,
             })
         };
         let select = "SELECT id, content, kind, content_hash, app_bundle_id, copied_at_unix_s,
-                             COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count
+                             COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count,
+                             pinned
                       FROM clipboard_entries WHERE kind = ?1";
         let rows = if query.is_empty() {
             let mut stmt = self.conn.prepare(&format!(
-                "{select} ORDER BY copied_at_unix_s DESC, id DESC LIMIT ?2"
+                "{select} ORDER BY pinned DESC, copied_at_unix_s DESC, id DESC LIMIT ?2"
             ))?;
             let mapped = stmt.query_map(params![kind, limit], map_row)?;
             mapped.collect::<rusqlite::Result<Vec<_>>>()?
@@ -653,7 +659,7 @@ impl SqliteStore {
             let pattern = format!("%{}%", like_escape(query));
             let mut stmt = self.conn.prepare(&format!(
                 "{select} AND content LIKE ?2 ESCAPE '\\'
-                 ORDER BY copied_at_unix_s DESC, id DESC LIMIT ?3"
+                 ORDER BY pinned DESC, copied_at_unix_s DESC, id DESC LIMIT ?3"
             ))?;
             let mapped = stmt.query_map(params![kind, pattern, limit], map_row)?;
             mapped.collect::<rusqlite::Result<Vec<_>>>()?
@@ -669,6 +675,15 @@ impl SqliteStore {
             .prepare("SELECT content_hash FROM clipboard_entries WHERE kind = ?1")?;
         let mapped = stmt.query_map(params![CLIPBOARD_KIND_IMAGE], |row| row.get(0))?;
         Ok(mapped.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Pins or unpins a clip. Returns whether the row exists.
+    pub fn set_clipboard_pinned(&self, id: i64, pinned: bool) -> StorageResult<bool> {
+        let changed = self.conn.execute(
+            "UPDATE clipboard_entries SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned],
+        )?;
+        Ok(changed > 0)
     }
 
     pub fn delete_clipboard_entry(&self, id: i64) -> StorageResult<bool> {
@@ -985,6 +1000,12 @@ impl SqliteStore {
             "copy_count",
             "INTEGER NOT NULL DEFAULT 1",
         )?;
+        ensure_column_exists(
+            &self.conn,
+            "clipboard_entries",
+            "pinned",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
 
         Ok(())
     }
@@ -1173,6 +1194,36 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn pinned_clips_list_first_and_survive_pruning() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        let pinned = store
+            .record_clipboard_entry("keep me", None)
+            .unwrap()
+            .unwrap();
+        assert!(store.set_clipboard_pinned(pinned, true).unwrap());
+        for i in 0..(MAX_CLIPBOARD_ROWS + 5) {
+            store
+                .record_clipboard_entry(&format!("clip {i}"), None)
+                .unwrap();
+        }
+        let all = store
+            .clipboard_entries(CLIPBOARD_KIND_TEXT, "", MAX_CLIPBOARD_ROWS + 100)
+            .unwrap();
+        assert_eq!(all.len(), MAX_CLIPBOARD_ROWS + 1);
+        assert_eq!(all[0].content, "keep me");
+        assert!(all[0].pinned);
+
+        // A re-copy keeps the pin.
+        let recopied = store
+            .record_clipboard_entry("keep me", None)
+            .unwrap()
+            .unwrap();
+        let first = &store.clipboard_entries(CLIPBOARD_KIND_TEXT, "", 1).unwrap()[0];
+        assert_eq!(first.id, recopied);
+        assert!(first.pinned);
     }
 
     #[test]

@@ -136,6 +136,8 @@ struct SpotlightItem: Identifiable, Equatable {
     var payload: String? = nil
     /// Text clipboard row: id in ClipboardHistoryStore.
     var clipID: UUID? = nil
+    /// Clipboard row pinned to the top of the history.
+    var isPinned = false
 
     /// A real file or folder on disk (not a URL scheme), the target of editor/terminal/trash.
     var isFileTarget: Bool {

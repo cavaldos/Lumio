@@ -50,6 +50,7 @@ struct ClipboardEntryJSON {
     first_copied_at_unix_s: i64,
     #[serde(rename = "copyCount")]
     copy_count: i64,
+    pinned: bool,
 }
 
 impl From<ClipboardEntry> for ClipboardEntryJSON {
@@ -62,6 +63,7 @@ impl From<ClipboardEntry> for ClipboardEntryJSON {
             copied_at_unix_s: entry.copied_at_unix_s,
             first_copied_at_unix_s: entry.first_copied_at_unix_s,
             copy_count: entry.copy_count,
+            pinned: entry.pinned,
         }
     }
 }
@@ -195,6 +197,13 @@ pub(crate) fn lumio_clipboard_list_json_impl(
     let cstring =
         CString::new(json).unwrap_or_else(|_| CString::new(JSON_EMPTY_ARRAY).expect("valid"));
     store_json_allocation(cstring)
+}
+
+pub(crate) fn lumio_clipboard_set_pinned_impl(id: i64, pinned: bool) -> bool {
+    store()
+        .as_ref()
+        .and_then(|(_, store)| store.set_clipboard_pinned(id, pinned).ok())
+        .unwrap_or(false)
 }
 
 pub(crate) fn lumio_clipboard_delete_impl(id: i64) -> bool {

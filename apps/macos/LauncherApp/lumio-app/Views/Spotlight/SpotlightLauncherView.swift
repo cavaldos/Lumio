@@ -722,6 +722,7 @@ struct SpotlightLauncherView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .trailing) { clipRowButtons(item, selected: selected) }
         .padding(.horizontal, 12)
         .frame(height: isImage ? Self.clipImageRowHeight : Self.clipRowHeight)
         .modifier(SpotlightSelection(
@@ -731,6 +732,65 @@ struct SpotlightLauncherView: View {
             reduceMotion: reduceMotion
         ))
         .contentShape(Rectangle())
+    }
+
+    /// Pin and delete, on the selected clip. A pinned clip always shows its pin.
+    @ViewBuilder
+    private func clipRowButtons(_ item: SpotlightItem, selected: Bool) -> some View {
+        if selected || item.isPinned {
+            HStack(spacing: 4) {
+                clipIconButton(
+                    item.isPinned ? "pin.fill" : "pin",
+                    help: item.isPinned ? "Unpin (⌘P)" : "Pin (⌘P)",
+                    active: item.isPinned
+                ) { togglePin(item) }
+                if selected {
+                    clipIconButton("trash", help: "Delete (⌘D)") { deleteClip(item) }
+                }
+            }
+            .padding(.leading, 6)
+        }
+    }
+
+    private func clipIconButton(
+        _ symbol: String, help: String, active: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .frame(width: 24, height: 24)
+                .background(palette.kbd, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func togglePin(_ item: SpotlightItem) {
+        if item.kind == .clip, let id = item.clipID {
+            clipboardStore.togglePin(id: id)
+        } else if item.kind == .clipImage, let id = item.payload {
+            clipboardStore.toggleImagePin(id: id)
+        } else {
+            return
+        }
+        toast(item.isPinned ? "Unpinned" : "Pinned")
+    }
+
+    /// Removes the clip from history. Returns false when `item` isn't a clip.
+    @discardableResult
+    private func deleteClip(_ item: SpotlightItem) -> Bool {
+        if item.kind == .clip, let id = item.clipID {
+            clipboardStore.deleteEntry(id: id)
+            toast("Clipboard item deleted")
+        } else if item.kind == .clipImage, let id = item.payload {
+            clipboardStore.deleteImageEntry(id: id)
+            toast("Image deleted")
+        } else {
+            return false
+        }
+        return true
     }
 
     private func standardRow(_ item: SpotlightItem, selected: Bool) -> some View {
@@ -1456,12 +1516,9 @@ struct SpotlightLauncherView: View {
         }
     }
 
+    /// Escape always closes the launcher, even inside a mode (Clipboard, Dictionary, …).
+    /// ⌫ on an empty field still leaves the mode without closing.
     private func handleEscape() {
-        if browse != nil || scope != nil || activeCommand != nil {
-            exitChip()
-            return
-        }
-        // Typed text is kept: Escape just hides, and the next open shows the same search.
         hide()
     }
 
@@ -1529,15 +1586,15 @@ struct SpotlightLauncherView: View {
         }
         if flags == .command, key == "d", let item = previewItem {
             // Clipboard rows: ⌘D removes the clip from history instead.
-            if item.kind == .clip, let id = item.clipID {
-                clipboardStore.deleteEntry(id: id)
-                toast("Clipboard item deleted")
-            } else if item.kind == .clipImage, let id = item.payload {
-                clipboardStore.deleteImageEntry(id: id)
-                toast("Image deleted")
-            } else {
+            if !deleteClip(item) {
                 performShortcut(SpotlightBackend.trashAction(for: item) ?? .moveToTrash)
             }
+            return true
+        }
+        if flags == .command, key == "p", let item = previewItem,
+           item.kind == .clip || item.kind == .clipImage
+        {
+            togglePin(item)
             return true
         }
         // ⌘↩ — search the web for the typed text (like the legacy launcher).

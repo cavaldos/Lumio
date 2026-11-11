@@ -35,6 +35,10 @@ private actor ClipboardWriter {
         EngineBridge.shared.deleteClipboardEntry(id: id)
     }
 
+    func setPinned(id: Int64, pinned: Bool) {
+        EngineBridge.shared.setClipboardPinned(id: id, pinned: pinned)
+    }
+
     func clear() {
         EngineBridge.shared.clearClipboardHistory()
     }
@@ -63,6 +67,8 @@ struct ClipboardHistoryEntry: Identifiable, Equatable {
     /// the database. Without it, deleting a clip here would leave it in the
     /// stored corpus - a clip the user believes they erased.
     let storeID: Int64?
+    /// Pinned clips list first and are never trimmed.
+    var isPinned: Bool
 
     init(
         id: UUID = UUID(),
@@ -72,7 +78,8 @@ struct ClipboardHistoryEntry: Identifiable, Equatable {
         copyCount: Int = 1,
         appBundleID: String? = nil,
         payload: String? = nil,
-        storeID: Int64? = nil
+        storeID: Int64? = nil,
+        isPinned: Bool = false
     ) {
         self.id = id
         self.content = content
@@ -81,6 +88,7 @@ struct ClipboardHistoryEntry: Identifiable, Equatable {
         self.copyCount = copyCount
         self.appBundleID = appBundleID
         self.storeID = storeID
+        self.isPinned = isPinned
         self.title = Self.makeTitle(from: content)
         self.lineCount = Self.makeLineCount(from: content)
         self.characterCount = content.count
@@ -164,18 +172,24 @@ final class ClipboardHistoryStore: ObservableObject {
     private func applyMaxEntries(_ newValue: Int) {
         guard newValue != maxEntries else { return }
         maxEntries = newValue
-        Self.trim(&entries, to: maxEntries)
+        Self.trim(&entries, to: maxEntries, isPinned: \.isPinned)
     }
 
     private func applyMaxImageEntries(_ newValue: Int) {
         guard newValue != maxImageEntries else { return }
         maxImageEntries = newValue
-        Self.trim(&imageEntries, to: maxImageEntries)
+        Self.trim(&imageEntries, to: maxImageEntries, isPinned: \.isPinned)
     }
 
-    private static func trim<Row>(_ rows: inout [Row], to limit: Int) {
+    /// Keeps the newest `limit` unpinned rows; pinned rows never count and never go.
+    private static func trim<Row>(_ rows: inout [Row], to limit: Int, isPinned: (Row) -> Bool) {
         guard rows.count > limit else { return }
-        rows.removeLast(rows.count - limit)
+        var kept = 0
+        rows.removeAll { row in
+            if isPinned(row) { return false }
+            kept += 1
+            return kept > limit
+        }
     }
 
     private func enqueueWrite(_ work: @escaping @Sendable () async -> Void) {
@@ -201,8 +215,8 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     /// Resolves `clipboard_history_limit` from already-parsed config values, falling back to
-    /// the default (10) when the key is missing, unparseable, or outside the accepted
-    /// [10, 100] range.
+    /// the default (1000) when the key is missing, unparseable, or outside the accepted
+    /// [10, 1000] range.
     private static func resolveMaxEntries(from values: [String: String]) -> Int {
         typealias Clipboard = AppConstants.Launcher.Clipboard
         return resolveLimit(
@@ -274,7 +288,8 @@ final class ClipboardHistoryStore: ObservableObject {
                     ClipboardHistoryEntry(
                         content: $0.content, capturedAt: $0.copiedAt,
                         firstCapturedAt: $0.firstCopiedAt, copyCount: $0.copyCount ?? 1,
-                        appBundleID: $0.appBundleID, storeID: $0.id)
+                        appBundleID: $0.appBundleID, storeID: $0.id,
+                        isPinned: $0.pinned ?? false)
                 }
             }
             if self.imageEntries.isEmpty {
@@ -303,7 +318,8 @@ final class ClipboardHistoryStore: ObservableObject {
             pixelSize: ClipboardImageFiles.pixelSize(ofFileAt: url) ?? .zero,
             byteSize: byteSize,
             appBundleID: stored.appBundleID,
-            storeID: stored.id)
+            storeID: stored.id,
+            isPinned: stored.pinned ?? false)
     }
 
     /// Off the main thread, but the row id comes BACK: without it `deleteEntry`
@@ -334,7 +350,12 @@ final class ClipboardHistoryStore: ObservableObject {
             copyCount: existing.copyCount,
             appBundleID: existing.appBundleID,
             payload: existing.payload,
-            storeID: storeID)
+            storeID: storeID,
+            isPinned: existing.isPinned)
+        // Pinned before its row existed: the pin has to reach disk too.
+        if existing.isPinned {
+            enqueueWrite { await ClipboardWriter.shared.setPinned(id: storeID, pinned: true) }
+        }
     }
 
     /// Forgets every clip, in memory and on disk. The promise that makes
@@ -360,6 +381,24 @@ final class ClipboardHistoryStore: ObservableObject {
         }
     }
 
+    func togglePin(id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].isPinned.toggle()
+        persistPin(storeID: entries[index].storeID, pinned: entries[index].isPinned)
+    }
+
+    func toggleImagePin(id: String) {
+        guard let index = imageEntries.firstIndex(where: { $0.id == id }) else { return }
+        imageEntries[index].isPinned.toggle()
+        persistPin(storeID: imageEntries[index].storeID, pinned: imageEntries[index].isPinned)
+    }
+
+    /// No row id yet means the write is in flight; `attachStoreID` sends the pin then.
+    private func persistPin(storeID: Int64?, pinned: Bool) {
+        guard let storeID else { return }
+        enqueueWrite { await ClipboardWriter.shared.setPinned(id: storeID, pinned: pinned) }
+    }
+
     func deleteEntry(id: UUID) {
         let storeIDs = entries.filter { $0.id == id }.compactMap(\.storeID)
         entries.removeAll { $0.id == id }
@@ -372,7 +411,7 @@ final class ClipboardHistoryStore: ObservableObject {
     /// Inserts `entry` at the front and drops anything beyond `maxEntries`.
     private func prepend(_ entry: ClipboardHistoryEntry) {
         entries.insert(entry, at: 0)
-        Self.trim(&entries, to: maxEntries)
+        Self.trim(&entries, to: maxEntries, isPinned: \.isPinned)
     }
 
     func setMonitoringMode(_ mode: MonitoringMode) {
@@ -434,7 +473,8 @@ final class ClipboardHistoryStore: ObservableObject {
             captured = ClipboardHistoryEntry(
                 id: existing.id, content: text,
                 firstCapturedAt: existing.firstCapturedAt, copyCount: existing.copyCount + 1,
-                appBundleID: app ?? existing.appBundleID, storeID: existing.storeID)
+                appBundleID: app ?? existing.appBundleID, storeID: existing.storeID,
+                isPinned: existing.isPinned)
         } else {
             captured = ClipboardHistoryEntry(content: text, appBundleID: app)
         }
@@ -497,11 +537,12 @@ final class ClipboardHistoryStore: ObservableObject {
                 label: entry.label, hash: entry.hash, capturedAt: entry.capturedAt,
                 firstCapturedAt: existing.firstCapturedAt, copyCount: existing.copyCount + 1,
                 pixelSize: entry.pixelSize, byteSize: entry.byteSize,
-                appBundleID: entry.appBundleID ?? existing.appBundleID, storeID: entry.storeID)
+                appBundleID: entry.appBundleID ?? existing.appBundleID, storeID: entry.storeID,
+                isPinned: existing.isPinned)
         }
         imageEntries.removeAll { $0.hash == entry.hash }
         imageEntries.insert(entry, at: 0)
-        Self.trim(&imageEntries, to: maxImageEntries)
+        Self.trim(&imageEntries, to: maxImageEntries, isPinned: \.isPinned)
     }
 
     /// The app in front when something was copied. Lumio itself doesn't count (re-copying a clip

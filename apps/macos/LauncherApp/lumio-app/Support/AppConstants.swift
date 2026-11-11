@@ -154,9 +154,9 @@ enum AppConstants {
             // How many clips history keeps. `maxEntries` is the default/fallback used
             // when `clipboard_history_limit` in ~/.lumio/config is absent or out of the
             // [minEntries, maxEntriesLimit] range. See ClipboardHistoryStore.
-            static let maxEntries = 10
+            static let maxEntries = 1000
             static let minEntries = 10
-            static let maxEntriesLimit = 100
+            static let maxEntriesLimit = 1000
             static let historyLimitConfigKey = "clipboard_history_limit"
             static let maxStoredCharacters = 30_000
             /// Row label length; longer clips are elided.

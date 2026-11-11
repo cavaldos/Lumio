@@ -24,6 +24,8 @@ nonisolated struct ClipboardImageEntry: Identifiable, Equatable {
     /// Row id in the persisted history, without which a delete here would
     /// leave the image on disk to return next launch.
     let storeID: Int64?
+    /// Pinned clips list first and are never trimmed.
+    var isPinned = false
 
     var id: String { hash }
     var fileURL: URL? { ClipboardImageFiles.fileURL(forHash: hash) }

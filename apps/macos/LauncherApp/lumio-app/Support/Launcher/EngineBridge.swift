@@ -80,6 +80,10 @@ private func lumio_clipboard_images_dir() -> UnsafeMutablePointer<CChar>?
 nonisolated
 private func lumio_clipboard_list_json(_ kind: UnsafePointer<CChar>?, _ query: UnsafePointer<CChar>?, _ limit: UInt32) -> UnsafeMutablePointer<CChar>?
 
+@_silgen_name("lumio_clipboard_set_pinned")
+nonisolated
+private func lumio_clipboard_set_pinned(_ id: Int64, _ pinned: Bool) -> Bool
+
 @_silgen_name("lumio_clipboard_delete")
 nonisolated
 private func lumio_clipboard_delete(_ id: Int64) -> Bool
@@ -261,6 +265,8 @@ final class EngineBridge: @unchecked Sendable {
         /// Optional: an older core sends neither.
         let firstCopiedAtUnixS: Int64?
         let copyCount: Int?
+        /// Optional: an older core doesn't send it.
+        let pinned: Bool?
 
         var copiedAt: Date { Date(timeIntervalSince1970: TimeInterval(copiedAtUnixS)) }
         var firstCopiedAt: Date {
@@ -340,6 +346,12 @@ final class EngineBridge: @unchecked Sendable {
         defer { lumio_free_cstring(ptr) }
         guard let data = String(cString: ptr).data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([ClipboardEntry].self, from: data)) ?? []
+    }
+
+    /// Pinned clips list first and are never pruned.
+    @discardableResult
+    nonisolated func setClipboardPinned(id: Int64, pinned: Bool) -> Bool {
+        lumio_clipboard_set_pinned(id, pinned)
     }
 
     @discardableResult

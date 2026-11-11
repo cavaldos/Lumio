@@ -245,6 +245,15 @@ pub extern "C" fn lumio_clipboard_list_json(
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Pins or unpins a clip: pinned clips list first and are never pruned.
+#[unsafe(no_mangle)]
+pub extern "C" fn lumio_clipboard_set_pinned(id: i64, pinned: bool) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        clipboard_api::lumio_clipboard_set_pinned_impl(id, pinned)
+    }))
+    .unwrap_or(false)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn lumio_clipboard_delete(id: i64) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

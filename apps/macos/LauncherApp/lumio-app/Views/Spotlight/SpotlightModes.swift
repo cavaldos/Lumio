@@ -64,7 +64,7 @@ enum SpotlightMode: Equatable {
         switch self {
         case .search: "⏎ open   ⇥ filter   ⌘K actions"
         case .commandMenu: "⏎ enter command"
-        case .clipboard: "⏎ copy   ⌘D delete"
+        case .clipboard: "⏎ copy   ⌘P pin   ⌘D delete"
         case .lookup: "click a linked word to look it up"
         case .translate: "⏎ copy translation"
         case .process: "⏎ measure CPU   ⌘K actions"
@@ -117,12 +117,16 @@ enum SpotlightModeRows {
         }
     }
 
-    /// Clipboard tab: copied text and images in one list, newest first, one line each (like Maccy).
+    /// Clipboard tab: copied text and images in one list, pinned first, then newest first,
+    /// one line each (like Maccy).
     static func clipboardAll(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
         let texts = zip(store.search(term).map(\.capturedAt), clipboard(store, term: term))
         let images = zip(store.searchImages(term).map(\.capturedAt), clipboardImages(store, term: term))
         return (Array(texts) + Array(images))
-            .sorted { $0.0 > $1.0 }
+            .sorted { lhs, rhs in
+                if lhs.1.isPinned != rhs.1.isPinned { return lhs.1.isPinned }
+                return lhs.0 > rhs.0
+            }
             .map(\.1)
     }
 
@@ -131,7 +135,8 @@ enum SpotlightModeRows {
             SpotlightItem(
                 id: "clip|\(entry.id.uuidString)", name: entry.title, kind: .clip,
                 colors: "#c3a6ff,#7a52d6",
-                symbol: "doc.on.clipboard", payload: entry.payload ?? entry.content, clipID: entry.id
+                symbol: "doc.on.clipboard", payload: entry.payload ?? entry.content, clipID: entry.id,
+                isPinned: entry.isPinned
             )
         }
     }
@@ -144,7 +149,7 @@ enum SpotlightModeRows {
                 colors: "#c3a6ff,#7a52d6",
                 meta: "\(Int(entry.pixelSize.width))×\(Int(entry.pixelSize.height)) · \(size)",
                 target: entry.fileURL?.path, iconPath: entry.thumbnailURL?.path ?? entry.fileURL?.path,
-                symbol: "photo", payload: entry.id
+                symbol: "photo", payload: entry.id, isPinned: entry.isPinned
             )
         }
     }
@@ -255,11 +260,12 @@ enum SpotlightModeRows {
         ("⌘E", "Open in editor"),
         ("⌘T", "Open in terminal"),
         ("⌘D", "Move to Trash · Empty Trash on the Trash pin · delete a clip"),
+        ("⌘P", "Pin or unpin a clip"),
         ("⌘H", "This help"),
         ("⌘⇧H", "Hide the selected app from results"),
         ("⌘/", "Open the last command"),
         ("⌘⇧,", "Settings"),
-        ("Esc", "Leave the current mode, or close"),
+        ("Esc", "Close"),
     ]
 
     // MARK: - Translation (tw" bar, tr")
