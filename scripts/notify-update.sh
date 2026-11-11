@@ -22,10 +22,9 @@ cd "$(dirname "$0")/.."
 REPO="cavaldos/Lumio"
 RELEASES_REPO="cavaldos/macos-app-releases"
 APPCAST="lumio/appcast.xml"
-# Lumio v0.0.5 and older still read their feed from cavaldos/lumio-releases, so
-# mirror the appcast there until most users have updated. Set to "" before
-# deleting that repo.
-LEGACY_REPO="cavaldos/lumio-releases"
+# Old feed of Lumio v0.0.5 and older. cavaldos/lumio-releases has been deleted,
+# so there is nothing left to mirror to.
+LEGACY_REPO=""
 TAP_REPO="cavaldos/homebrew-tap"
 ASSET="Lumio.dmg"
 FEED_URL="https://cavaldos.github.io/macos-app-releases/$APPCAST"
