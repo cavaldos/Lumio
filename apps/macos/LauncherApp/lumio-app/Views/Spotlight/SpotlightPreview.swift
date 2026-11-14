@@ -135,7 +135,7 @@ struct SpotlightPreviewView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .web:
-            note("Search Google for “\(item.name)”.", key: "⏎", action: "open browser")
+            SpotlightWebInfoView(term: item.name)
         case .url:
             note(item.target ?? item.name, key: "⏎", action: "open link")
         case .setting:
@@ -397,5 +397,82 @@ struct SpotlightCodePreview: View {
               let size = attrs[.size] as? Int64
         else { return nil }
         return HighlightedTextCache.key(path: path, mtime: mtime, size: size)
+    }
+}
+
+
+/// Web tab: a short Wikipedia summary of the typed term (like Look Up's Siri Knowledge),
+/// falling back to the plain "search Google" note when nothing is found.
+struct SpotlightWebInfoView: View {
+    let term: String
+
+    private struct Summary {
+        var title: String
+        var subtitle: String?
+        var extract: String
+        var url: URL?
+    }
+
+    private enum Phase { case loading, found(Summary), none }
+    @State private var phase: Phase = .loading
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch phase {
+            case .loading:
+                Text("Looking up “\(term)”…").font(.system(size: 14)).foregroundStyle(.secondary)
+            case .found(let s):
+                Text(s.title).font(.system(size: 15, weight: .semibold))
+                if let sub = s.subtitle {
+                    Text(sub).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                ScrollView {
+                    Text(s.extract)
+                        .font(.system(size: 13))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollIndicators(.never)
+                Text("Wikipedia").font(.system(size: 11)).foregroundStyle(.tertiary)
+            case .none:
+                Text("No summary found. Search Google for “\(term)”.")
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                Text("⏎").font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text("open browser").font(.system(size: 13)).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: term) { await load() }
+    }
+
+    private func load() async {
+        phase = .loading
+        try? await Task.sleep(nanoseconds: 300_000_000)  // debounce typing
+        if Task.isCancelled { return }
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let enc = trimmed.replacingOccurrences(of: " ", with: "_")
+                .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "https://en.wikipedia.org/api/rest_v1/page/summary/\(enc)?redirect=true")
+        else { phase = .none; return }
+        var req = URLRequest(url: url, timeoutInterval: 6)
+        req.setValue("Lumio", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if Task.isCancelled { return }
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let extract = json["extract"] as? String, !extract.isEmpty,
+                  (json["type"] as? String) != "disambiguation"
+            else { phase = .none; return }
+            phase = .found(Summary(
+                title: json["title"] as? String ?? trimmed,
+                subtitle: json["description"] as? String,
+                extract: extract, url: nil))
+        } catch {
+            if !Task.isCancelled { phase = .none }
+        }
     }
 }

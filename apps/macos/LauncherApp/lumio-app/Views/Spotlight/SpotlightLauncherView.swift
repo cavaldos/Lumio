@@ -721,6 +721,7 @@ struct SpotlightLauncherView: View {
                     .truncationMode(.middle)
             }
         }
+        .padding(.trailing, selected ? (item.isPinned ? 58 : 58) : (item.isPinned ? 30 : 0))
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .trailing) { clipRowButtons(item, selected: selected) }
         .padding(.horizontal, 12)
@@ -900,6 +901,19 @@ struct SpotlightLauncherView: View {
             Text(footerHint)
             Text("esc close")
             Spacer()
+            if isClipboard {
+                let armed = armedConfirm == "clipclear"
+                Button {
+                    confirm("clipclear", prompt: "Click Clear again to delete all clipboard history") {
+                        clipboardStore.clearHistory()
+                        toast("Clipboard cleared")
+                    }
+                } label: {
+                    Text(armed ? "Click again to clear" : "Clear all")
+                        .foregroundStyle(armed ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                }
+                .buttonStyle(.plain)
+            }
             if !results.isEmpty {
                 Text("\(results.count) results")
             }
@@ -1417,10 +1431,16 @@ struct SpotlightLauncherView: View {
                let entry = clipboardStore.imageEntries.first(where: { $0.id == hash }),
                clipboardStore.copyImage(entry: entry)
             {
-                toast("Copied image")
+                hide()
             } else {
                 toast("Couldn't copy image")
             }
+            return
+        case .clip:
+            guard let text = item.payload else { toast("Nothing to copy"); return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            hide()
             return
         case .lookup:
             return  // definitions are already shown in the right half
