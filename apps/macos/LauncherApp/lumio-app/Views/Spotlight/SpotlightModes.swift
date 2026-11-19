@@ -229,7 +229,7 @@ enum SpotlightModeRows {
     static func help(_ filter: String) -> [SpotlightItem] {
         let tabs = SpotlightKind.toolTabs.map { ($0.tabLabel + " tab", toolDetail($0)) }
         let commands = AppConstants.Launcher.commandCatalog.map { (":" + $0.id, SpotlightCommands.detail(for: $0)) }
-        let entries = tabs + commands + helpShortcuts
+        let entries = tabs + commands + helpShortcuts + quickLookHelp
         let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return entries
             .filter { needle.isEmpty || $0.0.lowercased().contains(needle) || $0.1.lowercased().contains(needle) }
@@ -249,6 +249,12 @@ enum SpotlightModeRows {
         case .process: "Find & kill running processes"
         default: tab.label
         }
+    }
+
+    /// Quick Look's key is set in Settings ▸ Shortcuts.
+    private static var quickLookHelp: [(String, String)] {
+        guard let combo = SpotlightQuickLook.shortcut else { return [] }
+        return [(combo.display, "Quick Look a document, image or clip (Space / \(combo.display) closes, ↑↓ browse)")]
     }
 
     private static let helpShortcuts: [(String, String)] = [

@@ -1,10 +1,12 @@
 import AppKit
 import Carbon
 
-/// What a global shortcut does. Saved as `hotkey_<rawValue>=cmd+shift+v` in the config
-/// (empty value = off). The tab actions use `SpotlightKind` raw values.
+/// What a shortcut does. Saved as `hotkey_<rawValue>=cmd+shift+v` in the config
+/// (empty value = off). The tab actions use `SpotlightKind` raw values. All are global
+/// except `quickLook`, which only works while the launcher is open (see `isGlobal`).
 nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
     case launcher, settings, clip, lookup, translation, process, content
+    case quickLook = "quicklook"
 
     var id: String { rawValue }
 
@@ -17,6 +19,7 @@ nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
         case .translation: "Translate"
         case .process: "Processes"
         case .content: "OCR"
+        case .quickLook: "Quick Look"
         }
     }
 
@@ -29,16 +32,22 @@ nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
         case .translation: "Translate the selected text, or open Translate"
         case .process: "Open the launcher on running processes"
         case .content: "Search text in images & PDFs"
+        case .quickLook: "Preview the selected row (in the launcher)"
         }
     }
 
     var configKey: String { "hotkey_\(rawValue)" }
+
+    /// Registered system-wide. Quick Look is handled by the launcher's own key monitor:
+    /// grabbing ⌘Y everywhere would take it from every other app.
+    var isGlobal: Bool { self != .quickLook }
 
     /// Option+Space and Cmd+Shift+Space, as before; the tab shortcuts start off.
     var defaultValue: String {
         switch self {
         case .launcher: "opt+space"
         case .settings: "cmd+shift+space"
+        case .quickLook: "cmd+y"
         default: ""
         }
     }

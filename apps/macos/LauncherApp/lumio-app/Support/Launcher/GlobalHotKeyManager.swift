@@ -78,7 +78,7 @@ final class GlobalHotKeyManager {
         var seen = Set<KeyCombo>()
         Self.bindings = HotKeyAction.allCases.enumerated().compactMap { index, action in
             // One combo can only do one thing; Settings already refuses duplicates.
-            guard let combo = settings.hotKey(for: action), combo.isUsableGlobally,
+            guard action.isGlobal, let combo = settings.hotKey(for: action), combo.isUsableGlobally,
                   seen.insert(combo).inserted
             else { return nil }
             return Binding(id: UInt32(index + 1), combo: combo, action: action)

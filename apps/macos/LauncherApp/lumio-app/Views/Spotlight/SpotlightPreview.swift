@@ -56,6 +56,12 @@ struct SpotlightPreviewView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topTrailing) {
+            if item.kind.isDocument, item.target?.hasPrefix("/") == true {
+                PreviewExpandButton { SpotlightQuickLook.show(item: item) }
+                    .padding(12)
+            }
+        }
         .task(id: item.id) {
             info = Self.loadInfo(for: item)
             folder = nil

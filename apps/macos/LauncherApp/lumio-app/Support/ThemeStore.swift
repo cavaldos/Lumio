@@ -415,10 +415,12 @@ launch_at_login=true
 translation_languages=vi,en,fr
 # Order of the launcher's tabs: clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
 tab_order=clip,lookup,translation,process,content
-# Global shortcuts: hotkey_<action>=cmd+shift+v (modifiers: cmd, opt, ctrl, shift; empty = off).
-# Actions: launcher, settings, clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
+# Shortcuts: hotkey_<action>=cmd+shift+v (modifiers: cmd, opt, ctrl, shift; empty = off).
+# Global actions: launcher, settings, clip (Clipboard), lookup (Dictionary), translation (Translate), process (Processes), content (OCR)
+# In the launcher only: quicklook (Quick Look the selected row)
 hotkey_launcher=opt+space
 hotkey_settings=cmd+shift+space
+hotkey_quicklook=cmd+y
 skip_dir_names=node_modules,target,build,dist,library,applications,old firefox data,deriveddata,pods,vendor,out,coverage,tmp,cache,venv
 
 # Search aliases (apps + System Settings). Format: alias_<keyword>=Term1|Term2|Term3

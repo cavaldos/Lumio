@@ -36,6 +36,10 @@ struct SpotlightClipPreview: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topTrailing) {
+            PreviewExpandButton { SpotlightQuickLook.show(item: item) }
+                .padding(20)
+        }
     }
 
     @ViewBuilder

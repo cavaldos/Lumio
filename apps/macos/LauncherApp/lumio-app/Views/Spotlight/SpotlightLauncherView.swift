@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import SwiftUI
 
 // macOS 26-style Spotlight launcher: Liquid Glass + animation.
@@ -54,6 +55,7 @@ struct SpotlightLauncherView: View {
     @State private var keptBrowse: SpotlightKind?
     @State private var browse: SpotlightKind?
     @State private var scrollTarget: String?
+    @State private var scrollWraps = false
     /// The core search in flight (nil = results already match the input).
     @State private var searchTask: Task<Void, Never>?
     /// OCR tab while the index is still being built: searches again shortly, so new matches
@@ -514,6 +516,7 @@ struct SpotlightLauncherView: View {
                 .id(item.id)
             }
         }
+        .background(QuickLookSourceAnchor())
         // Changing rows swaps the preview content IMMEDIATELY (like the legacy launcher): cross-fading
         // two files makes their text overlap. The sliding selection bar is enough.
         .animation(nil, value: previewItem?.id)
@@ -654,7 +657,13 @@ struct SpotlightLauncherView: View {
                     .onChange(of: scrollTarget) { _, target in
                         // Scroll along with the selection bar, in step with its slide.
                         guard let target else { return }
-                        withAnimation(motion(SpotlightMotion.selectionGlide)) { proxy.scrollTo(target) }
+                        if scrollWraps {
+                            // Top <-> bottom: jump, so rows sliding under a still pointer can't steal the selection.
+                            mouseGate.reset()
+                            proxy.scrollTo(target, anchor: sel == 0 ? .top : .bottom)
+                        } else {
+                            withAnimation(motion(SpotlightMotion.selectionGlide)) { proxy.scrollTo(target) }
+                        }
                     }
                 }
             }
@@ -721,10 +730,12 @@ struct SpotlightLauncherView: View {
                     .truncationMode(.middle)
             }
         }
-        .padding(.trailing, selected ? (item.isPinned ? 58 : 58) : (item.isPinned ? 30 : 0))
+        .padding(.trailing, selected ? (item.isPinned ? 46 : 46) : (item.isPinned ? 24 : 0))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .trailing) { clipRowButtons(item, selected: selected) }
         .padding(.horizontal, 12)
+        .overlay(alignment: .trailing) {
+            clipRowButtons(item, selected: selected).padding(.trailing, 6)
+        }
         .frame(height: isImage ? Self.clipImageRowHeight : Self.clipRowHeight)
         .modifier(SpotlightSelection(
             isSelected: selected,
@@ -758,10 +769,10 @@ struct SpotlightLauncherView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .frame(width: 24, height: 24)
-                .background(palette.kbd, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(width: 18, height: 18)
+                .background(palette.kbd, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -937,7 +948,15 @@ struct SpotlightLauncherView: View {
         default: break
         }
         let mode = browse.map { SpotlightMode.forTab($0, query: query) ?? .search } ?? SpotlightMode.parse(query)
-        return "↑↓ select   " + mode.footerHint
+        var hint = "↑↓ select   " + mode.footerHint
+        let previewable = switch mode {
+        case .search, .clipboard: true
+        default: false
+        }
+        if previewable, let combo = SpotlightQuickLook.shortcut {
+            hint += "   \(combo.display) quick look"
+        }
+        return hint
     }
 
     // MARK: - Toast
@@ -1386,9 +1405,10 @@ struct SpotlightLauncherView: View {
     private func move(_ delta: Int) {
         guard expanded, !results.isEmpty else { return }
         // The selection bar SLIDES to the new row (like the legacy launcher) instead of jumping.
-        withAnimation(motion(SpotlightMotion.selectionGlide)) {
-            sel = (sel + delta + results.count) % results.count
-        }
+        let next = (sel + delta + results.count) % results.count
+        let wrapped = abs(next - sel) > 1
+        withAnimation(motion(SpotlightMotion.selectionGlide)) { sel = next }
+        scrollWraps = wrapped
         scrollTarget = results[sel].id
         scheduleClipPreview()
     }
@@ -1549,9 +1569,30 @@ struct SpotlightLauncherView: View {
         return true
     }
 
+    /// Keys while the Quick Look panel is key: ⌘Y / Space close it, ↑ / ↓ move the
+    /// launcher's selection and Quick Look follows (like Finder). The rest is Quick Look's.
+    private func handleQuickLookKey(_ event: NSEvent) -> Bool {
+        typealias KeyCode = AppConstants.Launcher.KeyCode
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if SpotlightQuickLook.matchesShortcut(event) || (flags.isEmpty && key == " ") {
+            SpotlightQuickLook.close()
+            return true
+        }
+        if flags.isEmpty, event.keyCode == KeyCode.arrowUp || event.keyCode == KeyCode.arrowDown {
+            move(event.keyCode == KeyCode.arrowUp ? -1 : 1)
+            if sel < results.count { SpotlightQuickLook.follow(item: results[sel]) }
+            return true
+        }
+        return false
+    }
+
     /// Navigation keys, called from SpotlightKeyMonitor. `true` = handled.
     private func handleKey(_ event: NSEvent) -> Bool {
         typealias KeyCode = AppConstants.Launcher.KeyCode
+        if isOpen, !dismissing, event.window is QLPreviewPanel {
+            return handleQuickLookKey(event)
+        }
         guard isOpen, !dismissing, event.window is LauncherPanelWindow else { return false }
         // The input method has uncommitted text: the key belongs to the input method.
         if let editor = event.window?.firstResponder as? NSTextView, editor.hasMarkedText() {
@@ -1609,6 +1650,11 @@ struct SpotlightLauncherView: View {
             if !deleteClip(item) {
                 performShortcut(SpotlightBackend.trashAction(for: item) ?? .moveToTrash)
             }
+            return true
+        }
+        // Quick Look the selected row, like Finder (⌘Y unless changed in Settings ▸ Shortcuts).
+        if SpotlightQuickLook.matchesShortcut(event) {
+            if let item = previewItem { SpotlightQuickLook.toggle(item: item) }
             return true
         }
         if flags == .command, key == "p", let item = previewItem,
@@ -1807,6 +1853,8 @@ struct SpotlightLauncherView: View {
         dismissing = true
         idleTask?.cancel()
         isFocused = false
+        // Quick Look belongs to the launcher: don't leave it floating on its own.
+        SpotlightQuickLook.close()
 
         if launched {
             withAnimation(motion(SpotlightMotion.launch)) {

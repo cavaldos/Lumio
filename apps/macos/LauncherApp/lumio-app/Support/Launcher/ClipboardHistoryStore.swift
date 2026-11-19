@@ -582,6 +582,18 @@ final class ClipboardHistoryStore: ObservableObject {
         item.setString(url.absoluteString, forType: .fileURL)
         let wrote = pasteboard.writeObjects([item])
         lastChangeCount = pasteboard.changeCount
+        // The poller skips this write, so move the clip to the top here.
+        if wrote, let index = imageEntries.firstIndex(where: { $0.hash == entry.hash }) {
+            let old = imageEntries.remove(at: index)
+            imageEntries.insert(
+                ClipboardImageEntry(
+                    label: old.label, hash: old.hash, capturedAt: Date(),
+                    firstCapturedAt: old.firstCapturedAt, copyCount: old.copyCount + 1,
+                    pixelSize: old.pixelSize, byteSize: old.byteSize,
+                    appBundleID: old.appBundleID, storeID: old.storeID,
+                    isPinned: old.isPinned),
+                at: 0)
+        }
         return wrote
     }
 
