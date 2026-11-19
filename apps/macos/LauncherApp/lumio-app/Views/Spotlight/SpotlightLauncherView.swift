@@ -45,6 +45,8 @@ struct SpotlightLauncherView: View {
     /// out with the panel instead of vanishing first.
     @State private var all: [SpotlightItem] = []
     @State private var sel = 0
+    /// Set by ⌘D on a clip: the next publish keeps this row index (the rows below slide up) instead of jumping to the top.
+    @State private var keepSelOnPublish: Int?
     @State private var filter: SpotlightKind?
     /// Item whose actions are being viewed (⌘K).
     @State private var scope: SpotlightItem?
@@ -798,14 +800,23 @@ struct SpotlightLauncherView: View {
     /// Removes the clip from history. Returns false when `item` isn't a clip.
     @discardableResult
     private func deleteClip(_ item: SpotlightItem) -> Bool {
+        guard item.kind == .clip || item.kind == .clipImage else { return false }
+        // Keep the cursor on the same row: the next row slides up into it. Set BEFORE deleting,
+        // since the store's change re-publishes the list right away (publish would reset to 0).
+        let keep = sel
+        keepSelOnPublish = keep
         if item.kind == .clip, let id = item.clipID {
             clipboardStore.deleteEntry(id: id)
             toast("Clipboard item deleted")
         } else if item.kind == .clipImage, let id = item.payload {
             clipboardStore.deleteImageEntry(id: id)
             toast("Image deleted")
-        } else {
-            return false
+        }
+        all.removeAll { $0.id == item.id }
+        sel = min(keep, max(results.count - 1, 0))
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            if keepSelOnPublish == keep { keepSelOnPublish = nil }
         }
         return true
     }
@@ -1364,7 +1375,7 @@ struct SpotlightLauncherView: View {
         plain.disablesAnimations = true
         withTransaction(plain) {
             all = rows
-            sel = 0
+            sel = keepSelOnPublish.map { min($0, max(0, rows.count - 1)) } ?? 0
         }
         if !expanded { setExpanded(true) }
         if activateWhenReady {
