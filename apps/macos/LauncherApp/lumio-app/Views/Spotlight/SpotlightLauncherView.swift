@@ -566,7 +566,11 @@ struct SpotlightLauncherView: View {
     /// Tab / Shift+Tab: move to the next / previous pill (All → Applications → … → tools → OCR → All).
     /// Landing on OCR or a tool switches to its search; leaving goes back to the name search.
     private func cycleFilter(_ step: Int) {
-        let options: [SpotlightKind?] = [nil] + kinds + SpotlightKind.modeTabs.map(Optional.some)
+        // Only the group pills the user can actually see. With the field emptied the panel is
+        // collapsed but `all` still holds the old results (kept so they fade out), and their
+        // groups would otherwise be invisible stops: Tab seemed to do nothing for a few presses.
+        let groups = expanded && !inModeTab ? kinds : []
+        let options: [SpotlightKind?] = [nil] + groups + SpotlightKind.modeTabs.map(Optional.some)
         let current = inModeTab ? (options.firstIndex(of: browse) ?? 0) : (options.firstIndex(of: filter) ?? 0)
         let next = options[(current + step + options.count) % options.count]
         if let next, SpotlightKind.modeTabs.contains(next) {
