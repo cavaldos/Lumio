@@ -21,8 +21,12 @@ enum Motion {
 
     /// The gliding search-field caret (see `SmoothCaretTextField`).
     enum Caret {
-        static let width: CGFloat = 2
-        static let cornerRadius: CGFloat = 1
+        static let width: CGFloat = 3
+        static let cornerRadius: CGFloat = 1.5
+        /// White in dark appearance; black in light so it stays visible on a light panel.
+        static let color = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+        }
         /// Multiplier on the font's line height so the bar reads as a caret.
         static let heightScale: CGFloat = 1.05
         static let glideSeconds: CFTimeInterval = 0.105

@@ -42,7 +42,7 @@ struct SpotlightGlassGroup<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), ThemeStore.shared.settings.liquidGlassEnabled {
             GlassEffectContainer(spacing: spacing) {
                 content()
             }
@@ -58,9 +58,10 @@ private struct SpotlightGlassModifier<S: Shape>: ViewModifier {
     let namespace: Namespace.ID
     let interactive: Bool
     let isDark: Bool
+    @ObservedObject private var themeStore = ThemeStore.shared
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), themeStore.settings.liquidGlassEnabled {
             content
                 .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
                 .glassEffectID(id, in: namespace)

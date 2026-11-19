@@ -19,6 +19,34 @@ extension ThemeSettingsView {
             ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("Appearance")
+
+                    HStack(spacing: 10) {
+                        Text("Corner Radius")
+                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                        Slider(value: $settings.launcherCornerRadius, in: ThemeSettings.cornerRadiusRange, step: 1)
+                        Text("\(Int(settings.launcherCornerRadius))%")
+                            .monospacedDigit()
+                            .frame(width: 40, alignment: .trailing)
+                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                            .foregroundStyle(themeStore.mutedTextColor())
+                    }
+                    .help("Launcher corner roundness. 0% is square, 100% is fully round.")
+
+                    Toggle(isOn: $settings.liquidGlassEnabled) {
+                        HStack(spacing: 10) {
+                            Text("Liquid Glass")
+                                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
+                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                            Text("macOS 26+. Off uses the classic blur")
+                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                                .foregroundStyle(themeStore.mutedTextColor())
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
                     sectionHeader("Indexing")
 
                     presetRow(

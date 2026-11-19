@@ -33,6 +33,7 @@ struct SpotlightLauncherView: View {
     ]
 
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var themeStore = ThemeStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var glassSpace
     /// Selection bar that slides between rows (matchedGeometryEffect).
@@ -197,7 +198,7 @@ struct SpotlightLauncherView: View {
     private var isDark: Bool { colorScheme == .dark }
     private var palette: SpotlightPalette { .of(colorScheme) }
     private var panelShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Metric.pillRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: themeStore.settings.cornerRadius(side: Metric.barHeight), style: .continuous)
     }
 
     /// Open pop springs vertically only; the width stays fixed. The launch zoom stays uniform.
@@ -378,11 +379,11 @@ struct SpotlightLauncherView: View {
                 .foregroundStyle(browse == item.kind ? HierarchicalShapeStyle.primary : .secondary)
                 .modifier(SpotlightPopIn(animation: reduceMotion ? nil : motion(SpotlightMotion.quickIcon(index))))
                 .frame(width: Metric.quickSize, height: Metric.quickSize)
-                .contentShape(Circle())
+                .contentShape(RoundedRectangle(cornerRadius: themeStore.settings.cornerRadius(side: Metric.quickSize), style: .continuous))
         }
         .buttonStyle(.plain)
         .spotlightGlass(
-            Circle(),
+            RoundedRectangle(cornerRadius: themeStore.settings.cornerRadius(side: Metric.quickSize), style: .continuous),
             id: "spotlight.quick.\(item.kind.rawValue)",
             in: glassSpace,
             interactive: true,

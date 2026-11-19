@@ -30,6 +30,16 @@ struct ThemeSettings: Codable, Equatable {
     /// Global shortcuts: HotKeyAction raw value → `cmd+shift+v` ("" = off).
     var hotkeys: [String: String] = HotKeyAction.defaultValues
 
+    /// Launcher corner roundness in % (`launcher_corner_radius`): 0 = square, 100 = full pill/circle.
+    var launcherCornerRadius: Double = ThemeSettings.defaultCornerRadius
+    /// Liquid Glass on macOS 26+ (`liquid_glass_enabled`); off uses the classic blur.
+    var liquidGlassEnabled: Bool = true
+    static let defaultCornerRadius: Double = 100
+    static let cornerRadiusRange: ClosedRange<Double> = 0...100
+
+    /// Corner radius in points for a shape whose shorter side is `side`.
+    func cornerRadius(side: CGFloat) -> CGFloat { side / 2 * CGFloat(launcherCornerRadius / 100) }
+
     static let `default` = ThemeSettings()
 
     init() {}
@@ -45,6 +55,8 @@ struct ThemeSettings: Codable, Equatable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages
         tabOrder = TabOrder.normalized(try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? d.tabOrder)
+        launcherCornerRadius = min(max(try c.decodeIfPresent(Double.self, forKey: .launcherCornerRadius) ?? d.launcherCornerRadius, Self.cornerRadiusRange.lowerBound), Self.cornerRadiusRange.upperBound)
+        liquidGlassEnabled = try c.decodeIfPresent(Bool.self, forKey: .liquidGlassEnabled) ?? d.liquidGlassEnabled
         let savedHotkeys = try c.decodeIfPresent([String: String].self, forKey: .hotkeys) ?? [:]
         hotkeys = d.hotkeys.merging(savedHotkeys) { _, saved in saved }
     }

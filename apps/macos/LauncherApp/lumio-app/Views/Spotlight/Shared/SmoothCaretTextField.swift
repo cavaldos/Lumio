@@ -19,7 +19,7 @@ struct SmoothCaretTextField: NSViewRepresentable {
     var allowsMultiline: Bool = false
     var font: NSFont = .systemFont(ofSize: NSFont.systemFontSize)
     var textColor: NSColor = .labelColor
-    var caretColor: NSColor = .controlAccentColor
+    var caretColor: NSColor = Motion.Caret.color
     var onSubmit: () -> Void
 
     private var lineHeight: CGFloat { font.ascender - font.descender + font.leading }
@@ -235,9 +235,18 @@ final class CaretTextField: NSTextField {
         configureCaretLayer()
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            caretLayer.backgroundColor = caretColor.cgColor
+        }
+    }
+
     private func configureCaretLayer() {
         wantsLayer = true
-        caretLayer.backgroundColor = caretColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            caretLayer.backgroundColor = caretColor.cgColor
+        }
         caretLayer.cornerRadius = Motion.Caret.cornerRadius
         caretLayer.opacity = 0
         caretLayer.zPosition = 1
@@ -246,10 +255,36 @@ final class CaretTextField: NSTextField {
 
     // MARK: - Editing lifecycle
 
+    /// AppKit only sends textDidBeginEditing on the first CHANGE, so starting
+    /// the bar there left the native (accent-blue) caret showing until the user
+    /// typed. Start it as soon as the field takes focus instead.
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            // The field editor is installed by the end of this runloop turn.
+            DispatchQueue.main.async { [weak self] in self?.beginCaretSession() }
+        }
+        return accepted
+    }
+
     override func textDidBeginEditing(_ notification: Notification) {
         super.textDidBeginEditing(notification)
-        suppressNativeCaret()
-        observeSelection()
+        beginCaretSession()
+    }
+
+    /// Idempotent: runs on focus and again on the first keystroke.
+    private func beginCaretSession() {
+        guard let editor = currentEditor() as? NSTextView,
+              window?.firstResponder === editor else { return }
+        if suppressedEditor !== editor {
+            suppressNativeCaret()
+            stopObservingSelection()
+            observeSelection()
+        } else if editor.insertionPointColor != .clear {
+            // Same editor, but something put its caret color back: hide it again
+            // without overwriting the color saved for restoring.
+            editor.insertionPointColor = .clear
+        }
         caretLayer.opacity = 1
         refreshCaret(animated: false)
         registerTyping()
@@ -263,6 +298,22 @@ final class CaretTextField: NSTextField {
 
     override func textDidEndEditing(_ notification: Notification) {
         super.textDidEndEditing(notification)
+        // Not always a real blur: setting `placeholderAttributedString` while
+        // editing (the placeholder changes on every tab switch) makes AppKit end
+        // editing and restart it in the same runloop turn, without another
+        // becomeFirstResponder. Tearing down here left the native accent caret
+        // until the next keystroke. Decide once AppKit has settled.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let editor = self.currentEditor(), self.window?.firstResponder === editor {
+                self.beginCaretSession()
+            } else {
+                self.endCaretSession()
+            }
+        }
+    }
+
+    private func endCaretSession() {
         restoreNativeCaret()
         stopObservingSelection()
         blinkResumeTimer?.invalidate()
@@ -326,48 +377,34 @@ final class CaretTextField: NSTextField {
         guard
             let editor = currentEditor() as? NSTextView,
             let layoutManager = editor.layoutManager,
-            let container = editor.textContainer
+            let container = editor.textContainer,
+            let font
         else { return nil }
 
         let caretLocation = editor.selectedRange().location
         layoutManager.ensureLayout(for: container)
 
-        let fontLineHeight = font.map { $0.ascender - $0.descender + $0.leading }
-            ?? bounds.height
-        let barHeight = fontLineHeight * Motion.Caret.heightScale
+        let barHeight = (font.ascender - font.descender + font.leading) * Motion.Caret.heightScale
         let origin = editor.textContainerOrigin
+        let line = lineGeometry(
+            at: caretLocation, layoutManager: layoutManager, container: container, editor: editor)
 
-        // Ask the text view where the insertion point is. This is the same
+        // X: ask the text view where the insertion point is. This is the same
         // answer input methods get, so it is right for the cases the layout
         // manager makes awkward - notably a caret parked after a trailing
         // newline, which lives in a fragment that holds no glyphs.
-        if let insertionLine = insertionPointLine(in: editor, at: caretLocation) {
-            return CGRect(
-                x: insertionLine.minX, y: insertionLine.midY - barHeight / 2,
-                width: Motion.Caret.width, height: barHeight)
-        }
+        let x = insertionPointLine(in: editor, at: caretLocation)?.minX
+            ?? editor.convert(CGPoint(x: origin.x + (line?.x ?? 0), y: 0), to: self).x
 
-        guard let line = lineGeometry(
-            at: caretLocation, layoutManager: layoutManager, container: container, editor: editor)
-        else {
-            // Nothing laid out yet (empty field): leading edge, centred.
-            let xInField = editor.convert(CGPoint(x: origin.x, y: 0), to: self).x
-            return CGRect(
-                x: xInField, y: (bounds.height - barHeight) / 2,
-                width: Motion.Caret.width, height: barHeight)
-        }
-
-        // Convert as a RECT, not a point: the field editor is flipped and the
-        // field is not, so only a rect conversion gets both axes right when the
-        // caret is on the second or third line.
-        let inField = editor.convert(
-            CGRect(
-                x: origin.x + line.x, y: origin.y + line.rect.minY,
-                width: Motion.Caret.width, height: line.rect.height),
-            to: self)
+        // Y: centre the bar on its line fragment. Converted as a point (the
+        // centre is the same whichever way each view is flipped), so this
+        // holds for the second and third line too.
+        let lineHeight = line?.rect.height ?? layoutManager.defaultLineHeight(for: font)
+        let centreInEditor = origin.y + (line?.rect.minY ?? 0) + lineHeight / 2
+        let centre = editor.convert(CGPoint(x: 0, y: centreInEditor), to: self).y
 
         return CGRect(
-            x: inField.minX, y: inField.midY - barHeight / 2,
+            x: x, y: centre - barHeight / 2,
             width: Motion.Caret.width, height: barHeight)
     }
 

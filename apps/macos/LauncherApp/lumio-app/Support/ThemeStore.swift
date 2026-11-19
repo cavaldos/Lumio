@@ -111,6 +111,8 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "file_exclude_paths", value: ConfigFileLines.renderList(excludedFolderPaths))
         ConfigFileLines.upsert(&lines, key: "file_scan_extra_roots", value: ConfigFileLines.renderList(extraFileScanRoots))
         ConfigFileLines.upsert(&lines, key: "backend_log_level", value: settings.backendLogLevel.rawValue)
+        ConfigFileLines.upsert(&lines, key: "launcher_corner_radius", value: String(Int(settings.launcherCornerRadius.rounded())))
+        ConfigFileLines.upsert(&lines, key: "liquid_glass_enabled", value: settings.liquidGlassEnabled ? "true" : "false")
         ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
         ConfigFileLines.upsert(&lines, key: "translation_languages", value: settings.translationLanguages.joined(separator: ","))
         ConfigFileLines.upsert(&lines, key: TabOrder.configKey, value: TabOrder.render(settings.tabOrder))
@@ -232,6 +234,12 @@ final class ThemeStore: ObservableObject {
                 extraFileScanRoots = parseFileScanRootPaths(value)
             case "backend_log_level":
                 if let parsed = parseBackendLogLevel(value) { settings.backendLogLevel = parsed }
+            case "launcher_corner_radius":
+                if let parsed = Double(value.trimmingCharacters(in: .whitespaces)) {
+                    settings.launcherCornerRadius = min(max(parsed, ThemeSettings.cornerRadiusRange.lowerBound), ThemeSettings.cornerRadiusRange.upperBound)
+                }
+            case "liquid_glass_enabled":
+                if let parsed = parseBool(value) { settings.liquidGlassEnabled = parsed }
             case "launch_at_login":
                 if let parsed = parseBool(value) { settings.launchAtLogin = parsed }
             case TabOrder.configKey:
