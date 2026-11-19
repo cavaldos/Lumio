@@ -38,6 +38,35 @@
   <img src="assets/lumio-ui/4.png" alt="Lumio Setting" height="300">
 </p>
 
+## How Lumio compares
+
+Lumio is in the same family as Spotlight, Alfred and Raycast: a keyboard launcher for apps, files and quick tools. The difference is that Lumio is free and open source, and it adds OCR search inside images and PDFs and a dictionary lookup on any selected word.
+
+| | Lumio | Spotlight | [Alfred](https://www.alfredapp.com) | [Raycast](https://www.raycast.com) |
+| --- | --- | --- | --- | --- |
+| Price | Free | Free, built into macOS | Free core; paid Powerpack license for workflows, clipboard and snippets | Free core; paid Pro plan for cloud sync and AI |
+| Open source | Yes (GPL-3.0) | No | No | No |
+| Platform | macOS 15+, Apple Silicon | macOS | macOS | macOS |
+| App and file search | Yes | Yes | Yes | Yes |
+| Calculator | Yes (`+ - * / % ^ ()`) | Yes | Yes | Yes |
+| Clipboard history | Yes | — | Yes (Powerpack) | Yes |
+| OCR search in images and PDFs | Yes, dedicated tab | PDF text | Via workflows | Via extensions |
+| Dictionary lookup on selected text | Yes, `Option+Space` | Yes (Look Up) | Via workflows | Via extensions |
+| Translation | Yes, on-device with Apple's Translation framework, no API key | — | Via workflows | Via extensions |
+| Extensions and workflows | No, built-in modes only | Limited (Shortcuts) | Yes, large workflow community | Yes, extension store (TypeScript) |
+| Window management | No | No | Via workflows | Yes, built in |
+| AI chat | No | — | Via workflows | Yes (Pro) |
+
+**Choose Lumio if** you want a free, open-source launcher that keeps your files and clipboard on your Mac, finds text inside screenshots and scanned PDFs, and does not need an account or a subscription.
+
+**Choose Raycast or Alfred if** you need an extension ecosystem, window management, AI chat or a large library of ready-made workflows. Both are more mature and more extensible than Lumio.
+
+**Choose Spotlight if** you want zero setup and only need basic app, file and web search. It is already on your Mac.
+
+**Lumio's limits.** No plugin or workflow system, no window management, no AI features, no cloud sync, and it runs only on Apple Silicon Macs with macOS 15 or later.
+
+_Competitor features and pricing change often. Check their websites for the latest details._
+
 ## Install
 
 Requires macOS 15 or later on Apple Silicon.
