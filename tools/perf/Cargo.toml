@@ -28,3 +28,7 @@ path = "watcher_stress.rs"
 [[bin]]
 name = "real_fs_stress"
 path = "real_fs_stress.rs"
+
+[[bin]]
+name = "index_scan_bench"
+path = "index_scan_bench.rs"
