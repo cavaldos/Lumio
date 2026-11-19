@@ -16,343 +16,18 @@ extension ThemeSettingsView {
 
     var settingsPage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader("Appearance")
-
-                    HStack(spacing: 10) {
-                        Text("Corner Radius")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                        Slider(value: $settings.launcherCornerRadius, in: ThemeSettings.cornerRadiusRange, step: 1)
-                        Text("\(Int(settings.launcherCornerRadius))%")
-                            .monospacedDigit()
-                            .frame(width: 40, alignment: .trailing)
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                    }
-                    .help("Launcher corner roundness. 0% is square, 100% is fully round.")
-
-                    Toggle(isOn: $settings.liquidGlassEnabled) {
-                        HStack(spacing: 10) {
-                            Text("Liquid Glass")
-                                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            Text("macOS 26+. Off uses the classic blur")
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.mutedTextColor())
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    sectionHeader("Indexing")
-
-                    presetRow(
-                        title: "Scan Scope",
-                        options: indexingScopePresets.map { $0.title },
-                        selected: indexingScopePresets.firstIndex(where: {
-                            $0.depth == settings.fileScanDepth && $0.limit == settings.fileScanLimit
-                        }),
-                        onPick: {
-                            settings.fileScanDepth = indexingScopePresets[$0].depth
-                            settings.fileScanLimit = indexingScopePresets[$0].limit
-                            fileScanDepthError = nil
-                            fileScanLimitError = nil
-                            syncIndexingInputsFromSettings()
-                        }
-                    )
-                    .help("Fast scans less, Thorough scans deeper. Exact numbers live under Indexing details.")
-
-                    Toggle(isOn: $settings.lazyIndexingEnabled) {
-                        HStack(spacing: 10) {
-                            Text("Lazy indexing")
-                                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            Text("Refresh index automatically when launcher opens after file/app changes")
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.mutedTextColor())
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    DisclosureGroup {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 10) {
-                                Text("File Scan Depth")
-                                    .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                                    .foregroundStyle(themeStore.secondaryTextColor())
-
-                                TextField("4", text: $fileScanDepthInput)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 80, alignment: .leading)
-                                    .onChange(of: fileScanDepthInput) { _, value in
-                                        fileScanDepthInput = sanitizedNumericInput(value)
-                                        if let parsed = Int(fileScanDepthInput) {
-                                            if parsed >= AppConstants.FileScan.minDepth && parsed <= AppConstants.FileScan.maxDepth {
-                                                settings.fileScanDepth = parsed
-                                                fileScanDepthError = nil
-                                            } else {
-                                                fileScanDepthError = "Must be \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)"
-                                            }
-                                        }
-                                    }
-                                    .help("Valid: \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)")
-
-                                if let error = fileScanDepthError {
-                                    Text(error)
-                                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                        .foregroundStyle(themeStore.dangerColor())
-                                }
-
-                                Text("How many directory levels to index")
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                    .foregroundStyle(themeStore.mutedTextColor())
-                                    .lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            HStack(spacing: 10) {
-                                Text("File Scan Limit")
-                                    .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                                    .foregroundStyle(themeStore.secondaryTextColor())
-
-                                TextField("4000", text: $fileScanLimitInput)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 100, alignment: .leading)
-                                    .onChange(of: fileScanLimitInput) { _, value in
-                                        fileScanLimitInput = sanitizedNumericInput(value)
-                                        if let parsed = Int(fileScanLimitInput) {
-                                            if parsed >= AppConstants.FileScan.minLimit && parsed <= AppConstants.FileScan.maxLimit {
-                                                settings.fileScanLimit = parsed
-                                                fileScanLimitError = nil
-                                            } else {
-                                                fileScanLimitError = "Must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit)"
-                                            }
-                                        }
-                                    }
-
-                                if let error = fileScanLimitError {
-                                    Text(error)
-                                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                        .foregroundStyle(themeStore.dangerColor())
-                                }
-
-                                Text("Max files indexed per refresh")
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                    .foregroundStyle(themeStore.mutedTextColor())
-                                    .lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        .padding(.top, 6)
-                    } label: {
-                        Text("Indexing details")
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-                    }
-
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("Extra Scan Dirs")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button("Add Directory") {
-                                selectExtraScanDirectory()
-                            }
-
-                            if themeStore.extraFileScanRoots.isEmpty {
-                                Text("No extra scan directories")
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                    .foregroundStyle(themeStore.mutedTextColor())
-                            } else {
-                                ScrollView(.horizontal) {
-                                    HStack(spacing: 8) {
-                                        ForEach(themeStore.extraFileScanRoots, id: \.self) { path in
-                                            HStack(spacing: 6) {
-                                                Text(path)
-                                                    .lineLimit(1)
-                                                Button {
-                                                    withAnimation(Motion.Insert.animation) {
-                                                        themeStore.removeExtraFileScanRoot(path)
-                                                        extraScanDirectoryMessage = nil
-                                                    }
-                                                } label: {
-                                                    Image(systemName: "xmark")
-                                                        .font(.system(size: 10, weight: .semibold))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                            .foregroundStyle(themeStore.secondaryTextColor())
-                                            .padding(.horizontal, 9)
-                                            .padding(.vertical, 5)
-                                            .background(themeStore.liftColor(opacity: 0.12), in: Capsule())
-                                            .transition(Motion.Insert.transition)
-                                        }
-                                    }
-                                }
-                                .scrollIndicators(.hidden)
-                            }
-
-                            if let extraScanDirectoryMessage {
-                                Text(extraScanDirectoryMessage)
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                    .foregroundStyle(themeStore.dangerColor())
-                            }
-
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("Skip Folders")
-                            .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            .foregroundStyle(themeStore.secondaryTextColor())
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button("Add Folder") {
-                                selectExcludedFolderPath()
-                            }
-
-                            if themeStore.excludedFolderPaths.isEmpty {
-                                Text("No excluded folder paths yet")
-                                    .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                    .foregroundStyle(themeStore.mutedTextColor())
-                            } else {
-                                ScrollView(.horizontal) {
-                                    HStack(spacing: 8) {
-                                        ForEach(themeStore.excludedFolderPaths, id: \.self) { path in
-                                            HStack(spacing: 6) {
-                                                Text(path)
-                                                    .lineLimit(1)
-                                                Button {
-                                                    withAnimation(Motion.Insert.animation) {
-                                                        themeStore.removeExcludedFolderPath(path)
-                                                    }
-                                                } label: {
-                                                    Image(systemName: "xmark")
-                                                        .font(.system(size: 10, weight: .semibold))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                            .foregroundStyle(themeStore.secondaryTextColor())
-                                            .padding(.horizontal, 9)
-                                            .padding(.vertical, 5)
-                                            .background(themeStore.liftColor(opacity: 0.12), in: Capsule())
-                                            .transition(Motion.Insert.transition)
-                                        }
-                                    }
-                                }
-                                .scrollIndicators(.hidden)
-                            }
-
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    sectionHeader("Shortcuts")
-
-                    ShortcutSettingsSection(settings: $settings)
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    sectionHeader("Tabs")
-
-                    tabOrderRow
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    sectionHeader("Translation")
-
-                    translationLanguagesRow
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    sectionHeader("Privacy & Logs")
-
-                    presetRow(
-                        title: "Log Level",
-                        options: BackendLogLevel.allCases.map { $0.title },
-                        selected: BackendLogLevel.allCases.firstIndex(of: settings.backendLogLevel),
-                        onPick: { settings.backendLogLevel = BackendLogLevel.allCases[$0] }
-                    )
-                    .help("Error only by default; use Info/Debug for troubleshooting.")
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    Text("Startup")
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
-                        .foregroundStyle(themeStore.secondaryTextColor())
-
-                    Toggle(isOn: $settings.launchAtLogin) {
-                        HStack(spacing: 10) {
-                            Text("Launch at login")
-                                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                            Text("Start lumio automatically when you sign in")
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.mutedTextColor())
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
-                    Text("Config file")
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
-                        .foregroundStyle(themeStore.secondaryTextColor())
-
-                    HStack(spacing: 10) {
-                        Button("Create Fresh Config") {
-                            showFreshConfigConfirm = true
-                            freshConfigMessage = nil
-                        }
-
-                        Text("Regenerate a fresh default config file. Your current file will be replaced.")
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                            .foregroundStyle(themeStore.mutedTextColor())
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if let freshConfigMessage {
-                            Text(freshConfigMessage)
-                                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                                .foregroundStyle(themeStore.mutedTextColor())
-                        }
-                    }
-
-                    Divider()
-                        .overlay(themeStore.dividerColor())
-                        .padding(.vertical, 4)
-
+                VStack(alignment: .leading, spacing: 8) {
+                    appearanceSection
+                    indexingSection
+                    shortcutsSection
+                    tabsSection
+                    translationSection
+                    generalSection
                     aboutSection
                         .id(Self.aboutAnchorID)
-
                 }
+                .padding(.bottom, 8)
             }
             .onAppear { syncIndexingInputsFromSettings() }
             .onChange(of: settings.fileScanDepth) { _, _ in
@@ -361,13 +36,208 @@ extension ThemeSettingsView {
             .onChange(of: settings.fileScanLimit) { _, _ in
                 fileScanLimitInput = String(settings.fileScanLimit)
             }
-            }
-
-            Spacer(minLength: 0)
 
             Text(HintText.Settings.advancedApply)
                 .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
                 .foregroundStyle(themeStore.mutedTextColor())
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var appearanceSection: some View {
+        SettingsSectionTitle("Appearance")
+        SettingsCard {
+            SettingsRow("Corner radius", detail: "0% is square, 100% is fully round") {
+                HStack(spacing: 10) {
+                    Slider(value: $settings.launcherCornerRadius, in: ThemeSettings.cornerRadiusRange, step: 1)
+                        .controlSize(.small)
+                        .frame(width: 180)
+                    Text("\(Int(settings.launcherCornerRadius))%")
+                        .monospacedDigit()
+                        .frame(width: 40, alignment: .trailing)
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
+                        .foregroundStyle(themeStore.secondaryTextColor())
+                }
+            }
+            SettingsDivider()
+            SettingsToggleRow(
+                "Liquid Glass",
+                detail: "macOS 26+. Off uses the classic blur",
+                isOn: $settings.liquidGlassEnabled
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var indexingSection: some View {
+        SettingsSectionTitle("Indexing")
+        SettingsCard {
+            SettingsRow("Scan scope", detail: "Fast scans less, Thorough scans deeper") {
+                presetButtons(
+                    options: indexingScopePresets.map { $0.title },
+                    selected: indexingScopePresets.firstIndex(where: {
+                        $0.depth == settings.fileScanDepth && $0.limit == settings.fileScanLimit
+                    }),
+                    onPick: {
+                        settings.fileScanDepth = indexingScopePresets[$0].depth
+                        settings.fileScanLimit = indexingScopePresets[$0].limit
+                        fileScanDepthError = nil
+                        fileScanLimitError = nil
+                        syncIndexingInputsFromSettings()
+                    }
+                )
+            }
+            SettingsDivider()
+            SettingsToggleRow(
+                "Lazy indexing",
+                detail: "Refresh the index when the launcher opens after file or app changes",
+                isOn: $settings.lazyIndexingEnabled
+            )
+            SettingsDivider()
+            SettingsRow(
+                "File scan depth",
+                detail: fileScanDepthError ?? "How many directory levels to index (\(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth))"
+            ) {
+                TextField("4", text: $fileScanDepthInput)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+                    .onChange(of: fileScanDepthInput) { _, value in
+                        fileScanDepthInput = sanitizedNumericInput(value)
+                        if let parsed = Int(fileScanDepthInput) {
+                            if parsed >= AppConstants.FileScan.minDepth && parsed <= AppConstants.FileScan.maxDepth {
+                                settings.fileScanDepth = parsed
+                                fileScanDepthError = nil
+                            } else {
+                                fileScanDepthError = "Must be \(AppConstants.FileScan.minDepth)-\(AppConstants.FileScan.maxDepth)"
+                            }
+                        }
+                    }
+            }
+            SettingsDivider()
+            SettingsRow(
+                "File scan limit",
+                detail: fileScanLimitError ?? "Max files indexed per refresh"
+            ) {
+                TextField("4000", text: $fileScanLimitInput)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+                    .onChange(of: fileScanLimitInput) { _, value in
+                        fileScanLimitInput = sanitizedNumericInput(value)
+                        if let parsed = Int(fileScanLimitInput) {
+                            if parsed >= AppConstants.FileScan.minLimit && parsed <= AppConstants.FileScan.maxLimit {
+                                settings.fileScanLimit = parsed
+                                fileScanLimitError = nil
+                            } else {
+                                fileScanLimitError = "Must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit)"
+                            }
+                        }
+                    }
+            }
+            SettingsDivider()
+            SettingsRow("Extra scan folders", detail: extraScanDirectoryMessage ?? "Index these folders too") {
+                Button("Add Folder…") { selectExtraScanDirectory() }
+            } below: {
+                pathChips(themeStore.extraFileScanRoots) { path in
+                    themeStore.removeExtraFileScanRoot(path)
+                    extraScanDirectoryMessage = nil
+                }
+            }
+            SettingsDivider()
+            SettingsRow("Skipped folders", detail: "Never index anything inside these") {
+                Button("Add Folder…") { selectExcludedFolderPath() }
+            } below: {
+                pathChips(themeStore.excludedFolderPaths) { path in
+                    themeStore.removeExcludedFolderPath(path)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var shortcutsSection: some View {
+        SettingsSectionTitle("Shortcuts")
+        ShortcutSettingsSection(settings: $settings)
+    }
+
+    @ViewBuilder
+    private var tabsSection: some View {
+        SettingsSectionTitle("Tabs")
+        SettingsCard {
+            tabOrderRow
+        }
+    }
+
+    @ViewBuilder
+    private var translationSection: some View {
+        SettingsSectionTitle("Translation")
+        SettingsCard {
+            translationLanguagesRow
+        }
+    }
+
+    @ViewBuilder
+    private var generalSection: some View {
+        SettingsSectionTitle("General")
+        SettingsCard {
+            SettingsToggleRow(
+                "Launch at login",
+                detail: "Start Lumio automatically when you sign in",
+                isOn: $settings.launchAtLogin
+            )
+            SettingsDivider()
+            SettingsRow("Log level", detail: "Error only by default; use Info or Debug for troubleshooting") {
+                presetButtons(
+                    options: BackendLogLevel.allCases.map { $0.title },
+                    selected: BackendLogLevel.allCases.firstIndex(of: settings.backendLogLevel),
+                    onPick: { settings.backendLogLevel = BackendLogLevel.allCases[$0] }
+                )
+            }
+            SettingsDivider()
+            SettingsRow(
+                "Config file",
+                detail: freshConfigMessage ?? "Replace the config file with a fresh default one"
+            ) {
+                Button("Create Fresh Config…") {
+                    showFreshConfigConfirm = true
+                    freshConfigMessage = nil
+                }
+            }
+        }
+    }
+
+    /// Removable path chips under a folder row; nothing when the list is empty.
+    @ViewBuilder
+    private func pathChips(_ paths: [String], onRemove: @escaping (String) -> Void) -> some View {
+        if !paths.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(paths, id: \.self) { path in
+                        HStack(spacing: 6) {
+                            Text(path)
+                                .lineLimit(1)
+                            Button {
+                                withAnimation(Motion.Insert.animation) { onRemove(path) }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove")
+                        }
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+                        .foregroundStyle(themeStore.secondaryTextColor())
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(themeStore.liftColor(opacity: 0.1), in: Capsule())
+                        .transition(Motion.Insert.transition)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -376,32 +246,18 @@ extension ThemeSettingsView {
     /// The launcher's tool tabs in their current order, each with arrows to move it.
     var tabOrderRow: some View {
         let order = TabOrder.normalized(settings.tabOrder)
-        return HStack(alignment: .top, spacing: 10) {
-            Text("Tab Order")
-                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    ForEach(Array(order.enumerated()), id: \.element) { index, code in
-                        tabOrderChip(code: code, isFirst: index == 0, isLast: index == order.count - 1)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    Text("Order of the tabs after All in the launcher. Save Config to keep it.")
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                        .foregroundStyle(themeStore.mutedTextColor())
-                    if order != TabOrder.defaultCodes {
-                        Button("Reset") {
-                            settings.tabOrder = TabOrder.defaultCodes
-                        }
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                    }
+        return SettingsRow("Tab order", detail: "Order of the tabs after All in the launcher") {
+            if order != TabOrder.defaultCodes {
+                Button("Reset") {
+                    settings.tabOrder = TabOrder.defaultCodes
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } below: {
+            HStack(spacing: 8) {
+                ForEach(Array(order.enumerated()), id: \.element) { index, code in
+                    tabOrderChip(code: code, isFirst: index == 0, isLast: index == order.count - 1)
+                }
+            }
         }
     }
 
@@ -444,13 +300,16 @@ extension ThemeSettingsView {
         let chosen = Set(TranslationLanguage.selected(settings.translationLanguages).map(\.code))
         let atMax = chosen.count >= TranslationLanguage.maxSelected
         let atMin = chosen.count <= TranslationLanguage.minSelected
-        return HStack(alignment: .top, spacing: 10) {
-            Text("Languages")
-                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            VStack(alignment: .leading, spacing: 8) {
+        return SettingsRow(
+            "Languages",
+            detail: "Pick \(TranslationLanguage.minSelected)-\(TranslationLanguage.maxSelected) languages to translate into (tr\" and tw\")"
+        ) {
+            if Set(TranslationLanguage.defaultCodes) != chosen {
+                Button("Reset to VI · EN · FR") {
+                    settings.translationLanguages = TranslationLanguage.defaultCodes
+                }
+            }
+        } below: {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
                     ForEach(TranslationLanguage.supported) { language in
                         let isOn = chosen.contains(language.code)
@@ -482,20 +341,6 @@ extension ThemeSettingsView {
                         .opacity(locked && !isOn ? 0.45 : 1)
                     }
                 }
-
-                HStack(spacing: 8) {
-                    Text("Pick \(TranslationLanguage.minSelected)-\(TranslationLanguage.maxSelected) languages to translate into (tr\" and tw\").")
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                        .foregroundStyle(themeStore.mutedTextColor())
-                    if Set(TranslationLanguage.defaultCodes) != chosen {
-                        Button("Reset to VI · EN · FR") {
-                            settings.translationLanguages = TranslationLanguage.defaultCodes
-                        }
-                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -512,13 +357,15 @@ extension ThemeSettingsView {
         settings.translationLanguages = TranslationLanguage.supported.map(\.code).filter(next.contains)
     }
 
-    @ViewBuilder
     var aboutSection: some View {
-        Text("About")
-            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
-            .foregroundStyle(themeStore.secondaryTextColor())
-
-        AppUpdateStatusView(themeStore: themeStore)
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle("About")
+            SettingsCard {
+                AppUpdateStatusView(themeStore: themeStore)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+            }
+        }
     }
 
     func selectExcludedFolderPath() {

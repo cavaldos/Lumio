@@ -15,19 +15,21 @@ struct ShortcutSettingsSection: View {
     @State private var monitor: Any?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        SettingsCard {
             ForEach(HotKeyAction.allCases) { action in
+                if action != HotKeyAction.allCases.first { SettingsDivider() }
                 row(action)
             }
-
+            SettingsDivider()
             HStack(spacing: 8) {
                 if let message {
                     Text(message)
                         .foregroundStyle(themeStore.dangerColor())
                 } else {
-                    Text("Click a shortcut, then press the keys. ⌫ clears it, Esc cancels. Save Config to keep it.")
-                        .foregroundStyle(themeStore.mutedTextColor())
+                    Text("Click a shortcut, then press the keys. ⌫ clears it, Esc cancels.")
+                        .foregroundStyle(themeStore.secondaryTextColor())
                 }
+                Spacer(minLength: 0)
                 if settings.hotkeys != HotKeyAction.defaultValues {
                     Button("Reset") {
                         stopRecording()
@@ -36,6 +38,8 @@ struct ShortcutSettingsSection: View {
                 }
             }
             .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
         .onDisappear { stopRecording() }
         // Clicking away (another window or app) ends recording, so the shortcuts aren't left paused.
@@ -50,55 +54,46 @@ struct ShortcutSettingsSection: View {
     private func row(_ action: HotKeyAction) -> some View {
         let combo = settings.hotKey(for: action)
         let isRecording = recording == action
-        return HStack(spacing: 10) {
-            Text(action.title)
-                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            Button {
-                isRecording ? stopRecording() : startRecording(action)
-            } label: {
-                Text(isRecording ? "Press keys…" : combo?.display ?? "Record Shortcut")
-                    .font(themeStore.uiFont(
-                        size: CGFloat(AppConstants.ThemeUI.fontSize - 1),
-                        weight: combo != nil && !isRecording ? .semibold : .regular
-                    ))
-                    .foregroundStyle(combo != nil || isRecording ? themeStore.fontColor() : themeStore.secondaryTextColor())
-                    .frame(minWidth: 120)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        themeStore.liftColor(opacity: isRecording ? 0.24 : ThemeSettingsView.activeFillOpacity),
-                        in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
-                    )
-                    .overlay {
-                        if isRecording {
-                            RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
-                                .strokeBorder(Color.accentColor, lineWidth: 1.5)
-                        }
+        return SettingsRow(action.title, detail: action.detail) {
+            HStack(spacing: 8) {
+                if combo != nil, !isRecording {
+                    Button {
+                        set(action, to: nil)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(themeStore.mutedTextColor())
                     }
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+                    .buttonStyle(.plain)
+                    .help("Remove shortcut")
+                }
 
-            if combo != nil, !isRecording {
                 Button {
-                    set(action, to: nil)
+                    isRecording ? stopRecording() : startRecording(action)
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(themeStore.mutedTextColor())
+                    Text(isRecording ? "Press keys…" : combo?.display ?? "Record Shortcut")
+                        .font(themeStore.uiFont(
+                            size: CGFloat(AppConstants.ThemeUI.fontSize - 1),
+                            weight: combo != nil && !isRecording ? .semibold : .regular
+                        ))
+                        .foregroundStyle(combo != nil || isRecording ? themeStore.fontColor() : themeStore.secondaryTextColor())
+                        .frame(minWidth: 120)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            themeStore.liftColor(opacity: isRecording ? 0.24 : ThemeSettingsView.activeFillOpacity),
+                            in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+                        )
+                        .overlay {
+                            if isRecording {
+                                RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                            }
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Remove shortcut")
             }
-
-            Text(action.detail)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .regular))
-                .foregroundStyle(themeStore.mutedTextColor())
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

@@ -90,49 +90,33 @@ struct ThemeSettingsView: View {
         }
     }
 
-    func sectionHeader(_ title: String) -> some View {
-        HStack(spacing: 8) {
-            Text("▶")
-                .font(.system(size: CGFloat(AppConstants.ThemeUI.fontSize - 2)))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            Text(title)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .semibold))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            Spacer(minLength: 0)
-        }
-    }
-
-    func presetRow(title: String, options: [String], selected: Int?, onPick: @escaping (Int) -> Void) -> some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .frame(width: AppConstants.ThemeUI.labelWidth, alignment: .leading)
-                .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
-                .foregroundStyle(themeStore.secondaryTextColor())
-
-            HStack(spacing: 8) {
-                ForEach(options.indices, id: \.self) { index in
-                    let isActive = selected == index
-                    Button {
-                        onPick(index)
-                    } label: {
-                        Text(options[index])
-                            .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: isActive ? .semibold : .regular))
-                            .foregroundStyle(isActive ? themeStore.fontColor() : themeStore.secondaryTextColor())
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(
-                                themeStore.liftColor(opacity: isActive ? Self.activeFillOpacity : Self.inactiveFillOpacity),
-                                in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
-                            )
-                    }
-                    .buttonStyle(.plain)
+    /// Segmented-looking row of option buttons; `selected` nil = none matches (custom values).
+    func presetButtons(options: [String], selected: Int?, onPick: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 4) {
+            ForEach(options.indices, id: \.self) { index in
+                let isActive = selected == index
+                Button {
+                    onPick(index)
+                } label: {
+                    Text(options[index])
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? themeStore.fontColor() : themeStore.secondaryTextColor())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(
+                            themeStore.liftColor(opacity: isActive ? Self.activeFillOpacity : 0),
+                            in: RoundedRectangle(cornerRadius: themeStore.controlRadius - 2, style: .continuous)
+                        )
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
-
-            Spacer(minLength: 0)
         }
+        .padding(3)
+        .background(
+            themeStore.liftColor(opacity: Self.inactiveFillOpacity),
+            in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+        )
     }
 
     func closeSettingsPanel() {
