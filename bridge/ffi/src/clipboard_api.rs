@@ -4,37 +4,19 @@
 //! The concealed/transient gate is NOT here and cannot be: only the shell sees
 //! the pasteboard markers. This layer trusts what it is handed.
 
+use crate::shared_store::store;
 use crate::state::{cstr_to_string, default_db_path, store_json_allocation};
-use lumio_storage::{CLIPBOARD_KIND_IMAGE, CLIPBOARD_KIND_TEXT, ClipboardEntry, SqliteStore};
+use lumio_storage::{CLIPBOARD_KIND_IMAGE, CLIPBOARD_KIND_TEXT, ClipboardEntry};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, OnceLock};
 
 const JSON_EMPTY_ARRAY: &str = "[]";
 /// Beside the database, not in it: SQLite is the wrong place for megabytes of
 /// pixels.
 const IMAGE_DIR_NAME: &str = "clipboard-images";
-
-/// One connection, opened once: `record` runs on every copy made anywhere in
-/// the OS, and `SqliteStore::open` re-runs the whole migration each time.
-/// Keyed on the path: `set_db_path_for_test` can repoint the database, and an
-/// unkeyed cache would keep writing to the old file.
-static CLIPBOARD_STORE: OnceLock<Mutex<Option<(PathBuf, SqliteStore)>>> = OnceLock::new();
-
-fn store() -> MutexGuard<'static, Option<(PathBuf, SqliteStore)>> {
-    let path = default_db_path();
-    let cell = CLIPBOARD_STORE.get_or_init(|| Mutex::new(None));
-    let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
-    let matches_path = guard.as_ref().is_some_and(|(cached, _)| *cached == path);
-    if !matches_path {
-        // A failed open is retried on the next call rather than cached.
-        *guard = SqliteStore::open(&path).ok().map(|store| (path, store));
-    }
-    guard
-}
 
 #[derive(Serialize)]
 struct ClipboardEntryJSON {

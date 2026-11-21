@@ -1,6 +1,6 @@
 use crate::runtime_config::{log_error, log_info};
-use lumio_engine::QueryEngine;
 use lumio_engine::config::RuntimeConfig;
+use lumio_engine::{BootstrapScope, QueryEngine};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::os::raw::c_char;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::thread;
@@ -23,6 +23,14 @@ static INDEX_WATCHER_BOOTSTRAP_STARTED: OnceLock<()> = OnceLock::new();
 static INDEX_REFRESH_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static INDEX_CHANGE_VERSION: AtomicU64 = AtomicU64::new(0);
 static INDEX_CLEARED_VERSION: AtomicU64 = AtomicU64::new(0);
+/// Which sources changed since the last refresh (`SCOPE_*` bits). The watcher
+/// adds the bits of what it saw; a refresh takes them, so a build churning a
+/// file root re-walks files only, not every app root too.
+static PENDING_SCOPE: AtomicU8 = AtomicU8::new(0);
+const SCOPE_APPS: u8 = 1;
+const SCOPE_FILES: u8 = 2;
+const SCOPE_SETTINGS: u8 = 4;
+const SCOPE_ALL: u8 = SCOPE_APPS | SCOPE_FILES | SCOPE_SETTINGS;
 static INDEX_WATCHER_CONTROL: OnceLock<Mutex<Option<mpsc::Sender<WatcherMessage>>>> =
     OnceLock::new();
 
@@ -113,7 +121,11 @@ pub(crate) fn refresh_engine_cache() {
             let mut guard = lock
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            *guard = engine;
+            let previous = std::mem::replace(&mut *guard, engine);
+            // Free the old engine after releasing the lock: dropping thousands of
+            // candidates under it would stall every search waiting to read.
+            drop(guard);
+            drop(previous);
         }
     }
 }
@@ -122,8 +134,27 @@ pub(crate) fn request_background_index_refresh() -> bool {
     request_background_index_refresh_internal()
 }
 
+/// Something changed that the watcher can't place (config reload, failed
+/// refresh): the next refresh re-walks every source.
 pub(crate) fn mark_index_dirty() {
+    mark_index_dirty_scoped(SCOPE_ALL);
+}
+
+fn mark_index_dirty_scoped(bits: u8) {
+    if bits == 0 {
+        return;
+    }
+    // Bits first: a refresh that sees the version bump must also see the scope.
+    PENDING_SCOPE.fetch_or(bits, Ordering::AcqRel);
     INDEX_CHANGE_VERSION.fetch_add(1, Ordering::AcqRel);
+}
+
+fn scope_from_bits(bits: u8) -> BootstrapScope {
+    BootstrapScope {
+        apps: bits & SCOPE_APPS != 0,
+        files: bits & SCOPE_FILES != 0,
+        settings: bits & SCOPE_SETTINGS != 0,
+    }
 }
 
 pub(crate) fn clear_index_dirty_if_unchanged(snapshot_version: u64) {
@@ -183,6 +214,7 @@ pub(crate) fn restart_index_watchers() {
         return;
     }
 
+    let filter = WatchFilter::from_config(&config);
     let mut roots = config.app_scan_roots;
     roots.extend(config.file_scan_roots);
     roots.extend(config.file_scan_extra_roots);
@@ -247,7 +279,7 @@ pub(crate) fn restart_index_watchers() {
                 Ok(WatcherMessage::Stop) => break,
                 Ok(WatcherMessage::Event(Ok(event))) => {
                     if should_mark_dirty_from_event(&event) {
-                        mark_index_dirty();
+                        mark_index_dirty_scoped(filter.scope_bits(&event.paths));
                     }
                 }
                 Ok(WatcherMessage::Event(Err(err))) => {
@@ -276,6 +308,9 @@ fn request_background_index_refresh_internal() -> bool {
     }
 
     let dirty_version_snapshot = INDEX_CHANGE_VERSION.load(Ordering::Acquire);
+    // Lazy indexing off refreshes on every open with nothing recorded: walk it all.
+    let taken = PENDING_SCOPE.swap(0, Ordering::AcqRel);
+    let bits = if lazy_indexing_enabled && taken != 0 { taken } else { SCOPE_ALL };
     thread::spawn(move || {
         // Keep refresh slot release tied to scope exit so the in-progress flag
         // is reset for success, error, and panic-unwind paths.
@@ -283,19 +318,20 @@ fn request_background_index_refresh_internal() -> bool {
         let started_at = Instant::now();
         let run_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let path = default_db_path();
-            match QueryEngine::bootstrap_sqlite(&path) {
+            match QueryEngine::bootstrap_sqlite_scoped(&path, scope_from_bits(bits)) {
                 Ok(()) => {
                     refresh_engine_cache();
                     clear_index_dirty_if_unchanged(dirty_version_snapshot);
                     let candidate_count = with_engine(QueryEngine::candidate_count);
                     log_info(&format!(
-                        "background index refresh ok candidates={} elapsed_ms={}",
+                        "background index refresh ok scope={bits:#05b} candidates={} elapsed_ms={}",
                         candidate_count,
                         started_at.elapsed().as_millis()
                     ));
                 }
                 Err(err) => {
-                    mark_index_dirty();
+                    // Give the scope back so the retry walks what this run didn't.
+                    mark_index_dirty_scoped(bits);
                     log_error(&format!(
                         "background index refresh failed error={} elapsed_ms={}",
                         err,
@@ -306,7 +342,7 @@ fn request_background_index_refresh_internal() -> bool {
         }));
 
         if run_result.is_err() {
-            mark_index_dirty();
+            mark_index_dirty_scoped(bits);
             log_error(&format!(
                 "background index refresh panicked elapsed_ms={}",
                 started_at.elapsed().as_millis()
@@ -441,6 +477,98 @@ fn stop_index_watchers() {
     }
 }
 
+/// Decides which index sources a filesystem event touches, with the same rules
+/// the walkers use, so churn the index never sees (`target/`, `node_modules/`,
+/// dot-dirs, files inside a `.app`, paths deeper than the scan depth) doesn't
+/// mark the index dirty and re-walk it on the next launcher open.
+pub(crate) struct WatchFilter {
+    app_roots: Vec<PathBuf>,
+    app_depth: usize,
+    file_roots: Vec<PathBuf>,
+    file_depth: usize,
+    skip_dir_names: Vec<String>,
+}
+
+impl WatchFilter {
+    fn from_config(config: &RuntimeConfig) -> Self {
+        let roots = |list: &[String]| -> Vec<PathBuf> {
+            list.iter()
+                .map(|root| root.trim())
+                .filter(|root| !root.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        };
+        let mut file_roots = roots(&config.file_scan_roots);
+        file_roots.extend(roots(&config.file_scan_extra_roots));
+        Self {
+            app_roots: roots(&config.app_scan_roots),
+            app_depth: config.app_scan_depth,
+            file_roots,
+            file_depth: config.file_scan_depth,
+            skip_dir_names: config
+                .skip_dir_names
+                .iter()
+                .map(|name| name.trim().to_lowercase())
+                .filter(|name| !name.is_empty())
+                .collect(),
+        }
+    }
+
+    /// `SCOPE_*` bits for the sources any of `paths` belongs to; 0 when none
+    /// of them could change what the index holds.
+    fn scope_bits(&self, paths: &[PathBuf]) -> u8 {
+        let mut bits = 0;
+        for path in paths {
+            if bits & SCOPE_APPS == 0 && self.touches_apps(path) {
+                bits |= SCOPE_APPS;
+            }
+            if bits & SCOPE_FILES == 0 && self.touches_files(path) {
+                bits |= SCOPE_FILES;
+            }
+        }
+        bits
+    }
+
+    fn touches_apps(&self, path: &Path) -> bool {
+        self.app_roots.iter().any(|root| {
+            let Ok(rest) = path.strip_prefix(root) else {
+                return false;
+            };
+            let names: Vec<&str> = rest.iter().filter_map(|name| name.to_str()).collect();
+            // A bundle appearing, leaving or being renamed matters; its insides
+            // changing (an app updating its own caches) does not.
+            // The app walker lists entries at levels 1..=depth: a bundle counts at
+            // its own level, a plain folder only if bundles inside it could count.
+            match names.iter().position(|name| name.ends_with(".app")) {
+                Some(bundle) => bundle + 1 == names.len() && names.len() <= self.app_depth,
+                None => !names.is_empty() && names.len() < self.app_depth,
+            }
+        })
+    }
+
+    fn touches_files(&self, path: &Path) -> bool {
+        self.file_roots.iter().any(|root| {
+            let Ok(rest) = path.strip_prefix(root) else {
+                return false;
+            };
+            let mut depth = 0;
+            for name in rest.iter() {
+                depth += 1;
+                let Some(name) = name.to_str() else {
+                    return false;
+                };
+                if name.starts_with('.')
+                    || name.ends_with(".app")
+                    || self.skip_dir_names.contains(&name.to_lowercase())
+                {
+                    return false;
+                }
+            }
+            depth >= 1 && depth <= self.file_depth
+        })
+    }
+}
+
 fn should_mark_dirty_from_event(event: &Event) -> bool {
     if event.paths.is_empty() {
         return false;
@@ -543,6 +671,52 @@ mod tests {
 
         clear_index_dirty_if_unchanged(snapshot);
         assert!(is_index_dirty());
+    }
+
+    fn watch_filter() -> super::WatchFilter {
+        super::WatchFilter {
+            app_roots: vec!["/Applications".into()],
+            app_depth: 3,
+            file_roots: vec!["/Users/me/Code".into()],
+            file_depth: 4,
+            skip_dir_names: vec!["target".into(), "node_modules".into()],
+        }
+    }
+
+    fn bits(filter: &super::WatchFilter, path: &str) -> u8 {
+        filter.scope_bits(&[std::path::PathBuf::from(path)])
+    }
+
+    #[test]
+    fn watch_filter_ignores_churn_the_walkers_skip() {
+        let filter = watch_filter();
+        // Build output, dependencies, dot-dirs: the file walker never enters them.
+        assert_eq!(bits(&filter, "/Users/me/Code/lumio/target/debug/foo.o"), 0);
+        assert_eq!(bits(&filter, "/Users/me/Code/web/node_modules/x/index.js"), 0);
+        assert_eq!(bits(&filter, "/Users/me/Code/lumio/.git/index"), 0);
+        assert_eq!(bits(&filter, "/Users/me/Code/Target/x"), 0, "skip names ignore case");
+        // Deeper than file_scan_depth.
+        assert_eq!(bits(&filter, "/Users/me/Code/a/b/c/d/e.txt"), 0);
+        // Outside every root.
+        assert_eq!(bits(&filter, "/tmp/x"), 0);
+        // An app updating files inside its own bundle.
+        assert_eq!(bits(&filter, "/Applications/Safari.app/Contents/Info.plist"), 0);
+    }
+
+    #[test]
+    fn watch_filter_scopes_real_changes_to_their_source() {
+        let filter = watch_filter();
+        assert_eq!(bits(&filter, "/Users/me/Code/a/b/c/notes.md"), super::SCOPE_FILES);
+        assert_eq!(bits(&filter, "/Applications/Foo.app"), super::SCOPE_APPS);
+        assert_eq!(bits(&filter, "/Applications/Utilities/Foo.app"), super::SCOPE_APPS);
+        assert_eq!(bits(&filter, "/Applications/Games"), super::SCOPE_APPS);
+        // Beyond app_scan_depth.
+        assert_eq!(bits(&filter, "/Applications/a/b/c/Foo.app"), 0);
+        let both = filter.scope_bits(&[
+            "/Applications/Foo.app".into(),
+            "/Users/me/Code/readme.md".into(),
+        ]);
+        assert_eq!(both, super::SCOPE_APPS | super::SCOPE_FILES);
     }
 
     #[test]

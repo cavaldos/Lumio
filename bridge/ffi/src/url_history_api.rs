@@ -4,9 +4,9 @@
 //! endpoints are best-effort and panic-safe at `lib.rs`.
 //! Frecency ranking lives in `lumio_engine::url_history`, shared with linows.
 
-use crate::state::{cstr_to_string, default_db_path, store_json_allocation};
+use crate::shared_store::store;
+use crate::state::{cstr_to_string, store_json_allocation};
 use lumio_engine::url_history::ranked_url_history;
-use lumio_storage::SqliteStore;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -19,19 +19,18 @@ pub(crate) fn lumio_record_url_hit_impl(url: *const c_char) -> bool {
     if url.trim().is_empty() {
         return false;
     }
-    let Ok(store) = SqliteStore::open(default_db_path()) else {
-        return false;
-    };
-    store.record_url_hit(&url).is_ok()
+    store()
+        .as_ref()
+        .is_some_and(|(_, store)| store.record_url_hit(&url).is_ok())
 }
 
 /// JSON array of up to `limit` remembered URLs matching `query` (frecency
 /// order), or `[]` on any failure.
 pub(crate) fn lumio_recent_urls_json_impl(query: *const c_char, limit: u32) -> *mut c_char {
     let query = cstr_to_string(query);
-    let json = SqliteStore::open(default_db_path())
-        .ok()
-        .and_then(|store| store.recent_urls(&query, limit as usize).ok())
+    let json = store()
+        .as_ref()
+        .and_then(|(_, store)| store.recent_urls(&query, limit as usize).ok())
         .map(|entries| ranked_url_history(entries, &query))
         .and_then(|scored| serde_json::to_string(&scored).ok())
         .unwrap_or_else(|| JSON_EMPTY_ARRAY.to_string());

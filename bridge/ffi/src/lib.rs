@@ -9,6 +9,7 @@ mod modes_api;
 
 mod runtime_config;
 mod search_api;
+mod shared_store;
 
 mod state;
 mod tools_api;

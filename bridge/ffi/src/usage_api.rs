@@ -1,7 +1,7 @@
 use crate::runtime_config::{log_debug, log_error};
-use crate::state::{cstr_to_string, default_db_path, store_json_allocation, with_engine_mut};
+use crate::shared_store::store;
+use crate::state::{cstr_to_string, store_json_allocation, with_engine_mut};
 use lumio_indexing::{CandidateIdKind, UsageAction};
-use lumio_storage::SqliteStore;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -114,11 +114,14 @@ fn validate_and_record_usage(
         return Ok(());
     }
 
-    let Ok(store) = SqliteStore::open(default_db_path()) else {
-        return Err(UsageRecordError::StorageOpenFailed);
+    // The lock is released before the engine update below.
+    let ok = {
+        let guard = store();
+        let Some((_, store)) = guard.as_ref() else {
+            return Err(UsageRecordError::StorageOpenFailed);
+        };
+        store.record_usage_event(trimmed_id, trimmed_action).is_ok()
     };
-
-    let ok = store.record_usage_event(trimmed_id, trimmed_action).is_ok();
 
     if ok {
         let used_at_unix_s = SystemTime::now()
