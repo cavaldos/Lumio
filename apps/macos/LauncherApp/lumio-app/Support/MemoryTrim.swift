@@ -17,6 +17,7 @@ enum MemoryTrim {
         HighlightedTextCache.purge()
         SpotlightLookupCache.purgeEntries()
         RowIconCache.purge()
+        PreviewFacts.purge()
         ContentIndex.shared.releaseMemory()
         await QuickLookPreviewService.shared.purge()
         malloc_zone_pressure_relief(nil, 0)

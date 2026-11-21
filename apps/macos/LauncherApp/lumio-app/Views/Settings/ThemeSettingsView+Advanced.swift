@@ -824,7 +824,7 @@ struct IndexStatusRows: View {
         outcome = "Scanning your folders…"
         Task { @MainActor in
             let started = Date()
-            let ok = await Task.detached(priority: .userInitiated) { EngineBridge.shared.reloadConfig() }.value
+            let ok = await EngineBridge.shared.reloadConfigInBackground()
             await load()
             rebuilding = false
             let seconds = Date().timeIntervalSince(started)

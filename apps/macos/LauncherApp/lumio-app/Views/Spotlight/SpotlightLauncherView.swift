@@ -41,6 +41,8 @@ struct SpotlightLauncherView: View {
 
     // Search
     @State private var query = ""
+    /// The text the rows on screen were found for (set with them in `publish`).
+    @State private var shownQuery = ""
     /// Results currently shown. When the panel collapses, keep the old list so it fades
     /// out with the panel instead of vanishing first.
     /// `all` + `filter` and what the body derives from them, computed once per change
@@ -50,6 +52,8 @@ struct SpotlightLauncherView: View {
         get { list.all }
         nonmutating set { list.all = newValue }
     }
+    /// The sorted list for the sort menu, kept until the rows or the mode change.
+    @State private var sortMemo = SortedResultsMemo()
     @State private var sel = 0
     /// Set by ⌘D on a clip: the next publish keeps this row index (the rows below slide up) instead of jumping to the top.
     @State private var keepSelOnPublish: Int?
@@ -132,6 +136,8 @@ struct SpotlightLauncherView: View {
     @State private var clipPreviewTask: Task<Void, Never>?
     /// Row under the mouse pointer, so leaving it cancels the pending clipboard preview.
     @State private var hoveredRow: Int?
+    /// Bumped when a PreviewFacts lookup lands, so the chips are built again with it.
+    @State private var previewFactsTick = 0
 
     // Legacy launcher modes (prefix / command) — reusing the legacy modules as-is.
     /// Clipboard watcher (c" / ci"). Must live with the launcher: the legacy launcher isn't
@@ -169,7 +175,7 @@ struct SpotlightLauncherView: View {
 
     private var results: [SpotlightItem] {
         guard sortMode != .relevance, scope == nil, activeCommand == nil, !inModeTab else { return list.results }
-        return ResultSort.sorted(list.results, by: sortMode)
+        return sortMemo.sorted(list, by: sortMode)
     }
 
     /// Pills for the groups present in the results (see `SpotlightResultList.kinds`).
@@ -734,7 +740,7 @@ struct SpotlightLauncherView: View {
     private var listView: some View {
         Group {
             if results.isEmpty {
-                Text("No results for “\(query)”.")
+                Text("No results for “\(shownQuery)”.")
                     .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -750,6 +756,7 @@ struct SpotlightLauncherView: View {
                                     .modifier(SpotlightRiseIn(
                                         animation: introActive ? motion(SpotlightMotion.rowRise(index)) : nil
                                     ))
+                                    .transition(SpotlightMotion.rowSwap)
                                     .onTapGesture {
                                         // Mouse click: open exactly the row being seen, no waiting.
                                         sel = index
@@ -863,7 +870,10 @@ struct SpotlightLauncherView: View {
         guard scope == nil, activeCommand == nil,
               [.app, .doc, .content, .folder, .url, .tab, .setting].contains(item.kind)
         else { return [] }
-        return query.lowercased().split(separator: " ").map(String.init).filter { $0.count >= 2 }
+        // The text these rows were found for, not the live field: a keystroke then leaves the
+        // rows alone (they skip their body) until its own results land, and stale rows never
+        // bold letters they don't match.
+        return shownQuery.lowercased().split(separator: " ").map(String.init).filter { $0.count >= 2 }
     }
 
     /// Clipboard: what the side preview lists under the clip (app, copy times, count).
@@ -1532,6 +1542,8 @@ struct SpotlightLauncherView: View {
 
     /// Tag chips for the detail card, like Fluent Search's: click one to narrow to it.
     private func previewChips(for item: SpotlightItem) -> [PreviewChip] {
+        // Read so the late default-app chip (PreviewFacts) re-renders the pane.
+        _ = previewFactsTick
         guard scope == nil, activeCommand == nil else { return [] }
         func lock(_ tag: SearchTag?) {
             guard let tag else { return }
@@ -1555,15 +1567,16 @@ struct SpotlightLauncherView: View {
             }
             let parent = (path as NSString).deletingLastPathComponent
             chips.append(PreviewChip(
-                id: "parent", label: FileManager.default.displayName(atPath: isFolder ? path : parent), symbol: "folder"
+                id: "parent", label: PreviewFacts.displayName(isFolder ? path : parent), symbol: "folder"
             ) { lock(.folder(isFolder ? path : parent)) })
             if isFolder {
-                chips.append(PreviewChip(id: "in", label: FileManager.default.displayName(atPath: parent), symbol: "arrow.turn.left.up") {
+                chips.append(PreviewChip(id: "in", label: PreviewFacts.displayName(parent), symbol: "arrow.turn.left.up") {
                     lock(.folder(parent))
                 })
-            } else if let app = NSWorkspace.shared.urlForApplication(toOpen: URL(fileURLWithPath: path)) {
-                // The app that opens it: jump to that app's result.
-                let name = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+            } else if let app = PreviewFacts.defaultApp(for: path, onLoad: { previewFactsTick &+= 1 }) {
+                // The app that opens it: jump to that app's result. Looked up off the main
+                // thread; the chip shows up one render later the first time.
+                let name = PreviewFacts.displayName(app.path).replacingOccurrences(of: ".app", with: "")
                 chips.append(PreviewChip(id: "app", label: name, appPath: app.path) {
                     withAnimation(motion(SpotlightMotion.chip)) { tagStack = [] }
                     query = name
@@ -1618,10 +1631,10 @@ struct SpotlightLauncherView: View {
         switch item.kind {
         case .app:
             guard let path = item.target, path.hasPrefix("/") else { return [] }
-            let running = SpotlightOpener.runningApp(at: path)
+            let running = PreviewFacts.isRunning(path)
             var list = [PreviewAction(
-                id: "open", label: running == nil ? "Open" : "Switch to App",
-                symbol: running == nil ? "arrow.up.forward.app" : "arrow.left.arrow.right", shortcut: "⏎"
+                id: "open", label: running ? "Switch to App" : "Open",
+                symbol: running ? "arrow.left.arrow.right" : "arrow.up.forward.app", shortcut: "⏎"
             ) { run(item) }]
             list.append(PreviewAction(id: "new", label: "Open New Instance", symbol: "plus.rectangle.on.rectangle") {
                 let config = NSWorkspace.OpenConfiguration()
@@ -1633,16 +1646,16 @@ struct SpotlightLauncherView: View {
             list.append(PreviewAction(id: "reveal", label: "Show in \(manager)", symbol: "folder", shortcut: "⌘F") {
                 finish(SpotlightOpener.perform(.reveal, on: item))
             })
-            if let running {
+            if running {
                 list.append(PreviewAction(id: "hide", label: "Hide", symbol: "eye.slash") {
                     finish(SpotlightOpener.perform(.hideApp, on: item))
                 })
                 list.append(PreviewAction(id: "quit", label: "Quit", symbol: "xmark.circle") {
-                    running.terminate()
+                    SpotlightOpener.runningApp(at: path)?.terminate()
                     toast("Quit \(item.name)")
                 })
                 list.append(PreviewAction(id: "kill", label: "Force Quit", symbol: "xmark.octagon") {
-                    running.forceTerminate()
+                    SpotlightOpener.runningApp(at: path)?.forceTerminate()
                     toast("Force quit \(item.name)")
                 })
             }
@@ -1656,7 +1669,7 @@ struct SpotlightLauncherView: View {
                     }
                 })
             }
-            if Self.canUninstall(path) {
+            if PreviewFacts.canUninstall(path) {
                 list.append(PreviewAction(id: "uninstall", label: "Uninstall…", symbol: "trash") {
                     if SpotlightOpener.runningApp(at: path) != nil {
                         toast("Quit \(item.name) first, then uninstall it")
@@ -2028,17 +2041,19 @@ struct SpotlightLauncherView: View {
             toast("\(item.name) is already hidden")
         case .added:
             if scope?.id == item.id { exitChip() }
-            toast(EngineBridge.shared.reloadConfig()
-                ? "Hid \(item.name) from results"
-                : "Saved, but reloading the config failed")
-            refresh()
+            // The reload re-walks the index (seconds): never on the main thread.
+            Task { @MainActor in
+                let ok = await EngineBridge.shared.reloadConfigInBackground()
+                guard isOpen, !dismissing else { return }
+                toast(ok ? "Hid \(item.name) from results" : "Saved, but reloading the config failed")
+                refresh()
+            }
         }
     }
 
     /// ⌘⇧; / the Settings button: re-read the config file.
     private func reloadConfig() {
         let result = ThemeStore.shared.reloadFromConfig()
-        let backendReloaded = EngineBridge.shared.reloadConfig()
         clipboardStore.reloadFromConfig()
         loadRetention()
         ContentIndex.shared.reloadConfig()
@@ -2049,15 +2064,21 @@ struct SpotlightLauncherView: View {
         ExternalDrives.isEnabled = LauncherConfigFile.value(ExternalDrives.configKey).map {
             !["false", "0", "no", "off"].contains($0.lowercased())
         } ?? true
-        guard isOpen else { return }
-        if !backendReloaded {
-            toast("Config reload failed")
-        } else if !result.warnings.isEmpty {
-            toast(result.warnings.joined(separator: ", "))
-        } else {
-            toast("Config reloaded")
+        // The core re-walks every indexed folder here (seconds). On the main thread that froze
+        // the whole app, and every Settings toggle triggers it. Searches keep using the
+        // previous index meanwhile.
+        Task { @MainActor in
+            let backendReloaded = await EngineBridge.shared.reloadConfigInBackground()
+            guard isOpen, !dismissing else { return }
+            if !backendReloaded {
+                toast("Config reload failed")
+            } else if !result.warnings.isEmpty {
+                toast(result.warnings.joined(separator: ", "))
+            } else {
+                toast("Config reloaded")
+            }
+            refresh()
         }
-        refresh()
     }
 
     private func loadRetention() {
@@ -2149,19 +2170,20 @@ struct SpotlightLauncherView: View {
 
     /// Apps that can be uninstalled by moving them to the Trash: in an Applications folder,
     /// not part of macOS, and not Lumio itself.
-    private static func canUninstall(_ path: String) -> Bool {
-        let real = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-        let home = NSHomeDirectory() + "/Applications/"
-        guard real.hasPrefix("/Applications/") || real.hasPrefix(home) else { return false }
-        return real != Bundle.main.bundleURL.resolvingSymlinksInPath().path
-    }
-
     /// Shows the results. Expands the panel if it isn't already.
     private func publish(_ rows: [SpotlightItem]) {
-        var plain = Transaction()
-        plain.disablesAnimations = true
-        withTransaction(plain) {
+        // The first results after the panel opens rise in one by one (SpotlightRiseIn). Later
+        // ones, while typing, swap with a short spring: rows that stay slide to their new place,
+        // new rows fade in, dropped rows vanish. Swapping instantly made the list flicker.
+        var swap = Transaction()
+        if expanded, !introActive, !reduceMotion {
+            swap.animation = SpotlightMotion.typingSwap
+        } else {
+            swap.disablesAnimations = true
+        }
+        withTransaction(swap) {
             all = rows
+            shownQuery = query
             sel = keepSelOnPublish.map { min($0, max(0, rows.count - 1)) } ?? 0
         }
         if !expanded { setExpanded(true) }
@@ -2668,6 +2690,7 @@ struct SpotlightLauncherView: View {
             searchTask = nil
             activateWhenReady = false
             query = ""
+            shownQuery = ""
             all = []
             sel = 0
             filter = nil
@@ -3142,7 +3165,11 @@ struct SpotlightResultList {
     /// shown (last), since it switches to a different search rather than filtering this one.
     private(set) var kinds: [SpotlightKind] = []
 
+    /// Goes up whenever `results` changes, so a cache built from it knows when to rebuild.
+    private(set) var version = 0
+
     private mutating func derive() {
+        version &+= 1
         if let filter {
             results = all.filter { $0.kind.pillGroup == filter }
         } else {
@@ -3155,6 +3182,23 @@ struct SpotlightResultList {
             if !modeTabs.contains(group), !seen.contains(group) { seen.append(group) }
         }
         kinds = seen
+    }
+}
+
+/// `results` re-sorted for the sort menu (name, date, size, type). The launcher reads `results`
+/// dozens of times per render, and re-sorting on each read (with a disk read per file the first
+/// time) made typing lag while a sort was chosen.
+final class SortedResultsMemo {
+    private var version = -1
+    private var mode = ResultSort.relevance
+    private var rows: [SpotlightItem] = []
+
+    func sorted(_ list: SpotlightResultList, by mode: ResultSort) -> [SpotlightItem] {
+        if version == list.version, self.mode == mode { return rows }
+        rows = ResultSort.sorted(list.results, by: mode)
+        version = list.version
+        self.mode = mode
+        return rows
     }
 }
 

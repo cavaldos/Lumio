@@ -169,9 +169,23 @@ final class EngineBridge: @unchecked Sendable {
         return payload.error
     }
 
+    /// Re-reads `~/.lumio/config` AND re-walks every indexed folder (seconds on a big disk).
+    /// Blocks the caller for the whole walk: use `reloadConfigInBackground()` from the UI.
     nonisolated func reloadConfig() -> Bool {
         lumio_reload_config()
     }
+
+    /// `reloadConfig()` off the main thread, one at a time. Saving a setting posts a reload
+    /// while Settings may run its own: overlapping walks fight over lumio.db's write lock
+    /// (5 s busy timeout per statement) and can fail with "database is locked".
+    nonisolated func reloadConfigInBackground() async -> Bool {
+        await withCheckedContinuation { continuation in
+            Self.reloadQueue.async { continuation.resume(returning: self.reloadConfig()) }
+        }
+    }
+
+    private nonisolated static let reloadQueue = DispatchQueue(
+        label: "com.cavaldos.Lumio.config-reload", qos: .userInitiated)
 
     @discardableResult
     nonisolated func requestIndexRefresh() -> Bool {

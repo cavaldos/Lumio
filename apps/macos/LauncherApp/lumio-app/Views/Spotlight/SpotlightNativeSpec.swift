@@ -213,6 +213,16 @@ enum SpotlightMotion {
             .delay(0.06 + Double(min(index, 7)) * 0.026)
     }
 
+    /// Results replaced while typing (after the intro): short and critically damped, so the
+    /// list keeps up with the keyboard and a new keystroke just retargets the spring.
+    static let typingSwap = Animation.spring(response: 0.24, dampingFraction: 0.92)
+    /// New rows fade down into place. Dropped rows fade out much faster than new ones fade in,
+    /// so two rows' text never shows on top of each other.
+    static let rowSwap: AnyTransition = .asymmetric(
+        insertion: .opacity.combined(with: .offset(y: -5)),
+        removal: .opacity.animation(.easeOut(duration: 0.07))
+    )
+
     // Row selection: ONE selection bar slides between rows (matchedGeometryEffect),
     // the newly selected row's icon zooms up one beat and back.
     static let selectionGlide = Animation.spring(response: 0.3, dampingFraction: 0.85)

@@ -132,7 +132,15 @@ struct SpotlightPreviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
         .overlay(alignment: .topTrailing) { paneButtons }
-        .task(id: item.id) { info = Self.loadInfo(for: item) }
+        .task(id: item.id) {
+            // Off the main thread like `classic`: the top result's card is rebuilt on each
+            // keystroke, and a disk read here stalled typing.
+            let current = item
+            info = Info(detail: Self.immediateDetail(for: current))
+            let loaded = await Task.detached(priority: .userInitiated) { Self.loadInfo(for: current) }.value
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.14)) { info = loaded }
+        }
     }
 
     /// Location / Modified / Size (files), Url (links), Version (apps).
