@@ -306,7 +306,7 @@
 				INFOPLIST_FILE = "lumio-app/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Lumio;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = NO;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash and read how many items it contains.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash, and your browser to find open tabs and switch to them.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				OTHER_LDFLAGS = (
@@ -350,7 +350,7 @@
 				INFOPLIST_FILE = "lumio-app/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Lumio;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = NO;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash and read how many items it contains.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Lumio uses Finder to empty the Trash, and your browser to find open tabs and switch to them.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				OTHER_LDFLAGS = (

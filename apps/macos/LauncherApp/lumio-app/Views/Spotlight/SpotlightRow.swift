@@ -18,6 +18,10 @@ struct SpotlightRow: View, Equatable {
     let armed: Bool
     /// Clipboard image rows: the thumbnail, loaded by the list (nil = not on disk yet).
     let thumbnail: NSImage?
+    /// App rows: the app is running (green dot; ⏎ switches to it).
+    var running = false
+    /// Typed words shown in bold in the title (Fluent Search-style); empty = plain title.
+    var highlight: [String] = []
     let palette: SpotlightPalette
     let reduceMotion: Bool
     let namespace: Namespace.ID
@@ -32,6 +36,7 @@ struct SpotlightRow: View, Equatable {
         lhs.item.sameRowContent(as: rhs.item)
             && lhs.selected == rhs.selected && lhs.armed == rhs.armed
             && lhs.thumbnail === rhs.thumbnail
+            && lhs.running == rhs.running && lhs.highlight == rhs.highlight
             && lhs.palette.isDark == rhs.palette.isDark
             && lhs.reduceMotion == rhs.reduceMotion
             && lhs.namespace == rhs.namespace
@@ -143,7 +148,7 @@ struct SpotlightRow: View, Equatable {
             SpotlightRowIcon(item: item, size: 30, isSelected: selected)
             // Narrow left column (right half is the preview): name on top, path / description below.
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.kind == .web ? "Search the web — \(item.name)" : item.name)
+                titleText
                     .font(.system(size: 14.5, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -157,10 +162,21 @@ struct SpotlightRow: View, Equatable {
             }
             .layoutPriority(1)
             Spacer(minLength: 4)
+            if running {
+                // Running: ⏎ switches to it instead of launching.
+                Circle()
+                    .fill(Color(nsColor: .systemGreen))
+                    .frame(width: 6, height: 6)
+                    .help("Running")
+            }
             // Change IMMEDIATELY on selection: cross-fading them in step with the slide would make the
             // text of both states overlap.
             Group {
-                if item.kind == .calc, let calcResult = item.calcResult {
+                if item.kind == .calc, let converted = item.payload {
+                    Text("= \(converted)")
+                        .font(.system(size: 15, weight: .medium).monospacedDigit())
+                        .fixedSize()
+                } else if item.kind == .calc, let calcResult = item.calcResult {
                     Text("= \(SpotlightCalc.format(calcResult))")
                         .font(.system(size: 15, weight: .medium).monospacedDigit())
                         .fixedSize()
@@ -176,6 +192,23 @@ struct SpotlightRow: View, Equatable {
         .frame(height: Metric.rowHeight)
         .modifier(selection)
         .contentShape(Rectangle())
+    }
+
+    /// The title, with the typed words in bold where they appear (like Fluent Search).
+    private var titleText: Text {
+        if item.kind == .web, item.target == nil, !item.id.hasPrefix("suggest|") {
+            return Text("Search the web — \(item.name)")
+        }
+        guard !highlight.isEmpty else { return Text(item.name) }
+        var title = AttributedString(item.name)
+        for word in highlight {
+            var remaining = title.startIndex..<title.endIndex
+            while let match = title[remaining].range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) {
+                title[match].font = .system(size: 14.5, weight: .heavy)
+                remaining = match.upperBound..<title.endIndex
+            }
+        }
+        return Text(title)
     }
 
     /// Secondary line under the name. Apps don't need one (the name is enough); action rows show the item name.

@@ -56,6 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Sparkle: daily update checks, download + install on the user's OK.
         UpdateChecker.shared.start()
+
+        // A stale Accessibility permission (switch on, macOS ignoring it) fails silently, so
+        // say so once. A permission that is simply off stays quiet.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            AccessibilityDoctor.shared.warnIfStale()
+        }
     }
 
     /// Shortcuts changed in Settings take effect right away; recording one pauses them all.

@@ -130,7 +130,9 @@ enum SpotlightSpec {
         static let footerHeight: CGFloat = 34
         /// The open panel is at least this many rows tall: the right half is the preview,
         /// which needs enough room for code / images.
-        static let minRowsWithPreview = 5
+        // 7 (was 5): the preview's quick actions list needs the full height, and a panel that
+        // keeps one size while results change reads calmer (Fluent Search's is fixed too).
+        static let minRowsWithPreview = 7
     }
 
     /// Height of the list area for `rows` rows (up to `maxVisibleRows`, the rest scroll).

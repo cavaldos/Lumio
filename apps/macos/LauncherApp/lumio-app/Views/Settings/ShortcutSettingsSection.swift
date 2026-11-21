@@ -16,8 +16,15 @@ struct ShortcutSettingsSection: View {
 
     var body: some View {
         SettingsCard {
-            ForEach(HotKeyAction.allCases) { action in
-                if action != HotKeyAction.allCases.first { SettingsDivider() }
+            ForEach(Self.mainActions) { action in
+                if action != Self.mainActions.first { SettingsDivider() }
+                row(action)
+            }
+        }
+        SettingsSectionTitle("Open straight into a search tag")
+        SettingsCard {
+            ForEach(Self.tagActions) { action in
+                if action != Self.tagActions.first { SettingsDivider() }
                 row(action)
             }
             SettingsDivider()
@@ -51,10 +58,13 @@ struct ShortcutSettingsSection: View {
         }
     }
 
+    private static let tagActions = HotKeyAction.allCases.filter { $0.rawValue.hasPrefix(HotKeyAction.tagPrefix) }
+    private static let mainActions = HotKeyAction.allCases.filter { !$0.rawValue.hasPrefix(HotKeyAction.tagPrefix) }
+
     private func row(_ action: HotKeyAction) -> some View {
         let combo = settings.hotKey(for: action)
         let isRecording = recording == action
-        return SettingsRow(action.title, detail: action.detail) {
+        return SettingsRow(action.title, icon: "keyboard", detail: action.detail) {
             HStack(spacing: 8) {
                 if combo != nil, !isRecording {
                     Button {

@@ -29,7 +29,7 @@ enum ToolLauncher {
         case .application:
             return launchApplication(tool: outcome.tool, path: outcome.path ?? path)
         case .systemDefault:
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: outcome.path ?? path)])
+            FileManagerApp.reveal(outcome.path ?? path)
             return .launched
         case .unavailable, .failed:
             return .message(outcome.reason ?? "Couldn't run \(action)")
