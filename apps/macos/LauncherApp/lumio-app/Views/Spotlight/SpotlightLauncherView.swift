@@ -75,7 +75,7 @@ struct SpotlightLauncherView: View {
     /// Empty-field suggestions (recent apps / files) are on screen.
     @State private var showingSuggestions = false
     /// `suggestions_on_open` in the config, read on each open.
-    @State private var suggestionsEnabled = true
+    @State private var suggestionsEnabled = false
     /// Pinned results: listed first when the search field is empty.
     @ObservedObject private var pins = PinStore.shared
     /// Right pane for a file: false = details card (Fluent's default), true = the preview. ⌥P.
@@ -1050,9 +1050,14 @@ struct SpotlightLauncherView: View {
         HStack(spacing: 14) {
             // Settings, one click away (also ⌘⇧Space), pinned to the leading edge of the footer.
             FooterIconButton(symbol: "gearshape", help: "Lumio Settings  ⌘⇧Space") { openSettings() }
+            // One line only: when the bar is crowded the hint is cut, never wrapped.
             Text(footerHint)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
             Text("esc close")
-            Spacer()
+                .fixedSize()
+            Spacer(minLength: 8)
             if isClipboard {
                 let armed = armedConfirm == "clipclear"
                 Button {
@@ -1062,15 +1067,18 @@ struct SpotlightLauncherView: View {
                     }
                 } label: {
                     Text(armed ? "Click again to clear" : "Clear all")
+                        .fixedSize()
                         .foregroundStyle(armed ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                 }
                 .buttonStyle(.plain)
             }
             if !results.isEmpty {
-                Text("\(results.count) results")
+                Text("\(results.count) \(results.count == 1 ? "result" : "results")")
+                    .fixedSize()
             }
             if sortMode != .relevance {
                 Text("by \(sortMode.label.lowercased())")
+                    .fixedSize()
             }
             FooterIconButton(symbol: "arrow.up.arrow.down", help: "Sort results  ⌥S") { showSortMenu() }
         }
@@ -1449,6 +1457,9 @@ struct SpotlightLauncherView: View {
     private func tagCandidate(keyword: String? = nil) -> (tag: SearchTag, rest: String)? {
         guard scope == nil, activeCommand == nil, !inModeTab else { return nil }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        // Nothing typed: Tab only cycles Lumio's own pills, never a Fluent-style tag
+        // from the selected result.
+        if keyword == nil, trimmed.isEmpty { return nil }
         var found: (SearchTag, String)?
         if let keyword {
             if let named = SearchTags.tag(forKeyword: keyword) {

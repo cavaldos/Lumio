@@ -37,11 +37,11 @@ nonisolated enum RecentItems {
     nonisolated(unsafe) private static var cache: (at: Date, apps: [RecentItem], files: [RecentItem])?
     private static let cacheSeconds: TimeInterval = 20
 
-    /// Whether to show suggestions on the empty field (default on).
+    /// Whether to show suggestions on the empty field (default off: the round quick buttons show instead).
     @MainActor static var isEnabled: Bool {
         let raw = (try? String(contentsOfFile: ConfigPathResolver.resolvedPath(), encoding: .utf8)) ?? ""
         guard let value = SearchTags.configLines(raw).last(where: { $0.0 == configKey })?.1.lowercased()
-        else { return true }
+        else { return false }
         return !["false", "0", "no", "off"].contains(value)
     }
 
