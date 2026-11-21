@@ -45,16 +45,28 @@ nonisolated enum RecentItems {
         return !["false", "0", "no", "off"].contains(value)
     }
 
-    /// Most recently used apps and files, newest first. Blocks while Spotlight answers
-    /// (tens of ms): call off the main thread.
-    static func recent(apps appLimit: Int, files fileLimit: Int) -> (apps: [RecentItem], files: [RecentItem]) {
-        lock.lock()
-        if let cache, Date().timeIntervalSince(cache.at) < cacheSeconds {
-            lock.unlock()
-            return (Array(cache.apps.prefix(appLimit)), Array(cache.files.prefix(fileLimit)))
+    /// Most recently used apps and files, newest first. The Spotlight queries run on
+    /// `SpotlightQueue`, never on Swift's task pool (see there why).
+    static func recent(apps appLimit: Int, files fileLimit: Int) async -> (apps: [RecentItem], files: [RecentItem]) {
+        // A fresh cache answers at once, without waiting behind a file search on the queue.
+        typealias Lists = (apps: [RecentItem], files: [RecentItem])
+        let lists: Lists = if let fresh = cached() {
+            fresh
+        } else {
+            await SpotlightQueue.run(skipped: Lists(apps: [], files: [])) { _ in cached() ?? gather() }
         }
-        lock.unlock()
+        return (Array(lists.apps.prefix(appLimit)), Array(lists.files.prefix(fileLimit)))
+    }
 
+    private static func cached() -> (apps: [RecentItem], files: [RecentItem])? {
+        lock.withLock {
+            guard let cache, Date().timeIntervalSince(cache.at) < cacheSeconds else { return nil }
+            return (cache.apps, cache.files)
+        }
+    }
+
+    /// Three Spotlight queries. Only ever called on `SpotlightQueue`.
+    private static func gather() -> (apps: [RecentItem], files: [RecentItem]) {
         let ownBundle = Bundle.main.bundlePath
         let apps = query(
             "kMDItemContentType == 'com.apple.application-bundle' && kMDItemLastUsedDate >= $time.today(-30)",
@@ -88,7 +100,7 @@ nonisolated enum RecentItems {
         lock.lock()
         cache = (Date(), apps, files)
         lock.unlock()
-        return (Array(apps.prefix(appLimit)), Array(files.prefix(fileLimit)))
+        return (apps, files)
     }
 
     // MARK: - Spotlight

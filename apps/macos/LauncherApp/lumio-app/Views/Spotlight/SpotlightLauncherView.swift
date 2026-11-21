@@ -1102,13 +1102,15 @@ struct SpotlightLauncherView: View {
             // on the Mac (Spotlight), bookmarks and history (read like a browser extension would).
             let wantsExtras = request.browse == nil && urlQuery.count >= 3 && !urlQuery.hasPrefix(":")
                 && !urlQuery.hasPrefix(">")
+            // Spotlight answers on its own queue (see SpotlightQueue), the browsers are read meanwhile.
             let extrasTask: Task<SpotlightBackend.Extras, Never>? = wantsExtras
                 ? Task.detached(priority: .userInitiated) {
-                    SpotlightBackend.Extras(
-                        files: SpotlightFiles.search(term: urlQuery, scope: nil, limit: 25),
-                        bookmarks: BrowserBookmarks.search(urlQuery, limit: 2),
-                        history: BrowserHistory.search(urlQuery, limit: 3),
-                        blocked: BrowserHistory.isBlocked()
+                    async let files = SpotlightFiles.search(term: urlQuery, scope: nil, limit: 25)
+                    let bookmarks = BrowserBookmarks.search(urlQuery, limit: 2)
+                    let history = BrowserHistory.search(urlQuery, limit: 3)
+                    let blocked = BrowserHistory.isBlocked()
+                    return SpotlightBackend.Extras(
+                        files: await files, bookmarks: bookmarks, history: history, blocked: blocked
                     )
                 } : nil
             // Web suggestions are the only network call: fetched on their own, never awaited
@@ -1130,21 +1132,32 @@ struct SpotlightLauncherView: View {
                     : []
                 return (found, recents, tabs, windows)
             }.value
-            // Text changed while waiting: these results are stale.
-            guard !Task.isCancelled else { return }
+            // Text changed while waiting: these results are stale, and so is the second pass.
+            // Cancelling it drops its Spotlight query if that hasn't started yet.
+            guard !Task.isCancelled else {
+                extrasTask?.cancel()
+                suggestionsTask?.cancel()
+                return
+            }
             searchTask = nil
             publish(SpotlightBackend.rows(from: found, for: request, recentURLs: recents, tabs: tabs, windows: windows))
             guard let extrasTask else { return }
             fileTask = Task { @MainActor in
-                let extras = await extrasTask.value
-                guard !Task.isCancelled else { return }
-                republish(SpotlightBackend.addingExtras(extras, term: urlQuery, to: all))
-                if let suggestionsTask {
-                    let suggestions = await suggestionsTask.value
+                await withTaskCancellationHandler {
+                    let extras = await extrasTask.value
                     guard !Task.isCancelled else { return }
-                    republish(SpotlightBackend.addingSuggestions(suggestions, to: all))
+                    republish(SpotlightBackend.addingExtras(extras, term: urlQuery, to: all))
+                    if let suggestionsTask {
+                        let suggestions = await suggestionsTask.value
+                        guard !Task.isCancelled else { return }
+                        republish(SpotlightBackend.addingSuggestions(suggestions, to: all))
+                    }
+                    fileTask = nil
+                } onCancel: {
+                    // `refresh()` cancels this task on the next keystroke: pass it on.
+                    extrasTask.cancel()
+                    suggestionsTask?.cancel()
                 }
-                fileTask = nil
             }
         }
     }
@@ -1196,9 +1209,7 @@ struct SpotlightLauncherView: View {
             }
             if let scope = tag.files {
                 // File tag: files from anywhere on the Mac in that folder / of that kind.
-                let hits = await Task.detached(priority: .userInitiated) {
-                    SpotlightFiles.search(term: term, scope: scope, limit: SpotlightBackend.resultLimit)
-                }.value
+                let hits = await SpotlightFiles.search(term: term, scope: scope, limit: SpotlightBackend.resultLimit)
                 guard !Task.isCancelled else { return }
                 searchTask = nil
                 let rows = SpotlightBackend.fileRows(hits)
@@ -1308,9 +1319,7 @@ struct SpotlightLauncherView: View {
     /// before you type. Off with `suggestions_on_open=false`.
     private func refreshSuggestions() {
         searchTask = Task { @MainActor in
-            let recent = await Task.detached(priority: .userInitiated) {
-                RecentItems.recent(apps: 5, files: 9)
-            }.value
+            let recent = await RecentItems.recent(apps: 5, files: 9)
             guard !Task.isCancelled else { return }
             searchTask = nil
             // Your pins first, then what you use most, without repeating a pinned item.

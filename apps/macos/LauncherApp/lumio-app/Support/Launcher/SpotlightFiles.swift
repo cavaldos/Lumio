@@ -9,7 +9,7 @@
 //
 //  Matching is by name: every typed word must appear in the file name (any order, case and
 //  accent-insensitive). Ranked by how well the name matches, then by how recently the file
-//  was used. Blocks for tens of milliseconds: call off the main thread.
+//  was used. The queries run on `SpotlightQueue`, never on Swift's task pool (see there why).
 //
 
 import CoreServices
@@ -129,7 +129,19 @@ nonisolated enum SpotlightFiles {
         return (words, extensions)
     }
 
-    static func search(term: String, scope: FileScope?, limit: Int) -> [FileHit] {
+    /// Files matching `term`, from the Spotlight queue. Empty when the calling task is
+    /// cancelled first (the text changed).
+    static func search(term: String, scope: FileScope?, limit: Int) async -> [FileHit] {
+        await SpotlightQueue.run(skipped: []) { isCancelled in
+            blockingSearch(term: term, scope: scope, limit: limit, isCancelled: isCancelled)
+        }
+    }
+
+    /// One or two Spotlight queries, each blocking until Spotlight answers. Only ever called
+    /// on `SpotlightQueue`.
+    private static func blockingSearch(
+        term: String, scope: FileScope?, limit: Int, isCancelled: () -> Bool
+    ) -> [FileHit] {
         let (words, typedExtensions) = parse(term)
         let scope = scope ?? FileScope()
         // No folder asked for: the home folder plus any plugged-in drives.
@@ -162,6 +174,8 @@ nonisolated enum SpotlightFiles {
         if conditions.isEmpty { conditions.append("kMDItemFSName == \"*\"") }
 
         var hits = run(conditions.joined(separator: " && "), scopes: folders, max: 250)
+        // Typed on meanwhile: nobody will see this list, so don't query Spotlight again for it.
+        if isCancelled() { return [] }
         // A folder with nothing new in 60 days: show its newest files anyway.
         if browsing, hits.isEmpty, !scope.recentOnly, !scope.folders.isEmpty {
             hits = run((conditions.dropLast() + ["kMDItemFSName == \"*\""]).joined(separator: " && "),
@@ -203,6 +217,7 @@ nonisolated enum SpotlightFiles {
         [kMDItemLastUsedDate, kMDItemDateAdded, kMDItemContentModificationDate, kMDItemContentType] as CFArray
     }
 
+    /// Blocks until Spotlight answers: only on `SpotlightQueue`.
     private static func run(_ text: String, scopes: [String], max: Int) -> [FileHit] {
         guard let query = MDQueryCreate(kCFAllocatorDefault, text as CFString, nil, sortingAttributes)
         else { return [] }
