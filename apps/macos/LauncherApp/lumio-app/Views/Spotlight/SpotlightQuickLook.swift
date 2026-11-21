@@ -21,22 +21,33 @@ final class SpotlightQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPan
     nonisolated(unsafe) fileprivate weak var sourceView: NSView?
     nonisolated(unsafe) private var transitionImage: NSImage?
 
+    /// Loads a text clip's full text by its row id in the launcher's history. Set by the
+    /// launcher: clip rows hold a title, and the text lives in the database.
+    static var clipText: ((UUID) async -> String?)?
+
+    /// Bumped by every request, so a slow clip load cannot land after a newer selection.
+    private static var request = 0
+
     /// Opens Quick Look on `item`, or swaps what it shows if it is already open.
     static func show(item: SpotlightItem) {
-        guard let url = previewURL(for: item) else {
-            NSSound.beep()
-            return
+        request += 1
+        let current = request
+        Task { @MainActor in
+            guard let url = await previewURL(for: item), current == request else {
+                if current == request { NSSound.beep() }
+                return
+            }
+            shared.url = url
+            shared.transitionImage = transitionImage(for: item, url: url)
+            guard let panel = QLPreviewPanel.shared() else { return }
+            if panel.isVisible {
+                panel.reloadData()
+            } else {
+                panel.makeKeyAndOrderFront(nil)
+            }
+            // The launcher sits at .floating: keep Quick Look above it.
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         }
-        shared.url = url
-        shared.transitionImage = transitionImage(for: item, url: url)
-        guard let panel = QLPreviewPanel.shared() else { return }
-        if panel.isVisible {
-            panel.reloadData()
-        } else {
-            panel.makeKeyAndOrderFront(nil)
-        }
-        // The launcher sits at .floating: keep Quick Look above it.
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
     }
 
     /// Settings ▸ Shortcuts ▸ Quick Look (⌘Y by default); nil = turned off.
@@ -51,6 +62,8 @@ final class SpotlightQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPan
     }
 
     static func close() {
+        // A clip still loading must not reopen the panel that was just closed.
+        request += 1
         guard isVisible else { return }
         QLPreviewPanel.shared()?.orderOut(nil)
     }
@@ -62,21 +75,27 @@ final class SpotlightQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPan
 
     /// While open, follows the launcher's selection (↑ / ↓ inside the panel).
     static func follow(item: SpotlightItem) {
-        guard isVisible, let url = previewURL(for: item) else { return }
-        shared.url = url
-        shared.transitionImage = transitionImage(for: item, url: url)
-        QLPreviewPanel.shared()?.reloadData()
+        guard isVisible else { return }
+        request += 1
+        let current = request
+        Task { @MainActor in
+            guard let url = await previewURL(for: item), current == request, isVisible else { return }
+            shared.url = url
+            shared.transitionImage = transitionImage(for: item, url: url)
+            QLPreviewPanel.shared()?.reloadData()
+        }
     }
 
     /// A file Quick Look can open: the document itself, the stored image, or the text in a temp file.
-    private static func previewURL(for item: SpotlightItem) -> URL? {
+    private static func previewURL(for item: SpotlightItem) async -> URL? {
         switch item.kind {
         case .doc, .content, .clipImage:
             guard let path = item.target, path.hasPrefix("/"),
                   FileManager.default.fileExists(atPath: path) else { return nil }
             return URL(fileURLWithPath: path)
         case .clip:
-            return writeTextClip(item.payload ?? item.name)
+            guard let id = item.clipID, let text = await clipText?(id) else { return nil }
+            return writeTextClip(text)
         default:
             return nil
         }

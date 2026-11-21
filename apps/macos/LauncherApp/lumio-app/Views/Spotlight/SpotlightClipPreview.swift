@@ -22,6 +22,11 @@ struct ClipboardClipDetails: Equatable {
 struct SpotlightClipPreview: View {
     let item: SpotlightItem
     let details: ClipboardClipDetails?
+    let store: ClipboardHistoryStore
+
+    /// The clip's text, loaded from the database once the pane is up. Until then the
+    /// preview kept with the row stands in, so the pane is never blank.
+    @State private var loadedText: String?
 
     /// SwiftUI lays out the whole string: keep a 30 000-character clip from stalling the pane.
     private static let maxShownCharacters = 8_000
@@ -39,6 +44,11 @@ struct SpotlightClipPreview: View {
         .overlay(alignment: .topTrailing) {
             PreviewExpandButton { SpotlightQuickLook.show(item: item) }
                 .padding(20)
+        }
+        .task(id: item.id) {
+            guard item.kind == .clip, let id = item.clipID else { return }
+            // One past the limit tells `shownText` the clip was cut, without loading more.
+            loadedText = await store.content(of: id, maxCharacters: Self.maxShownCharacters + 1)
         }
     }
 
@@ -60,7 +70,7 @@ struct SpotlightClipPreview: View {
     }
 
     private var shownText: String {
-        let text = item.payload ?? item.name
+        let text = loadedText ?? item.clipID.flatMap { store.entry(for: $0)?.preview } ?? item.name
         guard text.count > Self.maxShownCharacters else { return text }
         return String(text.prefix(Self.maxShownCharacters)) + "…"
     }

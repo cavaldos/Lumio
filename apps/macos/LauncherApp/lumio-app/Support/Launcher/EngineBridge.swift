@@ -78,7 +78,15 @@ private func lumio_clipboard_images_dir() -> UnsafeMutablePointer<CChar>?
 
 @_silgen_name("lumio_clipboard_list_json")
 nonisolated
-private func lumio_clipboard_list_json(_ kind: UnsafePointer<CChar>?, _ query: UnsafePointer<CChar>?, _ limit: UInt32) -> UnsafeMutablePointer<CChar>?
+private func lumio_clipboard_list_json(_ kind: UnsafePointer<CChar>?, _ query: UnsafePointer<CChar>?, _ limit: UInt32, _ previewChars: UInt32) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("lumio_clipboard_content")
+nonisolated
+private func lumio_clipboard_content(_ id: Int64, _ maxChars: UInt32) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("lumio_clipboard_trim")
+nonisolated
+private func lumio_clipboard_trim(_ textKeep: UInt32, _ imageKeep: UInt32) -> UInt32
 
 @_silgen_name("lumio_clipboard_set_pinned")
 nonisolated
@@ -256,7 +264,13 @@ final class EngineBridge: @unchecked Sendable {
     /// One remembered clip, as stored in the shared lumio.db.
     nonisolated struct ClipboardEntry: Decodable, Identifiable, Equatable {
         let id: Int64
+        /// The whole clip, or only its leading characters when the list was asked for
+        /// previews (`contentLength` is the real size either way).
         let content: String
+        /// Characters in the full clip. Optional: an older core doesn't send it.
+        let contentLength: Int?
+        /// Lines in the full clip. Optional like `contentLength`.
+        let lineCount: Int?
         /// Identity of what was copied. For an image clip it is also the stem
         /// of the file holding the pixels.
         let contentHash: String
@@ -329,23 +343,47 @@ final class EngineBridge: @unchecked Sendable {
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }
 
-    /// Up to `limit` remembered clips of `kind` matching `query` (newest
-    /// first). An empty query returns the most recent. Opens lumio.db - call off
-    /// the main thread.
+    /// Up to `limit` remembered clips of `kind` matching `query` (pinned first, then
+    /// newest). An empty query returns the most recent. The match runs in the core
+    /// over each clip's whole text, case-insensitively. With `previewCharacters` > 0
+    /// each row's `content` is only that many leading characters: the list stays
+    /// small and the full text is fetched with `clipboardContent(id:)` when needed.
+    /// Opens lumio.db - call off the main thread.
     nonisolated func clipboardEntries(
         kind: String = AppConstants.Launcher.Clipboard.textKind,
         query: String = "",
-        limit: Int
+        limit: Int,
+        previewCharacters: Int = 0
     ) -> [ClipboardEntry] {
         let ptr = kind.withCString { kindC in
             query.withCString { queryC in
-                lumio_clipboard_list_json(kindC, queryC, UInt32(limit))
+                lumio_clipboard_list_json(
+                    kindC, queryC, UInt32(clamping: limit), UInt32(clamping: previewCharacters))
             }
         }
         guard let ptr else { return [] }
         defer { lumio_free_cstring(ptr) }
         guard let data = String(cString: ptr).data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([ClipboardEntry].self, from: data)) ?? []
+    }
+
+    /// One clip's stored text, cut to `maxCharacters` leading characters unless that is
+    /// 0. Nil when the row is gone (deleted, trimmed, or replaced by a re-copy, which
+    /// hands out a new id). Opens lumio.db - call off the main thread.
+    nonisolated func clipboardContent(id: Int64, maxCharacters: Int = 0) -> String? {
+        guard let ptr = lumio_clipboard_content(id, UInt32(clamping: maxCharacters)) else {
+            return nil
+        }
+        defer { lumio_free_cstring(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Applies the history limits to the database: keeps the newest `textKeep` text
+    /// clips and `imageKeep` image clips (pinned ones never count and never go).
+    /// Returns how many rows were deleted. Off the main thread.
+    @discardableResult
+    nonisolated func trimClipboardHistory(textKeep: Int, imageKeep: Int) -> Int {
+        Int(lumio_clipboard_trim(UInt32(clamping: textKeep), UInt32(clamping: imageKeep)))
     }
 
     /// Pinned clips list first and are never pruned.

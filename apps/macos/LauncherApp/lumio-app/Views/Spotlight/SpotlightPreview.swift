@@ -160,7 +160,8 @@ struct SpotlightPreviewView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .clip:
-            textBox(item.payload ?? item.name)
+            // Clip rows carry a title only; the clipboard tab's own pane loads the text.
+            textBox(item.name)
         case .clipImage:
             // A pane-sized thumbnail, not the original: decoding a copied 4K
             // screenshot at full size is ~33 MB, on every render.

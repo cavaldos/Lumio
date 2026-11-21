@@ -21,6 +21,11 @@ struct ThemeSettings: Codable, Equatable {
     var fileScanDepth: Int = 4
     var fileScanLimit: Int = 4000
     var lazyIndexingEnabled: Bool = true
+    /// Text clips the clipboard history keeps (`clipboard_history_limit`). Older ones are
+    /// deleted from the database, not just hidden; pinned clips never count.
+    var clipboardHistoryLimit: Int = ClipboardLimits.Text.maxEntries
+    /// Image clips kept (`clipboard_image_limit`); each is a file on disk.
+    var clipboardImageLimit: Int = ClipboardLimits.Image.maxEntries
     var backendLogLevel: BackendLogLevel = .error
     var launchAtLogin: Bool = true
     /// Language codes the translator offers (tr" rows, tw" bar).
@@ -51,6 +56,8 @@ struct ThemeSettings: Codable, Equatable {
         fileScanDepth = try c.decodeIfPresent(Int.self, forKey: .fileScanDepth) ?? d.fileScanDepth
         fileScanLimit = try c.decodeIfPresent(Int.self, forKey: .fileScanLimit) ?? d.fileScanLimit
         lazyIndexingEnabled = try c.decodeIfPresent(Bool.self, forKey: .lazyIndexingEnabled) ?? d.lazyIndexingEnabled
+        clipboardHistoryLimit = try c.decodeIfPresent(Int.self, forKey: .clipboardHistoryLimit) ?? d.clipboardHistoryLimit
+        clipboardImageLimit = try c.decodeIfPresent(Int.self, forKey: .clipboardImageLimit) ?? d.clipboardImageLimit
         backendLogLevel = try c.decodeIfPresent(BackendLogLevel.self, forKey: .backendLogLevel) ?? d.backendLogLevel
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages

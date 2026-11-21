@@ -301,6 +301,9 @@ struct SpotlightLauncherView: View {
         .onAppear {
             keyMonitor.start { handleKey($0) }
             loadRetention()
+            // Quick Look is a global panel with no handle on the store, and clip rows carry
+            // titles only: it asks the launcher for the text.
+            SpotlightQuickLook.clipText = { [clipboardStore] id in await clipboardStore.content(of: id) }
             // A cold `lumio <mode>`: this process launched to serve it.
             if let pending = LaunchModes.pendingQuery {
                 LaunchModes.pendingQuery = nil
@@ -502,7 +505,8 @@ struct SpotlightLauncherView: View {
     private var previewPane: some View {
         ZStack(alignment: .topLeading) {
             if let item = previewItem, item.kind == .clip || item.kind == .clipImage {
-                SpotlightClipPreview(item: item, details: clipDetails(for: item))
+                SpotlightClipPreview(
+                    item: item, details: clipDetails(for: item), store: clipboardStore)
                     .id(item.id)
             } else if let item = previewItem {
                 SpotlightPreviewView(
@@ -1111,7 +1115,7 @@ struct SpotlightLauncherView: View {
                 publish(SpotlightModeRows.commandMenu(filter))
             }
         case .clipboard(let term):
-            publish(SpotlightModeRows.clipboardAll(clipboardStore, term: term))
+            searchClipboard(term)
         case .lookup(let word):
             publish(SpotlightModeRows.lookup(word))
         case .translate(let text):
@@ -1121,6 +1125,26 @@ struct SpotlightLauncherView: View {
             publish(SpotlightModeRows.processes(processModel, term: term))
         }
         return true
+    }
+
+    /// Clipboard tab. A typed term is matched by the core over each clip's whole text, off
+    /// the main thread (the list itself only holds previews), so it follows the same
+    /// debounce / cancel pattern as the other searches and stale results never land. An
+    /// empty term has nothing to look up and publishes after a task hop, which also means
+    /// the store's own change (this runs from `$entries`) has finished by then.
+    private func searchClipboard(_ term: String) {
+        let debounce: Duration = expanded && !term.isEmpty ? SpotlightBackend.debounce : .zero
+        searchTask = Task { @MainActor in
+            if debounce > .zero {
+                try? await Task.sleep(for: debounce)
+                guard !Task.isCancelled else { return }
+            }
+            let rows = await SpotlightModeRows.clipboardAll(clipboardStore, term: term)
+            // Text changed while searching: these results are stale.
+            guard !Task.isCancelled else { return }
+            searchTask = nil
+            publish(rows)
+        }
     }
 
     /// tr": the target-language rows show right away; the translations fill in once typing pauses.
@@ -1440,6 +1464,21 @@ struct SpotlightLauncherView: View {
         run(results[sel])
     }
 
+    /// Enter on a clip: its text is in the database, not in the row, so it is loaded first
+    /// (off the main thread) and written to the pasteboard once it arrives.
+    private func copyClip(_ item: SpotlightItem) {
+        guard let id = item.clipID else { toast("Nothing to copy"); return }
+        Task { @MainActor in
+            guard let text = await clipboardStore.content(of: id) else {
+                toast("Nothing to copy")
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            hide()
+        }
+    }
+
     /// Opens a row (or runs its action when in actions mode).
     private func run(_ item: SpotlightItem) {
         switch item.kind {
@@ -1473,10 +1512,7 @@ struct SpotlightLauncherView: View {
             }
             return
         case .clip:
-            guard let text = item.payload else { toast("Nothing to copy"); return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            hide()
+            copyClip(item)
             return
         case .lookup:
             return  // definitions are already shown in the right half

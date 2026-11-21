@@ -5,7 +5,7 @@
 //! the pasteboard markers. This layer trusts what it is handed.
 
 use crate::state::{cstr_to_string, default_db_path, store_json_allocation};
-use lumio_storage::{CLIPBOARD_KIND_TEXT, ClipboardEntry, SqliteStore};
+use lumio_storage::{CLIPBOARD_KIND_IMAGE, CLIPBOARD_KIND_TEXT, ClipboardEntry, SqliteStore};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -51,6 +51,11 @@ struct ClipboardEntryJSON {
     #[serde(rename = "copyCount")]
     copy_count: i64,
     pinned: bool,
+    /// Length of the full text, which `content` may only be a preview of.
+    #[serde(rename = "contentLength")]
+    content_length: i64,
+    #[serde(rename = "lineCount")]
+    line_count: i64,
 }
 
 impl From<ClipboardEntry> for ClipboardEntryJSON {
@@ -64,6 +69,8 @@ impl From<ClipboardEntry> for ClipboardEntryJSON {
             first_copied_at_unix_s: entry.first_copied_at_unix_s,
             copy_count: entry.copy_count,
             pinned: entry.pinned,
+            content_length: entry.content_chars,
+            line_count: entry.line_count,
         }
     }
 }
@@ -169,12 +176,16 @@ pub(crate) fn lumio_clipboard_images_dir_impl() -> *mut c_char {
     store_json_allocation(cstring)
 }
 
-/// JSON array of up to `limit` clips of `kind` matching `query` (newest first),
-/// or `[]`.
+/// JSON array of up to `limit` clips of `kind` matching `query` (pinned first,
+/// then newest first), or `[]`. `preview_chars` > 0 cuts each row's `content`
+/// to that many leading characters, so the shell can keep the list resident
+/// without the clips' full text; `contentLength` and `lineCount` always describe
+/// the whole clip. 0 returns the full content.
 pub(crate) fn lumio_clipboard_list_json_impl(
     kind: *const c_char,
     query: *const c_char,
     limit: u32,
+    preview_chars: u32,
 ) -> *mut c_char {
     let kind = cstr_to_string(kind);
     let kind = if kind.is_empty() {
@@ -185,7 +196,14 @@ pub(crate) fn lumio_clipboard_list_json_impl(
     let query = cstr_to_string(query);
     let json = store()
         .as_ref()
-        .and_then(|(_, store)| store.clipboard_entries(&kind, &query, limit as usize).ok())
+        .and_then(|(_, store)| {
+            if preview_chars > 0 {
+                store.clipboard_previews(&kind, &query, limit as usize, preview_chars as usize)
+            } else {
+                store.clipboard_entries(&kind, &query, limit as usize)
+            }
+            .ok()
+        })
         .map(|entries| {
             entries
                 .into_iter()
@@ -197,6 +215,44 @@ pub(crate) fn lumio_clipboard_list_json_impl(
     let cstring =
         CString::new(json).unwrap_or_else(|_| CString::new(JSON_EMPTY_ARRAY).expect("valid"));
     store_json_allocation(cstring)
+}
+
+/// The stored text of one clip (null when the row is gone), cut to `max_chars`
+/// leading characters unless that is 0. This is where a clip's full text is
+/// loaded: on paste or preview, never for the list.
+pub(crate) fn lumio_clipboard_content_impl(id: i64, max_chars: u32) -> *mut c_char {
+    let max_chars = (max_chars > 0).then_some(max_chars as usize);
+    let content = store()
+        .as_ref()
+        .and_then(|(_, store)| store.clipboard_content(id, max_chars).ok())
+        .flatten();
+    // A NUL cannot cross a C string: the clip is not pasteable as text then.
+    match content.and_then(|text| CString::new(text).ok()) {
+        Some(cstring) => store_json_allocation(cstring),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Applies the user's history limits to the disk: keeps the newest
+/// `text_keep` text clips and `image_keep` image clips (pinned ones never count
+/// and never go) and returns how many rows were deleted. Trimmed images take
+/// their files with them.
+pub(crate) fn lumio_clipboard_trim_impl(text_keep: u32, image_keep: u32) -> u32 {
+    let guard = store();
+    let Some((_, store)) = guard.as_ref() else {
+        return 0;
+    };
+    let text = store
+        .trim_clipboard_entries(CLIPBOARD_KIND_TEXT, text_keep as usize)
+        .unwrap_or(0);
+    let images = store
+        .trim_clipboard_entries(CLIPBOARD_KIND_IMAGE, image_keep as usize)
+        .unwrap_or(0);
+    drop(guard);
+    if images > 0 {
+        sweep_orphan_images();
+    }
+    (text + images) as u32
 }
 
 pub(crate) fn lumio_clipboard_set_pinned_impl(id: i64, pinned: bool) -> bool {

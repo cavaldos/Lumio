@@ -21,6 +21,10 @@ struct ThemeSettingsView: View {
     @State var fileScanLimitInput = ""
     @State var fileScanDepthError: String?
     @State var fileScanLimitError: String?
+    @State var clipboardHistoryLimitInput = ""
+    @State var clipboardImageLimitInput = ""
+    @State var clipboardHistoryLimitError: String?
+    @State var clipboardImageLimitError: String?
     @State var extraScanDirectoryMessage: String?
     @State var showFreshConfigConfirm = false
     @State var freshConfigMessage: String?
@@ -48,6 +52,7 @@ struct ThemeSettingsView: View {
                 Button("Save Config") {
                     applyFileScanDepthInput()
                     applyFileScanLimitInput()
+                    applyClipboardLimitInputs()
                     let ok = themeStore.saveCurrentConfigToFile()
                     saveMessage = SaveMessage(text: ok ? "Saved" : "Save failed", succeeded: ok)
                     if ok {
@@ -57,8 +62,8 @@ struct ThemeSettingsView: View {
                         saveMessage = nil
                     }
                 }
-                .disabled(hasIndexingError)
-                .opacity(hasIndexingError ? 0.5 : 1)
+                .disabled(hasInputError)
+                .opacity(hasInputError ? 0.5 : 1)
                 .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 1), weight: .regular))
 
                 Button("Back to Launcher") {

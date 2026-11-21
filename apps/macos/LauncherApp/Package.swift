@@ -20,6 +20,7 @@ let package = Package(
                 "Support/Launcher/LauncherSearchLogic.swift",
                 "Support/Launcher/ProcessScoring.swift",
                 "Support/Launcher/ClipboardQueryPrefix.swift",
+                "Support/Launcher/ClipboardLogic.swift",
                 "Support/Launcher/DeleteTargetLogic.swift",
                 "Support/Launcher/BridgeErrorMapping.swift",
                 "Support/Launcher/QueryRetentionPolicy.swift",

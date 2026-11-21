@@ -7,17 +7,28 @@ import Foundation
 private actor ClipboardWriter {
     static let shared = ClipboardWriter()
 
-    func record(content: String, appBundleID: String?) -> Int64? {
-        EngineBridge.shared.recordClipboard(content: content, appBundleID: appBundleID)
+    /// Records the clip, then trims the database to the user's limits in the same
+    /// hop, so the stored history never outgrows the setting between launches.
+    func record(content: String, appBundleID: String?, limits: (text: Int, image: Int)) -> Int64? {
+        let id = EngineBridge.shared.recordClipboard(content: content, appBundleID: appBundleID)
+        EngineBridge.shared.trimClipboardHistory(textKeep: limits.text, imageKeep: limits.image)
+        return id
+    }
+
+    /// A lowered limit has to reach the disk, or the clips come back next launch.
+    /// Trimmed images take their files with them (core sweeps the directory).
+    func trim(limits: (text: Int, image: Int)) {
+        EngineBridge.shared.trimClipboardHistory(textKeep: limits.text, imageKeep: limits.image)
     }
 
     /// Reading, decoding and encoding the image happen in a helper process
     /// (`ClipboardImageWorker`): a screenshot is tens of MB that the launcher
     /// would otherwise keep mapped. Only the row is recorded here.
     /// `fallbackLabel` names raw pixels; an image copied as a file is named after it.
-    func recordImage(changeCount: Int, appBundleID: String?, fallbackLabel: String) async
-        -> (stored: StoredClipboardImage, storeID: Int64, label: String)?
-    {
+    func recordImage(
+        changeCount: Int, appBundleID: String?, fallbackLabel: String,
+        limits: (text: Int, image: Int)
+    ) async -> (stored: StoredClipboardImage, storeID: Int64, label: String)? {
         guard let result = await ClipboardImageWorker.capture(changeCount: changeCount) else {
             return nil
         }
@@ -28,6 +39,7 @@ private actor ClipboardWriter {
         else {
             return nil
         }
+        EngineBridge.shared.trimClipboardHistory(textKeep: limits.text, imageKeep: limits.image)
         return (result.stored, storeID, label)
     }
 
@@ -44,9 +56,14 @@ private actor ClipboardWriter {
     }
 }
 
+/// One row of the history, as the list needs it: metadata and a short preview, like a
+/// Maccy item's title. The clip's full text stays in SQLite and is loaded on demand
+/// (`ClipboardHistoryStore.content(of:)`) when it is pasted or previewed - 300 clips
+/// of up to 30,000 characters were tens of MB resident for nothing.
 struct ClipboardHistoryEntry: Identifiable, Equatable {
     let id: UUID
-    let content: String
+    /// Leading characters of the clip: all that is kept in memory for a stored row.
+    let preview: String
     /// Last time it was copied.
     let capturedAt: Date
     /// First time it was copied, and how many times since (re-copies included).
@@ -54,76 +71,89 @@ struct ClipboardHistoryEntry: Identifiable, Equatable {
     let copyCount: Int
     /// App it was copied from, when known.
     let appBundleID: String?
-    /// Derived once at capture time, not per render: rescanning full content on
-    /// every body evaluation stutters keyboard navigation.
+    /// Derived once, not per render: rescanning text on every body evaluation
+    /// stutters keyboard navigation.
     let title: String
+    /// Of the FULL clip, not of `preview`.
     let lineCount: Int
     let characterCount: Int
-    /// What re-copying this entry actually pastes, when it differs from
-    /// `content` (a labeled entry like `2+2 = 4` pastes `4`). Nil for entries
-    /// captured passively off the system pasteboard.
-    let payload: String?
+    /// Stands in for the clip's text when comparing: the core's dedupe hash, so a new
+    /// copy is matched against stored rows without keeping their strings.
+    let contentKey: String
     /// Row id in the persisted history, when this clip came from (or reached)
     /// the database. Without it, deleting a clip here would leave it in the
     /// stored corpus - a clip the user believes they erased.
     let storeID: Int64?
     /// Pinned clips list first and are never trimmed.
     var isPinned: Bool
+    /// The full text of a clip copied this session, held only until its row exists
+    /// (`attachingStoreID`) - the one copy there is until then. Nil for every stored
+    /// row. It also outlives a failed write, which is the only copy of that clip.
+    let pendingContent: String?
 
+    /// A clip just copied: everything is derived from `content`, which is kept as
+    /// `pendingContent` until the database has it.
     init(
+        capturing content: String,
         id: UUID = UUID(),
-        content: String,
         capturedAt: Date = Date(),
         firstCapturedAt: Date? = nil,
         copyCount: Int = 1,
         appBundleID: String? = nil,
-        payload: String? = nil,
         storeID: Int64? = nil,
         isPinned: Bool = false
     ) {
         self.id = id
-        self.content = content
+        self.preview = ClipboardText.preview(of: content)
         self.capturedAt = capturedAt
         self.firstCapturedAt = firstCapturedAt ?? capturedAt
         self.copyCount = copyCount
         self.appBundleID = appBundleID
+        self.title = ClipboardText.title(from: preview)
+        self.lineCount = ClipboardText.lineCount(of: content)
+        self.characterCount = content.count
+        self.contentKey = ClipboardContentKey.make(for: content)
         self.storeID = storeID
         self.isPinned = isPinned
-        self.title = Self.makeTitle(from: content)
-        self.lineCount = Self.makeLineCount(from: content)
-        self.characterCount = content.count
-        self.payload = payload
+        self.pendingContent = content
     }
 
-    /// CRLF and bare CR both read as one line break (terminal output carries CR).
-    private static func normalizedNewlines(_ content: String) -> String {
-        content
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+    /// A row read back from the database as a preview.
+    init(stored row: EngineBridge.ClipboardEntry) {
+        id = UUID()
+        preview = row.content
+        capturedAt = row.copiedAt
+        firstCapturedAt = row.firstCopiedAt
+        copyCount = row.copyCount ?? 1
+        appBundleID = row.appBundleID
+        title = ClipboardText.title(from: row.content)
+        lineCount = row.lineCount ?? ClipboardText.lineCount(of: row.content)
+        characterCount = row.contentLength ?? row.content.count
+        contentKey = row.contentHash
+        storeID = row.id
+        isPinned = row.pinned ?? false
+        pendingContent = nil
     }
 
-    /// Blank lines count, and a single trailing newline does not add one.
-    private static func makeLineCount(from content: String) -> Int {
-        var normalized = normalizedNewlines(content)
-        if normalized.hasSuffix("\n") {
-            normalized.removeLast()
-        }
-        guard !normalized.isEmpty else { return 1 }
-        return normalized.split(separator: "\n", omittingEmptySubsequences: false).count
+    private init(copying other: Self, storeID: Int64?, pendingContent: String?) {
+        id = other.id
+        preview = other.preview
+        capturedAt = other.capturedAt
+        firstCapturedAt = other.firstCapturedAt
+        copyCount = other.copyCount
+        appBundleID = other.appBundleID
+        title = other.title
+        lineCount = other.lineCount
+        characterCount = other.characterCount
+        contentKey = other.contentKey
+        self.storeID = storeID
+        isPinned = other.isPinned
+        self.pendingContent = pendingContent
     }
 
-    private static func makeTitle(from content: String) -> String {
-        let collapsed = normalizedNewlines(content)
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if collapsed.isEmpty {
-            return AppConstants.Launcher.Clipboard.emptyEntryTitle
-        }
-        let limit = AppConstants.Launcher.Clipboard.maxTitleCharacters
-        if collapsed.count <= limit {
-            return collapsed
-        }
-        return String(collapsed.prefix(limit)) + "…"
+    /// Same clip once its row exists: the text now lives on disk, so it is dropped here.
+    func attachingStoreID(_ storeID: Int64) -> Self {
+        Self(copying: self, storeID: storeID, pendingContent: nil)
     }
 }
 
@@ -173,12 +203,23 @@ final class ClipboardHistoryStore: ObservableObject {
         guard newValue != maxEntries else { return }
         maxEntries = newValue
         Self.trim(&entries, to: maxEntries, isPinned: \.isPinned)
+        trimStoredHistory()
     }
 
     private func applyMaxImageEntries(_ newValue: Int) {
         guard newValue != maxImageEntries else { return }
         maxImageEntries = newValue
         Self.trim(&imageEntries, to: maxImageEntries, isPinned: \.isPinned)
+        trimStoredHistory()
+    }
+
+    /// The limits as the database enforces them. Queued behind pending writes so a clip
+    /// still being recorded is trimmed too, not left to outlive the setting.
+    private var storedLimits: (text: Int, image: Int) { (maxEntries, maxImageEntries) }
+
+    private func trimStoredHistory() {
+        let limits = storedLimits
+        enqueueWrite { await ClipboardWriter.shared.trim(limits: limits) }
     }
 
     /// Keeps the newest `limit` unpinned rows; pinned rows never count and never go.
@@ -214,16 +255,9 @@ final class ClipboardHistoryStore: ObservableObject {
         resolveMaxEntries(from: loadConfigValues())
     }
 
-    /// Resolves `clipboard_history_limit` from already-parsed config values, falling back to
-    /// the default (1000) when the key is missing, unparseable, or outside the accepted
-    /// [10, 1000] range.
+    /// `clipboard_history_limit`, defaulting to 300 when missing or out of [10, 1000].
     private static func resolveMaxEntries(from values: [String: String]) -> Int {
-        typealias Clipboard = AppConstants.Launcher.Clipboard
-        return resolveLimit(
-            from: values,
-            key: Clipboard.historyLimitConfigKey,
-            range: Clipboard.minEntries...Clipboard.maxEntriesLimit,
-            fallback: Clipboard.maxEntries)
+        ClipboardLimits.historyLimit(from: values)
     }
 
     private static func resolveMaxImageEntries() -> Int {
@@ -232,26 +266,9 @@ final class ClipboardHistoryStore: ObservableObject {
 
     /// Capped separately from text, and far lower: megabytes, not characters.
     private static func resolveMaxImageEntries(from values: [String: String]) -> Int {
-        typealias Image = AppConstants.Launcher.ClipboardImage
-        return resolveLimit(
-            from: values,
-            key: Image.limitConfigKey,
-            range: Image.minEntries...Image.maxEntriesLimit,
-            fallback: Image.maxEntries)
+        ClipboardLimits.imageLimit(from: values)
     }
 
-    /// An out-of-range limit is a typo, not a request, so the default stands
-    /// rather than the nearest bound: clamping 1000 to 100 looks like it worked.
-    private static func resolveLimit(
-        from values: [String: String], key: String, range: ClosedRange<Int>, fallback: Int
-    ) -> Int {
-        guard let rawValue = values[key],
-            let parsed = Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
-        else {
-            return fallback
-        }
-        return range.contains(parsed) ? parsed : fallback
-    }
     private var monitoringMode: MonitoringMode = .foreground
     // nonisolated(unsafe) so the nonisolated deinit can call invalidate()
     // on these without going through the actor.
@@ -267,15 +284,21 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     /// History outlives the app now: the in-memory list is seeded from the
-    /// stored corpus so `c"` shows what was copied before the last quit.
+    /// stored corpus so `c"` shows what was copied before the last quit. Only
+    /// previews come back; a clip's text is fetched when it is used.
     private func loadPersistedHistory() {
         let limit = maxEntries
         let imageLimit = maxImageEntries
+        let previewCharacters = AppConstants.Launcher.Clipboard.previewCharacters
         let generation = historyGeneration
         Task { [weak self] in
             let stored = await Task.detached(priority: .utility) {
-                (
-                    text: EngineBridge.shared.clipboardEntries(limit: limit),
+                // A database written under a bigger limit (or the old 1000 default) is
+                // brought down to this one before anything is read from it.
+                EngineBridge.shared.trimClipboardHistory(textKeep: limit, imageKeep: imageLimit)
+                return (
+                    text: EngineBridge.shared.clipboardEntries(
+                        limit: limit, previewCharacters: previewCharacters),
                     // Mapped here: each image row stats its file.
                     images: EngineBridge.shared.clipboardEntries(
                         kind: AppConstants.Launcher.Clipboard.imageKind, limit: imageLimit
@@ -284,13 +307,7 @@ final class ClipboardHistoryStore: ObservableObject {
             }.value
             guard let self, generation == self.historyGeneration else { return }
             if self.entries.isEmpty {
-                self.entries = stored.text.map {
-                    ClipboardHistoryEntry(
-                        content: $0.content, capturedAt: $0.copiedAt,
-                        firstCapturedAt: $0.firstCopiedAt, copyCount: $0.copyCount ?? 1,
-                        appBundleID: $0.appBundleID, storeID: $0.id,
-                        isPinned: $0.pinned ?? false)
-                }
+                self.entries = stored.text.map(ClipboardHistoryEntry.init(stored:))
             }
             if self.imageEntries.isEmpty {
                 self.imageEntries = stored.images
@@ -325,15 +342,18 @@ final class ClipboardHistoryStore: ObservableObject {
     /// Off the main thread, but the row id comes BACK: without it `deleteEntry`
     /// has nothing to remove on disk and the clip returns next launch.
     private func persist(_ content: String, entryID: UUID, app: String?) {
+        let limits = storedLimits
         enqueueWrite { [weak self] in
-            let storeID = await ClipboardWriter.shared.record(content: content, appBundleID: app)
+            let storeID = await ClipboardWriter.shared.record(
+                content: content, appBundleID: app, limits: limits)
             guard let self, let storeID else { return }
             await self.attachStoreID(storeID, to: entryID)
         }
     }
 
-    /// Rebuilds the entry with its persisted id, or forgets the row when the
-    /// entry was deleted while the write was in flight.
+    /// Gives the entry its persisted id (and lets go of its text, which the database
+    /// now holds), or forgets the row when the entry was deleted while the write was
+    /// in flight.
     private func attachStoreID(_ storeID: Int64, to entryID: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == entryID }) else {
             // The user deleted it before the write landed: forget it on disk
@@ -342,16 +362,7 @@ final class ClipboardHistoryStore: ObservableObject {
             return
         }
         let existing = entries[index]
-        entries[index] = ClipboardHistoryEntry(
-            id: existing.id,
-            content: existing.content,
-            capturedAt: existing.capturedAt,
-            firstCapturedAt: existing.firstCapturedAt,
-            copyCount: existing.copyCount,
-            appBundleID: existing.appBundleID,
-            payload: existing.payload,
-            storeID: storeID,
-            isPinned: existing.isPinned)
+        entries[index] = existing.attachingStoreID(storeID)
         // Pinned before its row existed: the pin has to reach disk too.
         if existing.isPinned {
             enqueueWrite { await ClipboardWriter.shared.setPinned(id: storeID, pinned: true) }
@@ -372,13 +383,52 @@ final class ClipboardHistoryStore: ObservableObject {
         burstTimer?.invalidate()
     }
 
-    func search(_ term: String) -> [ClipboardHistoryEntry] {
+    /// The clips containing `term` (case-insensitive), in list order. The match runs in
+    /// the core over each clip's whole text, off the main thread: scanning resident
+    /// strings here would need them all resident. The core says WHICH rows match; the
+    /// rows themselves come from the list, so identity and pins stay as they are.
+    /// Clips whose row is not written yet are matched here against their pending text.
+    func search(_ term: String) async -> [ClipboardHistoryEntry] {
         let normalized = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return entries }
 
+        // The list is trimmed to `maxEntries` (pinned ones aside), so this reaches every
+        // row it holds. Only ids are used: a one-character preview keeps the rest of the
+        // text out of this process.
+        let limit = entries.count + maxEntries
+        let matched = await Task.detached(priority: .userInitiated) {
+            Set(
+                EngineBridge.shared.clipboardEntries(
+                    query: normalized, limit: limit, previewCharacters: 1
+                ).map(\.id))
+        }.value
+        // Read AFTER the hop: clips copied or deleted meanwhile are judged as they are now.
         return entries.filter { entry in
-            entry.content.localizedCaseInsensitiveContains(normalized)
+            if let pending = entry.pendingContent {
+                return pending.localizedCaseInsensitiveContains(normalized)
+            }
+            return entry.storeID.map(matched.contains) ?? false
         }
+    }
+
+    /// The row in the list, for a UI that holds only its id.
+    func entry(for id: UUID) -> ClipboardHistoryEntry? {
+        entries.first { $0.id == id }
+    }
+
+    /// A clip's text, loaded when it is pasted or previewed: from memory when the clip
+    /// is too fresh to be on disk, otherwise from the database off the main thread.
+    /// `maxCharacters` > 0 cuts it (the preview pane draws a few thousand). Nil when
+    /// the clip is gone.
+    func content(of id: UUID, maxCharacters: Int = 0) async -> String? {
+        guard let entry = entry(for: id) else { return nil }
+        if let pending = entry.pendingContent {
+            return maxCharacters > 0 ? String(pending.prefix(maxCharacters)) : pending
+        }
+        guard let storeID = entry.storeID else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            EngineBridge.shared.clipboardContent(id: storeID, maxCharacters: maxCharacters)
+        }.value
     }
 
     func togglePin(id: UUID) {
@@ -467,16 +517,17 @@ final class ClipboardHistoryStore: ObservableObject {
 
         let app = Self.sourceAppBundleID()
         let captured: ClipboardHistoryEntry
-        if let existingIndex = entries.firstIndex(where: { $0.content == text }) {
+        let key = ClipboardContentKey.make(for: text)
+        if let existingIndex = entries.firstIndex(where: { $0.contentKey == key }) {
             // Keep the existing id so SwiftUI identity survives the re-capture.
             let existing = entries.remove(at: existingIndex)
             captured = ClipboardHistoryEntry(
-                id: existing.id, content: text,
+                capturing: text, id: existing.id,
                 firstCapturedAt: existing.firstCapturedAt, copyCount: existing.copyCount + 1,
                 appBundleID: app ?? existing.appBundleID, storeID: existing.storeID,
                 isPinned: existing.isPinned)
         } else {
-            captured = ClipboardHistoryEntry(content: text, appBundleID: app)
+            captured = ClipboardHistoryEntry(capturing: text, appBundleID: app)
         }
         prepend(captured)
         // Re-copying replaces the stored row, so the id is re-attached here
@@ -502,9 +553,11 @@ final class ClipboardHistoryStore: ObservableObject {
         let appBundleID = source?.bundleIdentifier
         let changeCount = pasteboard.changeCount
         let generation = historyGeneration
+        let limits = storedLimits
         enqueueWrite { [weak self] in
             let recorded = await ClipboardWriter.shared.recordImage(
-                changeCount: changeCount, appBundleID: appBundleID, fallbackLabel: fallbackLabel)
+                changeCount: changeCount, appBundleID: appBundleID, fallbackLabel: fallbackLabel,
+                limits: limits)
             guard let self, let recorded else { return }
             guard await generation == self.historyGeneration else {
                 // Cleared while in flight: forget it on disk too, or the clip

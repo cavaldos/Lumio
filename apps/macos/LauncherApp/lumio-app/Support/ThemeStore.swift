@@ -88,6 +88,16 @@ final class ThemeStore: ObservableObject {
             {
                 warnings.append("file_scan_limit=\(value) invalid (must be \(AppConstants.FileScan.minLimit)-\(AppConstants.FileScan.maxLimit))")
             }
+            if let value = values[AppConstants.Launcher.Clipboard.historyLimitConfigKey], let parsed = Int(value),
+               !ClipboardLimits.textRange.contains(parsed)
+            {
+                warnings.append("clipboard_history_limit=\(value) invalid (must be \(ClipboardLimits.textRange.lowerBound)-\(ClipboardLimits.textRange.upperBound))")
+            }
+            if let value = values[AppConstants.Launcher.ClipboardImage.limitConfigKey], let parsed = Int(value),
+               !ClipboardLimits.imageRange.contains(parsed)
+            {
+                warnings.append("clipboard_image_limit=\(value) invalid (must be \(ClipboardLimits.imageRange.lowerBound)-\(ClipboardLimits.imageRange.upperBound))")
+            }
         }
 
         applyOverridesFromConfigFile()
@@ -108,6 +118,8 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "file_scan_depth", value: String(settings.fileScanDepth))
         ConfigFileLines.upsert(&lines, key: "file_scan_limit", value: String(settings.fileScanLimit))
         ConfigFileLines.upsert(&lines, key: "lazy_indexing_enabled", value: settings.lazyIndexingEnabled ? "true" : "false")
+        ConfigFileLines.upsert(&lines, key: AppConstants.Launcher.Clipboard.historyLimitConfigKey, value: String(settings.clipboardHistoryLimit))
+        ConfigFileLines.upsert(&lines, key: AppConstants.Launcher.ClipboardImage.limitConfigKey, value: String(settings.clipboardImageLimit))
         ConfigFileLines.upsert(&lines, key: "file_exclude_paths", value: ConfigFileLines.renderList(excludedFolderPaths))
         ConfigFileLines.upsert(&lines, key: "file_scan_extra_roots", value: ConfigFileLines.renderList(extraFileScanRoots))
         ConfigFileLines.upsert(&lines, key: "backend_log_level", value: settings.backendLogLevel.rawValue)
@@ -225,6 +237,14 @@ final class ThemeStore: ObservableObject {
                 if let parsed = parsePositiveInt(value) { settings.fileScanLimit = parsed }
             case "lazy_indexing_enabled":
                 if let parsed = parseBool(value) { settings.lazyIndexingEnabled = parsed }
+            case AppConstants.Launcher.Clipboard.historyLimitConfigKey:
+                // Same rule as ClipboardHistoryStore: out of range means the default, so the
+                // window shows the limit the store actually applies.
+                settings.clipboardHistoryLimit = ClipboardLimits.resolve(
+                    value, range: ClipboardLimits.textRange, fallback: ClipboardLimits.Text.maxEntries)
+            case AppConstants.Launcher.ClipboardImage.limitConfigKey:
+                settings.clipboardImageLimit = ClipboardLimits.resolve(
+                    value, range: ClipboardLimits.imageRange, fallback: ClipboardLimits.Image.maxEntries)
             case "file_exclude_paths":
                 excludedFolderPaths = parseExcludedFolderPaths(value)
             case "file_scan_roots":
@@ -417,6 +437,10 @@ lazy_indexing_enabled=true
 # false also deletes the stored text. content_index_limit = most files read, newest first.
 content_index_enabled=true
 content_index_limit=3000
+# Clipboard history: text clips to keep (10-1000) and image clips (5-50). Older clips are deleted
+# from the database; pinned clips are never removed.
+clipboard_history_limit=300
+clipboard_image_limit=20
 backend_log_level=error
 launch_at_login=true
 # Translator languages (tr" / tw"), 1-5 codes. Choices: en,vi,fr,ja,ko,zh-Hans,zh-Hant,es,de,it,pt,ru,th,id,hi,ar

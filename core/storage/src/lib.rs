@@ -1,4 +1,5 @@
 use lumio_indexing::{Candidate, CandidateKind};
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -16,9 +17,11 @@ const MAX_CANDIDATE_PREALLOC: usize = 10_000;
 /// spec). Kept modest - history is a convenience cache, not a system of record.
 const MAX_URL_HISTORY_ROWS: usize = 500;
 const JOURNAL_SIZE_LIMIT_BYTES: i64 = 4 * 1024 * 1024;
-/// A recall corpus, not a paste ring - but still bounded: this is text the
-/// user copied.
-pub const MAX_CLIPBOARD_ROWS: usize = 5_000;
+/// Backstop for the text history, not the user's setting: the shell trims to
+/// its `clipboard_history_limit` (see `trim_clipboard_entries`), and that
+/// setting tops out at the same 1,000. A shell that never trims still cannot
+/// grow the table without bound.
+pub const MAX_CLIPBOARD_ROWS: usize = 1_000;
 /// Capped far lower than text, and separately: each row is megabytes on disk,
 /// and a screenshot burst must not evict text under a shared cap.
 pub const MAX_CLIPBOARD_IMAGE_ROWS: usize = 50;
@@ -90,11 +93,19 @@ pub struct UrlHistoryEntry {
     pub last_used_at_unix_s: i64,
 }
 
-/// One remembered clip. `content` is the full text - recall searches it.
+/// One remembered clip. `content` is the full text - recall searches it - unless
+/// the row came from `clipboard_previews`, where it is only the leading
+/// `preview_chars` (see `content_chars` for the real length).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipboardEntry {
     pub id: i64,
     pub content: String,
+    /// Length of the FULL stored text in characters (Unicode scalars, not
+    /// graphemes), whether or not `content` was cut down to a preview.
+    pub content_chars: i64,
+    /// Lines in the full text: CRLF and a bare CR each read as one break, blank
+    /// lines count, and a single trailing newline adds none. At least 1.
+    pub line_count: i64,
     pub kind: String,
     /// For an image, the hash of the pixels, which also names the file.
     pub content_hash: String,
@@ -221,6 +232,7 @@ impl SqliteStore {
         }
 
         let conn = Connection::open(path)?;
+        register_functions(&conn)?;
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -228,6 +240,7 @@ impl SqliteStore {
 
     pub fn open_in_memory() -> StorageResult<Self> {
         let conn = Connection::open_in_memory()?;
+        register_functions(&conn)?;
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -596,7 +609,16 @@ impl SqliteStore {
                  content, content_hash, kind, app_bundle_id, copied_at_unix_s,
                  first_copied_at_unix_s, copy_count, pinned)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![content, hash, kind, app, now, first_copied, copy_count, pinned],
+            params![
+                content,
+                hash,
+                kind,
+                app,
+                now,
+                first_copied,
+                copy_count,
+                pinned
+            ],
         )?;
         let row_id = tx.last_insert_rowid();
         let cap = if kind == CLIPBOARD_KIND_IMAGE {
@@ -604,32 +626,47 @@ impl SqliteStore {
         } else {
             MAX_CLIPBOARD_ROWS
         };
-        // Only the overflow: `WHERE id NOT IN (SELECT ... LIMIT cap)` would
-        // scan the whole table on every copy, for nothing until the 5,001st.
-        // Per kind, so the two histories cannot evict each other. Pinned
-        // clips neither count toward the cap nor get pruned.
-        tx.execute(
-            "DELETE FROM clipboard_entries
-             WHERE kind = ?1 AND pinned = 0 AND (copied_at_unix_s, id) < (
-               SELECT copied_at_unix_s, id FROM clipboard_entries
-               WHERE kind = ?1 AND pinned = 0
-               ORDER BY copied_at_unix_s DESC, id DESC
-               LIMIT 1 OFFSET ?2
-             )",
-            params![kind, cap as i64 - 1],
-        )?;
+        trim_clips(&tx, kind, cap)?;
         tx.commit()?;
         Ok(Some(row_id))
     }
 
     /// Up to `limit` clips matching `query` (case-insensitive substring over
-    /// the content), newest first. An empty query returns the most recent.
-    /// This is the keyword tier; semantic recall ranks the same rows later.
+    /// the content), pinned first, then newest first. An empty query returns
+    /// the most recent. This is the keyword tier; semantic recall ranks the
+    /// same rows later. Every row carries its FULL content: for a list that
+    /// only needs titles use `clipboard_previews`.
     pub fn clipboard_entries(
         &self,
         kind: &str,
         query: &str,
         limit: usize,
+    ) -> StorageResult<Vec<ClipboardEntry>> {
+        self.clip_rows(kind, query, limit, None)
+    }
+
+    /// Same rows and order as `clipboard_entries`, but `content` is cut to the
+    /// first `preview_chars` characters (leading whitespace skipped, so a clip
+    /// that opens with blank lines still has something to show). The cut happens
+    /// in SQL: the long text never crosses into the caller's memory, which is
+    /// the point - the shell keeps this list resident and fetches the rest with
+    /// `clipboard_content` when a clip is actually pasted or previewed.
+    pub fn clipboard_previews(
+        &self,
+        kind: &str,
+        query: &str,
+        limit: usize,
+        preview_chars: usize,
+    ) -> StorageResult<Vec<ClipboardEntry>> {
+        self.clip_rows(kind, query, limit, Some(preview_chars.max(1)))
+    }
+
+    fn clip_rows(
+        &self,
+        kind: &str,
+        query: &str,
+        limit: usize,
+        preview_chars: Option<usize>,
     ) -> StorageResult<Vec<ClipboardEntry>> {
         let query = query.trim();
         let limit = limit as i64;
@@ -644,12 +681,25 @@ impl SqliteStore {
                 first_copied_at_unix_s: row.get(6)?,
                 copy_count: row.get(7)?,
                 pinned: row.get(8)?,
+                content_chars: row.get(9)?,
+                line_count: row.get(10)?,
             })
         };
-        let select = "SELECT id, content, kind, content_hash, app_bundle_id, copied_at_unix_s,
-                             COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count,
-                             pinned
-                      FROM clipboard_entries WHERE kind = ?1";
+        // `preview_chars` is a number we format in, never user text.
+        let content_expr = match preview_chars {
+            Some(n) => format!("substr(ltrim(content, char(32, 9, 10, 13)), 1, {n})"),
+            None => "content".to_string(),
+        };
+        // CRLF first, so it is one break and not two.
+        let norm = "replace(replace(content, char(13, 10), char(10)), char(13), char(10))";
+        let select = format!(
+            "SELECT id, {content_expr}, kind, content_hash, app_bundle_id, copied_at_unix_s,
+                    COALESCE(first_copied_at_unix_s, copied_at_unix_s), copy_count, pinned,
+                    length(content),
+                    MAX(1, length({norm}) - length(replace({norm}, char(10), ''))
+                           + (substr({norm}, -1, 1) != char(10)))
+             FROM clipboard_entries WHERE kind = ?1"
+        );
         let rows = if query.is_empty() {
             let mut stmt = self.conn.prepare(&format!(
                 "{select} ORDER BY pinned DESC, copied_at_unix_s DESC, id DESC LIMIT ?2"
@@ -657,15 +707,49 @@ impl SqliteStore {
             let mapped = stmt.query_map(params![kind, limit], map_row)?;
             mapped.collect::<rusqlite::Result<Vec<_>>>()?
         } else {
-            let pattern = format!("%{}%", like_escape(query));
+            // Folded by Rust, not LIKE: LIKE only ignores case for ASCII, and a
+            // clip in Vietnamese or Cyrillic is searched by what the user types.
+            // `instr` is a literal match, so there is nothing to escape.
             let mut stmt = self.conn.prepare(&format!(
-                "{select} AND content LIKE ?2 ESCAPE '\\'
+                "{select} AND instr(lumio_fold(content), ?2) > 0
                  ORDER BY pinned DESC, copied_at_unix_s DESC, id DESC LIMIT ?3"
             ))?;
-            let mapped = stmt.query_map(params![kind, pattern, limit], map_row)?;
+            let mapped = stmt.query_map(params![kind, query.to_lowercase(), limit], map_row)?;
             mapped.collect::<rusqlite::Result<Vec<_>>>()?
         };
         Ok(rows)
+    }
+
+    /// The stored text of one clip, or `None` when the row is gone (deleted,
+    /// pruned, or replaced by a re-copy, which hands out a new id). With
+    /// `max_chars`, only that many leading characters are returned, so a
+    /// preview pane never pulls 30,000 characters it will not draw.
+    pub fn clipboard_content(
+        &self,
+        id: i64,
+        max_chars: Option<usize>,
+    ) -> StorageResult<Option<String>> {
+        let row = match max_chars {
+            Some(n) => self.conn.query_row(
+                "SELECT substr(content, 1, ?2) FROM clipboard_entries WHERE id = ?1",
+                params![id, n as i64],
+                |row| row.get(0),
+            ),
+            None => self.conn.query_row(
+                "SELECT content FROM clipboard_entries WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            ),
+        };
+        Ok(row.optional()?)
+    }
+
+    /// Keeps the newest `keep` unpinned clips of `kind` and deletes the rest;
+    /// pinned clips neither count nor go. Returns how many rows were deleted.
+    /// This is how the user's history limit reaches the disk: the in-memory list
+    /// shrinking alone would bring the clips back on the next launch.
+    pub fn trim_clipboard_entries(&self, kind: &str, keep: usize) -> StorageResult<usize> {
+        trim_clips(&self.conn, kind, keep)
     }
 
     /// What the shell sweeps its image directory against: a file with no hash
@@ -996,7 +1080,12 @@ impl SqliteStore {
 
         // Clip details shown in the clipboard preview. Additive on existing DBs:
         // old rows have no first copy time (read as their last) and count as one copy.
-        ensure_column_exists(&self.conn, "clipboard_entries", "first_copied_at_unix_s", "INTEGER")?;
+        ensure_column_exists(
+            &self.conn,
+            "clipboard_entries",
+            "first_copied_at_unix_s",
+            "INTEGER",
+        )?;
         ensure_column_exists(
             &self.conn,
             "clipboard_entries",
@@ -1034,6 +1123,41 @@ fn ensure_column_exists(
         [],
     )?;
     Ok(())
+}
+
+/// Lowercases for the clipboard search. Unicode-aware, unlike SQLite's own
+/// `lower()` and `LIKE`, which fold ASCII only.
+fn register_functions(conn: &Connection) -> StorageResult<()> {
+    conn.create_scalar_function(
+        "lumio_fold",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| Ok(ctx.get::<String>(0)?.to_lowercase()),
+    )?;
+    Ok(())
+}
+
+/// Deletes the unpinned clips of `kind` older than the newest `keep`. Only the
+/// overflow: `WHERE id NOT IN (SELECT ... LIMIT keep)` would scan the whole
+/// table on every copy, for nothing until the history is full. Per kind, so the
+/// text and image histories cannot evict each other.
+fn trim_clips(conn: &Connection, kind: &str, keep: usize) -> StorageResult<usize> {
+    if keep == 0 {
+        return Ok(conn.execute(
+            "DELETE FROM clipboard_entries WHERE kind = ?1 AND pinned = 0",
+            params![kind],
+        )?);
+    }
+    Ok(conn.execute(
+        "DELETE FROM clipboard_entries
+         WHERE kind = ?1 AND pinned = 0 AND (copied_at_unix_s, id) < (
+           SELECT copied_at_unix_s, id FROM clipboard_entries
+           WHERE kind = ?1 AND pinned = 0
+           ORDER BY copied_at_unix_s DESC, id DESC
+           LIMIT 1 OFFSET ?2
+         )",
+        params![kind, keep as i64 - 1],
+    )?)
 }
 
 /// Stable dedupe id. FNV-1a over the trimmed text - stable and cheap, not
@@ -1343,6 +1467,215 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn clipboard_previews_cut_the_text_but_report_the_real_size() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        let long = format!("\n\n  {}\nsecond line\r\nthird\n", "x".repeat(400));
+        let id = store.record_clipboard_entry(&long, None).unwrap().unwrap();
+        store.record_clipboard_entry("short", None).unwrap();
+
+        let rows = store
+            .clipboard_previews(CLIPBOARD_KIND_TEXT, "", 10, 50)
+            .unwrap();
+        // Same order as the full listing: newest first.
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].content, "short");
+        assert_eq!((rows[0].content_chars, rows[0].line_count), (5, 1));
+
+        let long_row = &rows[1];
+        assert_eq!(long_row.id, id);
+        // Leading blank lines are skipped and the rest is cut at 50.
+        assert_eq!(long_row.content.chars().count(), 50);
+        assert!(long_row.content.starts_with('x'));
+        // The size is the FULL text's: 2 newlines + 2 spaces + 400 x + "\n" +
+        // "second line" + "\r\n" + "third" + "\n".
+        assert_eq!(long_row.content_chars, long.chars().count() as i64);
+        // 2 blank lines, the x line, second line, third (trailing newline adds none).
+        assert_eq!(long_row.line_count, 5);
+
+        // The full listing agrees on size and keeps the whole text.
+        let full = store
+            .clipboard_entries(CLIPBOARD_KIND_TEXT, "", 10)
+            .unwrap();
+        assert_eq!(full[1].content, long);
+        assert_eq!(full[1].line_count, 5);
+    }
+
+    #[test]
+    fn line_count_treats_cr_and_crlf_as_one_break() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        for (text, lines) in [
+            ("one", 1),
+            ("one\n", 1),
+            ("a\nb", 2),
+            ("a\r\nb\r\nc", 3),
+            ("a\rb\rc", 3),
+            ("a\n\nb", 3),
+            ("a\n\n", 2),
+        ] {
+            store.record_clipboard_entry(text, None).unwrap();
+            let row = &store
+                .clipboard_previews(CLIPBOARD_KIND_TEXT, "", 1, 20)
+                .unwrap()[0];
+            assert_eq!(row.line_count, lines, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn clipboard_previews_search_ignores_case_beyond_ascii() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        store
+            .record_clipboard_entry("Xin chào Việt Nam", None)
+            .unwrap();
+        store.record_clipboard_entry("unrelated", None).unwrap();
+        for query in ["VIỆT", "việt nam", "chÀo"] {
+            let hits = store
+                .clipboard_previews(CLIPBOARD_KIND_TEXT, query, 10, 20)
+                .unwrap();
+            assert_eq!(hits.len(), 1, "{query}");
+            assert_eq!(hits[0].content, "Xin chào Việt Nam");
+        }
+        // A match deep inside a clip the preview does not reach still hits.
+        let deep = format!("{} needle", "pad ".repeat(100));
+        store.record_clipboard_entry(&deep, None).unwrap();
+        let hits = store
+            .clipboard_previews(CLIPBOARD_KIND_TEXT, "NEEDLE", 10, 10)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].content.chars().count(), 10);
+    }
+
+    #[test]
+    fn clipboard_content_loads_one_clip_on_demand() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        let id = store
+            .record_clipboard_entry("hello wide world", None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            store.clipboard_content(id, None).unwrap().as_deref(),
+            Some("hello wide world")
+        );
+        assert_eq!(
+            store.clipboard_content(id, Some(5)).unwrap().as_deref(),
+            Some("hello")
+        );
+        assert_eq!(store.clipboard_content(id + 99, None).unwrap(), None);
+        // A re-copy replaces the row under a new id, so the old one is gone.
+        let again = store
+            .record_clipboard_entry("hello wide world", None)
+            .unwrap()
+            .unwrap();
+        assert_ne!(again, id);
+        assert_eq!(store.clipboard_content(id, None).unwrap(), None);
+        assert!(store.delete_clipboard_entry(again).unwrap());
+        assert_eq!(store.clipboard_content(again, None).unwrap(), None);
+    }
+
+    #[test]
+    fn trimming_keeps_the_newest_unpinned_and_every_pinned_clip() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        let pinned = store
+            .record_clipboard_entry("pinned old", None)
+            .unwrap()
+            .unwrap();
+        assert!(store.set_clipboard_pinned(pinned, true).unwrap());
+        for i in 0..20 {
+            store
+                .record_clipboard_entry(&format!("clip {i}"), None)
+                .unwrap();
+        }
+        store
+            .record_clipboard_image("shot.png", "aaaa", None)
+            .unwrap();
+
+        assert_eq!(
+            store
+                .trim_clipboard_entries(CLIPBOARD_KIND_TEXT, 5)
+                .unwrap(),
+            15
+        );
+        let left = store
+            .clipboard_entries(CLIPBOARD_KIND_TEXT, "", 100)
+            .unwrap();
+        let names: Vec<_> = left.iter().map(|e| e.content.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "pinned old",
+                "clip 19",
+                "clip 18",
+                "clip 17",
+                "clip 16",
+                "clip 15"
+            ]
+        );
+        // Already within the limit: nothing to do, and the images are untouched.
+        assert_eq!(
+            store
+                .trim_clipboard_entries(CLIPBOARD_KIND_TEXT, 5)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            store
+                .clipboard_entries(CLIPBOARD_KIND_IMAGE, "", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // A smaller limit trims further; zero drops every unpinned clip.
+        assert_eq!(
+            store
+                .trim_clipboard_entries(CLIPBOARD_KIND_TEXT, 2)
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            store
+                .trim_clipboard_entries(CLIPBOARD_KIND_TEXT, 0)
+                .unwrap(),
+            2
+        );
+        let left = store
+            .clipboard_entries(CLIPBOARD_KIND_TEXT, "", 100)
+            .unwrap();
+        assert_eq!(left.len(), 1);
+        assert!(left[0].pinned);
+    }
+
+    #[test]
+    fn trimming_images_reports_the_hashes_that_remain() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        for i in 0..4 {
+            store
+                .record_clipboard_image(&format!("shot {i}"), &format!("hash{i}"), None)
+                .unwrap();
+        }
+        assert_eq!(
+            store
+                .trim_clipboard_entries(CLIPBOARD_KIND_IMAGE, 2)
+                .unwrap(),
+            2
+        );
+        let mut hashes = store.clipboard_image_hashes().unwrap();
+        hashes.sort();
+        // The shell sweeps files against this list, so it must name only survivors.
+        assert_eq!(hashes, ["hash2", "hash3"]);
+    }
+
+    /// The macOS shell recomputes this hash to match a fresh copy against stored
+    /// rows without holding their text (ClipboardContentKeyTests pins the same
+    /// values). Changing it would also orphan every stored row's dedupe identity.
+    #[test]
+    fn content_hash_is_stable_across_the_ffi_boundary() {
+        assert_eq!(content_hash(""), "cbf29ce484222325");
+        assert_eq!(content_hash("a"), "af74d84c8601ec8c");
+        assert_eq!(content_hash("foobar"), "f8ac2471f73967e8");
+        assert_eq!(content_hash("  foobar\n"), content_hash("foobar"));
     }
 
     #[test]

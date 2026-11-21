@@ -118,11 +118,15 @@ enum SpotlightModeRows {
     }
 
     /// Clipboard tab: copied text and images in one list, pinned first, then newest first,
-    /// one line each (like Maccy).
-    static func clipboardAll(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
-        let texts = zip(store.search(term).map(\.capturedAt), clipboard(store, term: term))
-        let images = zip(store.searchImages(term).map(\.capturedAt), clipboardImages(store, term: term))
-        return (Array(texts) + Array(images))
+    /// one line each (like Maccy). Async because the text search runs in the core, off the
+    /// main thread; the rows carry titles only - a clip's text is loaded when it is used.
+    static func clipboardAll(_ store: ClipboardHistoryStore, term: String) async -> [SpotlightItem] {
+        let texts = await store.search(term)
+        // After the await, with the text: both lists are judged at the same moment.
+        let images = store.searchImages(term)
+        let rows = Array(zip(texts.map(\.capturedAt), clipboard(texts)))
+            + Array(zip(images.map(\.capturedAt), clipboardImages(images)))
+        return rows
             .sorted { lhs, rhs in
                 if lhs.1.isPinned != rhs.1.isPinned { return lhs.1.isPinned }
                 return lhs.0 > rhs.0
@@ -130,19 +134,19 @@ enum SpotlightModeRows {
             .map(\.1)
     }
 
-    static func clipboard(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
-        store.search(term).map { entry in
+    static func clipboard(_ entries: [ClipboardHistoryEntry]) -> [SpotlightItem] {
+        entries.map { entry in
             SpotlightItem(
                 id: "clip|\(entry.id.uuidString)", name: entry.title, kind: .clip,
                 colors: "#c3a6ff,#7a52d6",
-                symbol: "doc.on.clipboard", payload: entry.payload ?? entry.content, clipID: entry.id,
+                symbol: "doc.on.clipboard", clipID: entry.id,
                 isPinned: entry.isPinned
             )
         }
     }
 
-    static func clipboardImages(_ store: ClipboardHistoryStore, term: String) -> [SpotlightItem] {
-        store.searchImages(term).map { entry in
+    static func clipboardImages(_ entries: [ClipboardImageEntry]) -> [SpotlightItem] {
+        entries.map { entry in
             let size = ByteCountFormatter.string(fromByteCount: Int64(entry.byteSize), countStyle: .file)
             return SpotlightItem(
                 id: "clipimage|\(entry.id)", name: entry.label, kind: .clipImage,

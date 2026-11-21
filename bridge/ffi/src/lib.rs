@@ -232,17 +232,42 @@ pub extern "C" fn lumio_clipboard_images_dir() -> *mut c_char {
 }
 
 /// JSON array of up to `limit` remembered clips of `kind` matching `query`
-/// (or `[]`).
+/// (or `[]`). `preview_chars` > 0 returns only that many leading characters of
+/// each clip's `content` (the full length is in `contentLength`); 0 returns it
+/// whole. Fetch one clip's full text with `lumio_clipboard_content`.
 #[unsafe(no_mangle)]
 pub extern "C" fn lumio_clipboard_list_json(
     kind: *const c_char,
     query: *const c_char,
     limit: u32,
+    preview_chars: u32,
 ) -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        clipboard_api::lumio_clipboard_list_json_impl(kind, query, limit)
+        clipboard_api::lumio_clipboard_list_json_impl(kind, query, limit, preview_chars)
     }))
     .unwrap_or(std::ptr::null_mut())
+}
+
+/// The stored text of clip `id`, or null when it is gone (deleted, trimmed, or
+/// replaced by a re-copy). `max_chars` > 0 returns only that many leading
+/// characters. Free with `lumio_free_cstring`.
+#[unsafe(no_mangle)]
+pub extern "C" fn lumio_clipboard_content(id: i64, max_chars: u32) -> *mut c_char {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        clipboard_api::lumio_clipboard_content_impl(id, max_chars)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Keeps the newest `text_keep` text clips and `image_keep` image clips on disk
+/// and deletes the rest (pinned clips never count and never go). Returns how
+/// many rows were deleted.
+#[unsafe(no_mangle)]
+pub extern "C" fn lumio_clipboard_trim(text_keep: u32, image_keep: u32) -> u32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        clipboard_api::lumio_clipboard_trim_impl(text_keep, image_keep)
+    }))
+    .unwrap_or(0)
 }
 
 /// Pins or unpins a clip: pinned clips list first and are never pruned.
@@ -577,6 +602,157 @@ mod tests {
             .into_owned();
         lumio_free_cstring(ptr);
         serde_json::from_str(&raw).expect("valid json payload")
+    }
+
+    fn json_of(ptr: *mut c_char) -> serde_json::Value {
+        assert!(!ptr.is_null());
+        let text = unsafe { CStr::from_ptr(ptr) }
+            .to_str()
+            .expect("utf8")
+            .to_string();
+        lumio_free_cstring(ptr);
+        serde_json::from_str(&text).expect("json")
+    }
+
+    #[test]
+    fn ffi_clipboard_list_loads_previews_and_content_on_demand() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state::wait_for_index_refresh_for_test();
+
+        let db_path = unique_test_db_path();
+        let _ = fs::remove_file(&db_path);
+        state::set_db_path_for_test(&db_path);
+
+        let cstr = |text: &str| CString::new(text).expect("no NUL");
+        let long = format!("first line\nsecond line\n{}", "z".repeat(5_000));
+        let id = lumio_clipboard_record(cstr(&long).as_ptr(), std::ptr::null());
+        assert!(id > 0);
+        let kind = cstr("text");
+        let empty = cstr("");
+
+        // Preview mode: the text is cut, the real size is still reported.
+        let rows = json_of(lumio_clipboard_list_json(
+            kind.as_ptr(),
+            empty.as_ptr(),
+            10,
+            40,
+        ));
+        let row = &rows[0];
+        assert_eq!(row["id"], id);
+        assert_eq!(row["content"].as_str().unwrap().chars().count(), 40);
+        assert_eq!(row["contentLength"], long.chars().count() as i64);
+        assert_eq!(row["lineCount"], 3);
+
+        // Full mode (0) keeps the old contract.
+        let rows = json_of(lumio_clipboard_list_json(
+            kind.as_ptr(),
+            empty.as_ptr(),
+            10,
+            0,
+        ));
+        assert_eq!(rows[0]["content"].as_str().unwrap(), long);
+
+        // A search runs in the core and returns previews too.
+        let query = cstr("SECOND");
+        let hits = json_of(lumio_clipboard_list_json(
+            kind.as_ptr(),
+            query.as_ptr(),
+            10,
+            40,
+        ));
+        assert_eq!(hits.as_array().unwrap().len(), 1);
+
+        // On-demand content: whole, cut, and gone.
+        let whole = lumio_clipboard_content(id, 0);
+        assert_eq!(unsafe { CStr::from_ptr(whole) }.to_str().unwrap(), long);
+        lumio_free_cstring(whole);
+        let cut = lumio_clipboard_content(id, 10);
+        assert_eq!(
+            unsafe { CStr::from_ptr(cut) }.to_str().unwrap(),
+            "first line"
+        );
+        lumio_free_cstring(cut);
+        assert!(lumio_clipboard_content(id + 1_000, 0).is_null());
+        assert!(lumio_clipboard_delete(id));
+        assert!(lumio_clipboard_content(id, 0).is_null());
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn ffi_clipboard_trim_applies_the_limits_and_sweeps_trimmed_images() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state::wait_for_index_refresh_for_test();
+
+        let db_path = unique_test_db_path();
+        let _ = fs::remove_file(&db_path);
+        state::set_db_path_for_test(&db_path);
+
+        let cstr = |text: &str| CString::new(text).expect("no NUL");
+        let mut text_ids = Vec::new();
+        for i in 0..6 {
+            text_ids.push(lumio_clipboard_record(
+                cstr(&format!("clip {i}")).as_ptr(),
+                std::ptr::null(),
+            ));
+        }
+        assert!(lumio_clipboard_set_pinned(text_ids[0], true));
+
+        // Image rows own files named after their hash, in the dir beside the db.
+        let dir = PathBuf::from(unsafe {
+            let ptr = lumio_clipboard_images_dir();
+            let path = CStr::from_ptr(ptr).to_str().unwrap().to_string();
+            lumio_free_cstring(ptr);
+            path
+        });
+        for i in 0..3 {
+            let hash = format!("imagehash{i}");
+            fs::write(dir.join(format!("{hash}.png")), b"png").unwrap();
+            fs::write(dir.join(format!("{hash}.thumb.png")), b"thumb").unwrap();
+            assert!(
+                lumio_clipboard_record_image(
+                    cstr(&format!("shot {i}")).as_ptr(),
+                    cstr(&hash).as_ptr(),
+                    std::ptr::null()
+                ) > 0
+            );
+        }
+
+        // Keep 2 unpinned text clips and 1 image: 3 + 2 rows go.
+        assert_eq!(lumio_clipboard_trim(2, 1), 5);
+        let kind = cstr("text");
+        let empty = cstr("");
+        let rows = json_of(lumio_clipboard_list_json(
+            kind.as_ptr(),
+            empty.as_ptr(),
+            50,
+            20,
+        ));
+        let names: Vec<_> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["content"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(names, ["clip 0", "clip 5", "clip 4"]);
+
+        // Only the newest image's files survive the sweep.
+        let mut files: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(files, ["imagehash2.png", "imagehash2.thumb.png"]);
+        // Nothing left to do.
+        assert_eq!(lumio_clipboard_trim(2, 1), 0);
+
+        let _ = fs::remove_file(&db_path);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn unique_test_db_path() -> PathBuf {

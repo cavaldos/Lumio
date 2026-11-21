@@ -22,6 +22,7 @@ extension ThemeSettingsView {
                     indexingSection
                     shortcutsSection
                     tabsSection
+                    clipboardSection
                     translationSection
                     generalSection
                     aboutSection
@@ -35,6 +36,12 @@ extension ThemeSettingsView {
             }
             .onChange(of: settings.fileScanLimit) { _, _ in
                 fileScanLimitInput = String(settings.fileScanLimit)
+            }
+            .onChange(of: settings.clipboardHistoryLimit) { _, _ in
+                clipboardHistoryLimitInput = String(settings.clipboardHistoryLimit)
+            }
+            .onChange(of: settings.clipboardImageLimit) { _, _ in
+                clipboardImageLimitInput = String(settings.clipboardImageLimit)
             }
 
             Text(HintText.Settings.advancedApply)
@@ -168,6 +175,56 @@ extension ThemeSettingsView {
         SettingsSectionTitle("Tabs")
         SettingsCard {
             tabOrderRow
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardSection: some View {
+        SettingsSectionTitle("Clipboard")
+        SettingsCard {
+            SettingsRow(
+                "Clips to keep",
+                detail: clipboardHistoryLimitError
+                    ?? "Text clips, \(ClipboardLimits.textRange.lowerBound)-\(ClipboardLimits.textRange.upperBound). Older ones are deleted; pinned clips stay"
+            ) {
+                TextField("\(ClipboardLimits.Text.maxEntries)", text: $clipboardHistoryLimitInput)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+                    .onChange(of: clipboardHistoryLimitInput) { _, value in
+                        clipboardHistoryLimitInput = sanitizedNumericInput(value)
+                        if let parsed = Int(clipboardHistoryLimitInput) {
+                            if ClipboardLimits.textRange.contains(parsed) {
+                                settings.clipboardHistoryLimit = parsed
+                                clipboardHistoryLimitError = nil
+                            } else {
+                                clipboardHistoryLimitError = "Must be \(ClipboardLimits.textRange.lowerBound)-\(ClipboardLimits.textRange.upperBound)"
+                            }
+                        }
+                    }
+            }
+            SettingsDivider()
+            SettingsRow(
+                "Images to keep",
+                detail: clipboardImageLimitError
+                    ?? "Image clips, \(ClipboardLimits.imageRange.lowerBound)-\(ClipboardLimits.imageRange.upperBound). Each one is a file on disk"
+            ) {
+                TextField("\(ClipboardLimits.Image.maxEntries)", text: $clipboardImageLimitInput)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+                    .onChange(of: clipboardImageLimitInput) { _, value in
+                        clipboardImageLimitInput = sanitizedNumericInput(value)
+                        if let parsed = Int(clipboardImageLimitInput) {
+                            if ClipboardLimits.imageRange.contains(parsed) {
+                                settings.clipboardImageLimit = parsed
+                                clipboardImageLimitError = nil
+                            } else {
+                                clipboardImageLimitError = "Must be \(ClipboardLimits.imageRange.lowerBound)-\(ClipboardLimits.imageRange.upperBound)"
+                            }
+                        }
+                    }
+            }
         }
     }
 
@@ -399,6 +456,10 @@ extension ThemeSettingsView {
     func syncIndexingInputsFromSettings() {
         fileScanDepthInput = String(settings.fileScanDepth)
         fileScanLimitInput = String(settings.fileScanLimit)
+        clipboardHistoryLimitInput = String(settings.clipboardHistoryLimit)
+        clipboardImageLimitInput = String(settings.clipboardImageLimit)
+        clipboardHistoryLimitError = nil
+        clipboardImageLimitError = nil
     }
 
     func sanitizedNumericInput(_ value: String) -> String {
@@ -423,6 +484,19 @@ extension ThemeSettingsView {
         fileScanLimitInput = String(settings.fileScanLimit)
     }
 
+    /// Save with a typed value still out of range (or empty) puts back the last valid one
+    /// instead of saving it, like the scan inputs above.
+    func applyClipboardLimitInputs() {
+        if let parsed = Int(clipboardHistoryLimitInput), ClipboardLimits.textRange.contains(parsed) {
+            settings.clipboardHistoryLimit = parsed
+        }
+        if let parsed = Int(clipboardImageLimitInput), ClipboardLimits.imageRange.contains(parsed) {
+            settings.clipboardImageLimit = parsed
+        }
+        clipboardHistoryLimitInput = String(settings.clipboardHistoryLimit)
+        clipboardImageLimitInput = String(settings.clipboardImageLimit)
+    }
+
     func runFreshConfigReset() {
         let ok = themeStore.regenerateFreshConfigFile()
         syncIndexingInputsFromSettings()
@@ -435,7 +509,9 @@ extension ThemeSettingsView {
         }
     }
 
-    var hasIndexingError: Bool {
+    /// A typed value outside its range: Save stays off until it is fixed.
+    var hasInputError: Bool {
         fileScanDepthError != nil || fileScanLimitError != nil
+            || clipboardHistoryLimitError != nil || clipboardImageLimitError != nil
     }
 }
