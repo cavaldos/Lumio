@@ -5,6 +5,10 @@ import Foundation
 
 enum SpotlightKind: String, CaseIterable, Identifiable {
     case app, folder, doc, content, setting, url, web, calc, cmd
+    /// An open browser tab (⏎ switches to it) and the "press Tab to search YouTube" hint row.
+    case tab, tagHint
+    /// An open window of any app (⏎ switches to it).
+    case window
     // Modes carried over from the legacy launcher (prefix / command).
     case prefix, command, clip, clipImage, lookup, translation, process, help
     var id: String { rawValue }
@@ -20,6 +24,9 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         case .web: "Web"
         case .calc: "Calculator"
         case .cmd: "Actions"
+        case .tab: "Tabs"
+        case .tagHint: "Search Tags"
+        case .window: "Windows"
         case .prefix: "Prefixes"
         case .command: "Commands"
         case .clip: "Clipboard"
@@ -37,6 +44,7 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         switch self {
         case .setting: .app
         case .clipImage: .clip  // images live in the Clipboard tab with the text clips
+        case .tagHint: .web
         default: self
         }
     }
@@ -72,7 +80,7 @@ enum SpotlightAction: String {
     var label: String {
         switch self {
         case .open: "Open"
-        case .reveal: "Show in Finder"
+        case .reveal: "Show in \(FileManagerApp.name)"
         case .copyPath: "Copy Path"
         case .openInEditor: "Open in Editor  ⌘E"
         case .openInTerminal: "Open in Terminal  ⌘T"
@@ -134,6 +142,10 @@ struct SpotlightItem: Identifiable, Equatable {
     /// Per-mode value: prefix to fill in, command id, copied text,
     /// copied image hash, word to look up.
     var payload: String? = nil
+    /// Site whose real icon to draw ("youtube.com"); falls back to `iconPath`, then the tile.
+    var favicon: String? = nil
+    /// Open browser tab (kind == .tab).
+    var tab: BrowserTab? = nil
     /// Text clipboard row: id in ClipboardHistoryStore.
     var clipID: UUID? = nil
     /// Clipboard row pinned to the top of the history.

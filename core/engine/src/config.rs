@@ -460,7 +460,7 @@ clipboard_history_limit=1000\n\
 \n\
 # How long the main query survives while Lumio is hidden, in seconds. 0 clears\n\
 # it on every hide; a negative value keeps it indefinitely.\n\
-query_retention_seconds=5\n\
+query_retention_seconds=30\n\
 \n\
 # Preferred tools. Name the tool, not a command: Lumio knows how to drive it,\n\
 # including running a terminal editor inside your terminal. Declare nothing and\n\
@@ -1489,7 +1489,7 @@ mod tests {
         assert!(contents.contains("app_scan_depth=9"));
         assert!(contents.contains("app_scan_roots=/Applications\n"));
         assert!(contents.contains("alias_note=Notion|Obsidian|Notes|Apple Notes|Bear|Logseq"));
-        assert!(contents.contains("query_retention_seconds=5"));
+        assert!(contents.contains("query_retention_seconds=30"));
         assert_eq!(
             contents.matches("app_scan_depth=").count(),
             1,

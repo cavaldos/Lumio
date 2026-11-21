@@ -4,6 +4,8 @@ struct FolderEntry: Equatable {
     let name: String
     let isDir: Bool
     let size: Int64?
+    /// When it was last changed (the list is newest first).
+    var modified: Date? = nil
 }
 
 struct FolderListing: Equatable {
@@ -24,7 +26,7 @@ enum FolderListingService {
 
     nonisolated private static func listSync(path: String) -> FolderListing? {
         let url = URL(fileURLWithPath: path)
-        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: keys,
@@ -33,38 +35,32 @@ enum FolderListingService {
             return nil
         }
 
-        var folderNames: [String] = []
-        var files: [(name: String, url: URL)] = []
-
+        // Newest first, folders and files together: what you just saved or exported is on top,
+        // the way you would look for it.
+        var folderCount = 0
+        var fileCount = 0
+        var found: [(name: String, url: URL, isDir: Bool, modified: Date)] = []
         for child in entries {
             let name = child.lastPathComponent
             if name.hasPrefix(".") { continue }
-            let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            if isDir {
-                folderNames.append(name)
-            } else {
-                files.append((name, child))
-            }
+            let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+            let isDir = values?.isDirectory ?? false
+            if isDir { folderCount += 1 } else { fileCount += 1 }
+            found.append((name, child, isDir, values?.contentModificationDate ?? .distantPast))
+        }
+        found.sort { lhs, rhs in
+            if lhs.modified != rhs.modified { return lhs.modified > rhs.modified }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
 
-        folderNames.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        files.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-        let folderCount = folderNames.count
-        let fileCount = files.count
         let total = folderCount + fileCount
-
-        var items: [FolderEntry] = []
-        items.reserveCapacity(min(total, listCap))
-
-        for name in folderNames {
-            if items.count >= listCap { break }
-            items.append(FolderEntry(name: name, isDir: true, size: nil))
-        }
-        for file in files {
-            if items.count >= listCap { break }
-            let size = (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap(Int64.init)
-            items.append(FolderEntry(name: file.name, isDir: false, size: size))
+        let items: [FolderEntry] = found.prefix(listCap).map { entry in
+            let size = entry.isDir ? nil
+                : (try? entry.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap(Int64.init)
+            return FolderEntry(
+                name: entry.name, isDir: entry.isDir, size: size,
+                modified: entry.modified == .distantPast ? nil : entry.modified
+            )
         }
 
         return FolderListing(

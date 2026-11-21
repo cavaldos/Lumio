@@ -127,6 +127,7 @@ rm -rf ~/.lumio "$HOME/Library/Application Support/lumio"
 | Move to Trash (delete a clip in clipboard mode) | `Cmd+D` |
 | Hide the selected app from results | `Cmd+Shift+H` |
 | Browse Applications / Folders / Documents / OCR | `Cmd+1` … `Cmd+4` |
+| Search tag (`yt`, `g`, `drive`, `gh`…) | type keyword, then `Tab` |
 | Cycle result filters | `Tab` / `Shift+Tab` |
 | Command mode | `Cmd+/` |
 | Help | `Cmd+H` |
@@ -135,6 +136,8 @@ rm -rf ~/.lumio "$HOME/Library/Application Support/lumio"
 Select a word in any app before pressing `Option+Space` and Lumio opens straight on its dictionary entry (needs Accessibility, asked once).
 
 **OCR tab.** Find images and PDFs by the text *inside* them, not just their name. It is the last tab; reading the files runs in a separate process that starts only when you open it, so Lumio itself stays light. See [OCR search](assets/docs/ocr-search.md).
+
+**Search tags, files, tabs and suggestions** (Fluent Search–style). Type `yt` and press `Tab` to search YouTube directly, or `drive` + `Tab` to see your open Drive tabs and recent docs. File tags work the same way: `downloads` + `Tab`, `pdf` + `Tab`, or any folder path + `Tab`, and they stack. File results include matches from anywhere on the Mac. Folders can open in your own file manager (`file_manager=`). Open tabs in Safari, Chrome, Arc, Brave and Edge show up in results, and `Enter` switches to the tab instead of opening a new one. The empty field lists your recent apps and files. See [Search tags](assets/docs/search-tags.md).
 
 **Commands.** Type `:` or press `Cmd+/`: `:kill <name, PID or port>`, `:emptytrash`, `:help`.
 
@@ -156,6 +159,7 @@ Lumio works without any special permission. Two are asked for only when you use 
 - [FFI bridge](assets/docs/ffi-bridge.md)
 - [macOS app](assets/docs/macos-app.md)
 - [OCR search](assets/docs/ocr-search.md)
+- [Search tags, browser tabs and suggestions](assets/docs/search-tags.md)
 - [Build and release](assets/docs/build-and-release.md)
 
 ## Contributing

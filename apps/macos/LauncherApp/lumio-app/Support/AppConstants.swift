@@ -196,7 +196,7 @@ enum AppConstants {
         /// normalizes to.
         enum QueryRetention {
             static let configKey = "query_retention_seconds"
-            static let defaultSeconds = 5
+            static let defaultSeconds = 30
             static let never = -1
         }
 

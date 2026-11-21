@@ -229,7 +229,7 @@ enum SpotlightModeRows {
     static func help(_ filter: String) -> [SpotlightItem] {
         let tabs = SpotlightKind.toolTabs.map { ($0.tabLabel + " tab", toolDetail($0)) }
         let commands = AppConstants.Launcher.commandCatalog.map { (":" + $0.id, SpotlightCommands.detail(for: $0)) }
-        let entries = tabs + commands + helpShortcuts + quickLookHelp
+        let entries = tabs + commands + helpShortcuts + [("⌘F", "Show in \(FileManagerApp.name)")] + quickLookHelp
         let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return entries
             .filter { needle.isEmpty || $0.0.lowercased().contains(needle) || $0.1.lowercased().contains(needle) }
@@ -262,7 +262,6 @@ enum SpotlightModeRows {
         ("⇥ / ⇧⇥", "Next / previous filter"),
         ("⌘1 … ⌘4", "Browse Applications, Folders, Documents, OCR (text in images & PDFs)"),
         ("⌘↩", "Search the web"),
-        ("⌘F", "Show in Finder"),
         ("⌘E", "Open in editor"),
         ("⌘T", "Open in terminal"),
         ("⌘D", "Move to Trash · Empty Trash on the Trash pin · delete a clip"),

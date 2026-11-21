@@ -26,12 +26,27 @@ enum SpotlightOpener {
     static func open(_ item: SpotlightItem) -> Outcome {
         switch item.kind {
         case .calc:
+            // A conversion carries its answer as text ("3.11 mi").
+            if let text = item.payload {
+                copy(text)
+                return .message("Copied \(text)")
+            }
             guard let value = item.calcResult else { return .message("Couldn't calculate") }
             let text = SpotlightCalc.format(value)
             copy(text)
             return .message("Copied \(text)")
         case .web:
-            openWebSearch(item.name)
+            // A search tag's row carries its own address (YouTube, Drive…); plain rows use Google.
+            if let target = item.target {
+                guard openURL(target) else { return .message("Couldn't open \(item.name)") }
+            } else {
+                openWebSearch(item.name)
+            }
+            return .launched
+        case .tab:
+            guard let tab = item.tab else { return .message("Tab not found") }
+            // AppleScript: off the main thread so the launcher closes without a hitch.
+            Task.detached(priority: .userInitiated) { BrowserTabs.shared.activate(tab) }
             return .launched
         case .url:
             guard let target = item.target, openURL(target) else { return .message("Couldn't open link") }
@@ -44,7 +59,7 @@ enum SpotlightOpener {
             guard let text = item.payload else { return .message("Nothing to copy") }
             copy(text)
             return .message("Copied")
-        case .cmd, .prefix, .command, .clipImage, .lookup, .translation, .process, .help:
+        case .cmd, .prefix, .command, .clipImage, .lookup, .translation, .process, .help, .tagHint, .window:
             // These modes need view state (store, model): the view handles them.
             return .message("Nothing to open")
         }
@@ -64,6 +79,9 @@ enum SpotlightOpener {
             launchApp(at: target)
         case .app, .setting:
             guard openURL(target) else { return .message("Couldn't open \(item.name)") }
+        case .folder:
+            // The file manager chosen in the config (file_manager=…), Finder by default.
+            FileManagerApp.openFolder(target)
         default:
             openFile(target)
         }
@@ -80,9 +98,9 @@ enum SpotlightOpener {
             return open(item)
         case .reveal:
             guard !isURLScheme(target), FileManager.default.fileExists(atPath: target) else {
-                return .message("Couldn't show in Finder")
+                return .message("Couldn't show in \(FileManagerApp.name)")
             }
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: target)])
+            FileManagerApp.reveal(target)
             return .launched
         case .copyPath:
             copy(target)

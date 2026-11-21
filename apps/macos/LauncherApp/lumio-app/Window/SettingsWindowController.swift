@@ -72,11 +72,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> SettingsPanelWindow {
         let window = SettingsPanelWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
+            // Wide enough for the sidebar + cards layout.
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 820, height: 520)
         window.title = "Lumio Settings"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
@@ -104,13 +106,47 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+extension SettingsWindowController {
+    /// Draws the Settings page `pane` into a PNG without showing a window, so the layout can
+    /// be checked from the command line: `Lumio --render-settings <file.png> [page]`.
+    static func renderSnapshot(pane: SettingsPane, to path: String, size: NSSize = NSSize(width: 900, height: 640)) -> Bool {
+        ThemeSettingsView.initialPane = pane
+        let view = NSHostingView(
+            rootView: SettingsWindowRoot(solidBackground: true)
+                .environmentObject(AppUIState.shared)
+                .environmentObject(ThemeStore.shared)
+                .frame(width: size.width, height: size.height)
+        )
+        view.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        // Let SwiftUI run its first layout / onAppear pass.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else { return false }
+        return (try? data.write(to: URL(fileURLWithPath: path))) != nil
+    }
+}
+
 private struct SettingsWindowRoot: View {
+    /// A plain dark fill instead of the window blur (which draws nothing off screen).
+    var solidBackground = false
+
     @EnvironmentObject var themeStore: ThemeStore
 
     var body: some View {
         ThemeSettingsView(settings: $themeStore.settings)
             .padding(20)
             .frame(minWidth: 680, minHeight: 520)
-            .background(VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow).ignoresSafeArea())
+            .background {
+                if solidBackground {
+                    Color(white: 0.14)
+                } else {
+                    VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow).ignoresSafeArea()
+                }
+            }
     }
 }

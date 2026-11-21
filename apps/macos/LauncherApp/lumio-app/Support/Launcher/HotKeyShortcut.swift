@@ -7,6 +7,11 @@ import Carbon
 nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
     case launcher, settings, clip, lookup, translation, process, content
     case quickLook = "quicklook"
+    // Open the launcher already inside a search tag (the part after `tag_` is the tag's keyword).
+    case tagFiles = "tag_files", tagDownloads = "tag_downloads", tagPSD = "tag_psd"
+    case tagBrowser = "tag_browser", tagWindows = "tag_windows", tagBrowse = "tag_browse"
+
+    static let tagPrefix = "tag_"
 
     var id: String { rawValue }
 
@@ -20,6 +25,12 @@ nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
         case .process: "Processes"
         case .content: "OCR"
         case .quickLook: "Quick Look"
+        case .tagFiles: "Search files"
+        case .tagDownloads: "Search Downloads"
+        case .tagPSD: "Search PSD files"
+        case .tagBrowser: "Search bookmarks & history"
+        case .tagWindows: "Search open windows"
+        case .tagBrowse: "Browse all tags"
         }
     }
 
@@ -33,6 +44,12 @@ nonisolated enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
         case .process: "Open the launcher on running processes"
         case .content: "Search text in images & PDFs"
         case .quickLook: "Preview the selected row (in the launcher)"
+        case .tagFiles: "Open the launcher with the files tag on"
+        case .tagDownloads: "Open the launcher inside your Downloads folder"
+        case .tagPSD: "Open the launcher on your PSDs, newest first"
+        case .tagBrowser: "Open the launcher on your browser's bookmarks and history"
+        case .tagWindows: "Open the launcher on the open windows of every app"
+        case .tagBrowse: "Open the list of every search tag (⌥T in the launcher)"
         }
     }
 

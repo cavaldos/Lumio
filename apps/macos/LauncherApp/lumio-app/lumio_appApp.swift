@@ -52,6 +52,72 @@ struct lumio_appApp: App {
             return 0
         }
 
+        // `--render-settings <file.png> [page]`: draw a Settings page to an image and exit.
+        if let index = CommandLine.arguments.firstIndex(of: "--render-settings"),
+           let target = CommandLine.arguments.dropFirst(index + 1).first
+        {
+            let page = CommandLine.arguments.dropFirst(index + 2).first.flatMap(SettingsPane.init(rawValue:)) ?? .general
+            _ = NSApplication.shared
+            ConfigPathResolver.applyDefaultConfigEnvironmentIfNeeded()
+            return SettingsWindowController.renderSnapshot(pane: page, to: target) ? 0 : 1
+        }
+
+        // `--render-card <file.png> <path> [preview]`: draw the detail card for a file and exit.
+        if let index = CommandLine.arguments.firstIndex(of: "--render-card"),
+           let target = CommandLine.arguments.dropFirst(index + 1).first,
+           let path = CommandLine.arguments.dropFirst(index + 2).first
+        {
+            _ = NSApplication.shared
+            ConfigPathResolver.applyDefaultConfigEnvironmentIfNeeded()
+            let preview = CommandLine.arguments.dropFirst(index + 3).first == "preview"
+            return SpotlightPreviewView.renderSample(path: path, to: target, preview: preview) ? 0 : 1
+        }
+
+        // `--browser-check <file>`: write what Lumio can read of your browsers' data, then exit.
+        // Started with `open -a Lumio --args --browser-check <file>` so macOS judges Lumio itself
+        // (and shows its permission prompt), not the terminal that launched it.
+        if let index = CommandLine.arguments.firstIndex(of: "--browser-check") {
+            var lines = BrowserHistory.accessReport()
+            let target = CommandLine.arguments.dropFirst(index + 1).first
+            // Optional third argument: a search to count matches for (counts only, no titles).
+            if let term = CommandLine.arguments.dropFirst(index + 2).first {
+                lines.append("search \"\(term)\": \(BrowserHistory.search(term, limit: 50).count) history pages, "
+                    + "\(BrowserBookmarks.search(term, limit: 50).count) bookmarks, "
+                    + "\(BrowserBookmarks.all().count) bookmarks in total, "
+                    + "\(BrowserBookmarks.folderNames().count) bookmark folders, "
+                    + "\(BrowserKeywords.all().count) saved search engines")
+                // The suggestion request, run from inside the app (blocks this short-lived process).
+                let done = DispatchSemaphore(value: 0)
+                nonisolated(unsafe) var outcome = "no answer in 8 s"
+                Task.detached {
+                    outcome = await WebSuggestions.diagnose(term)
+                    done.signal()
+                }
+                _ = done.wait(timeout: .now() + 8)
+                lines.append("web suggestions: \(outcome)")
+                lines.append("web_suggestions mode: \(WebSuggestions.mode.rawValue)")
+            }
+            lines.append("window search (Accessibility): \(AccessibilityAccess.summary(AccessibilityAccess.check()))")
+            lines.append("  macOS says allowed: \(AccessibilityAccess.isTrusted); its list says: \(AccessibilityAccess.record()); "
+                + "worked before: \(AccessibilityAccess.workedBefore)")
+            lines.append("  entry: \(AccessibilityAccess.recordDetail())")
+            // Counts only, no titles: proof that window search can really read windows.
+            OpenWindows.shared.refresh()
+            Thread.sleep(forTimeInterval: 2)
+            let found = OpenWindows.shared.snapshot
+            lines.append("  open windows read: \(found.count) in \(Set(found.map(\.pid)).count) apps")
+            let index = IndexStats.read()
+            lines.append("index: \(index.files) files, \(index.folders) folders, \(index.apps) apps; spotlight on: "
+                + "\(index.spotlightOn.map(String.init) ?? "unknown")")
+            let report = lines.joined(separator: "\n") + "\n"
+            if let target {
+                try? report.write(toFile: target, atomically: true, encoding: .utf8)
+            } else {
+                print(report, terminator: "")
+            }
+            return 0
+        }
+
         return nil
     }
 
