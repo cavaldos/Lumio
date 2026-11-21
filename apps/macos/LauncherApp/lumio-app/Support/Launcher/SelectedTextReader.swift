@@ -6,15 +6,24 @@ import ApplicationServices
 ///
 /// Doesn't fall back to sending ⌘C: that would overwrite the clipboard, and some apps copy
 /// something even with nothing selected (VS Code copies the line, Finder the file name).
-enum SelectedTextReader {
+///
+/// `nonisolated`: the reads are blocking IPC (up to 0.25 s per call) and run off the main
+/// thread; everything here is stateless apart from `UserDefaults`, which is thread-safe.
+nonisolated enum SelectedTextReader {
     /// Longer selections are probably not meant for the dictionary.
     static let maxLength = 200
 
     /// nil when nothing is selected, the app doesn't expose its selection, or Lumio isn't
     /// allowed to use Accessibility (asked once).
     static func selection(in app: NSRunningApplication) -> String? {
+        selection(pid: app.processIdentifier)
+    }
+
+    /// Same, by process id, so a caller can read from a background task without carrying an
+    /// `NSRunningApplication` across threads.
+    static func selection(pid: pid_t) -> String? {
         guard isTrusted() else { return nil }
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let appElement = AXUIElementCreateApplication(pid)
         // A hung app must not hold up the launcher.
         AXUIElementSetMessagingTimeout(appElement, 0.25)
         // Chromium / Electron apps only build their accessibility tree once asked for it.

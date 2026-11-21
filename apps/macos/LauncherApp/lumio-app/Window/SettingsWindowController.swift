@@ -57,6 +57,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func present() {
         let window = window ?? makeWindow()
+        // The SwiftUI tree is dropped on close (see windowWillClose): rebuild it on reopen.
+        if window.contentView == nil { window.contentView = makeContentView() }
         AppUIState.shared.showsThemeSettings = true
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -81,17 +83,28 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.moveToActiveSpace)
-        window.contentView = NSHostingView(
-            rootView: SettingsWindowRoot()
-                .environmentObject(AppUIState.shared)
-                .environmentObject(ThemeStore.shared)
-        )
+        window.contentView = makeContentView()
         window.delegate = self
         self.window = window
         return window
     }
 
+    private func makeContentView() -> NSView {
+        NSHostingView(
+            rootView: SettingsWindowRoot()
+                .environmentObject(AppUIState.shared)
+                .environmentObject(ThemeStore.shared)
+        )
+    }
+
     func windowWillClose(_ notification: Notification) {
+        // A closed Settings window kept its whole SwiftUI tree alive, still observing
+        // ThemeStore and re-rendering on every launcher change. Drop it once the close
+        // animation is done; `present()` builds a fresh one.
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window, !window.isVisible else { return }
+            window.contentView = nil
+        }
         if AppUIState.shared.showsThemeSettings {
             AppUIState.shared.showsThemeSettings = false
         }

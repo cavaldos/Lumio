@@ -169,7 +169,8 @@ enum AppConstants {
             static let maxTitleCharacters = 80
             static let emptyEntryTitle = "(Empty text)"
             static let foregroundPollInterval: TimeInterval = 0.35
-            static let backgroundPollInterval: TimeInterval = 0.9
+            /// While the launcher is hidden; a copy only needs to be seen before the next one.
+            static let backgroundPollInterval: TimeInterval = 1.5
             static let burstPollInterval: TimeInterval = 0.08
             static let burstSampleCount = 10
         }

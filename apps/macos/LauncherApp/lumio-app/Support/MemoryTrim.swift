@@ -6,7 +6,13 @@ import Foundation
 /// freed pages back to the OS, so an idle Lumio stays small. Everything here is rebuilt on
 /// demand in a few ms.
 enum MemoryTrim {
-    /// Called when the launcher hides, and when macOS reports memory pressure.
+    /// How long the launcher must stay hidden before its caches are dropped. Trimming on every
+    /// hide made the next open rebuild every row icon on the main thread; a launcher that is
+    /// reopened within minutes keeps its warm caches, and one left alone still shrinks.
+    static let hiddenTrimDelay: Duration = .seconds(180)
+
+    /// Called after the launcher has stayed hidden for `hiddenTrimDelay`, and when macOS
+    /// reports memory pressure.
     static func releaseCaches() async {
         HighlightedTextCache.purge()
         SpotlightLookupCache.purgeEntries()
@@ -18,7 +24,7 @@ enum MemoryTrim {
 
     nonisolated(unsafe) private static var pressureSource: DispatchSourceMemoryPressure?
 
-    /// Trims as soon as macOS says memory is short, instead of waiting for the launcher to hide.
+    /// Trims as soon as macOS says memory is short, without waiting out `hiddenTrimDelay`.
     static func watchMemoryPressure() {
         guard pressureSource == nil else { return }
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)

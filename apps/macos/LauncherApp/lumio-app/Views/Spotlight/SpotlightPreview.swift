@@ -63,8 +63,14 @@ struct SpotlightPreviewView: View {
             }
         }
         .task(id: item.id) {
-            info = Self.loadInfo(for: item)
+            // Disk reads (attributes, Info.plist) stay off the main thread: arrowing through
+            // results must never wait on a slow volume.
+            let current = item
+            info = Info(detail: Self.immediateDetail(for: current))
             folder = nil
+            let loaded = await Task.detached(priority: .userInitiated) { Self.loadInfo(for: current) }.value
+            guard !Task.isCancelled else { return }
+            info = loaded
             guard item.kind == .folder, let path = item.target else { return }
             // Dwell like QuickLookPreviewImage: skimming past quickly doesn't list anything.
             try? await Task.sleep(for: .milliseconds(120))
@@ -304,7 +310,16 @@ struct SpotlightPreviewView: View {
 
     // MARK: - Disk reads
 
-    private static func loadInfo(for item: SpotlightItem) -> Info {
+    /// What the header can show before any disk read lands.
+    private static func immediateDetail(for item: SpotlightItem) -> String? {
+        switch item.kind {
+        case .setting: "System Settings"
+        case .clip, .clipImage, .process: item.meta
+        default: nil
+        }
+    }
+
+    nonisolated private static func loadInfo(for item: SpotlightItem) -> Info {
         var info = Info()
         switch item.kind {
         case .setting:
@@ -325,9 +340,12 @@ struct SpotlightPreviewView: View {
         }
         switch item.kind {
         case .app:
-            let bundle = Bundle(path: path)
-            info.version = bundle?.infoDictionary?["CFBundleShortVersionString"] as? String
-                ?? bundle?.infoDictionary?["CFBundleVersion"] as? String
+            // Read the plist directly: `Bundle(path:)` instances are cached by Foundation for the
+            // life of the process, so previewing many apps would leak one bundle object each.
+            let plistURL = URL(fileURLWithPath: path).appendingPathComponent("Contents/Info.plist")
+            let plist = NSDictionary(contentsOf: plistURL)
+            info.version = plist?["CFBundleShortVersionString"] as? String
+                ?? plist?["CFBundleVersion"] as? String
             info.detail = info.version.map { "Version \($0)" }
         case .doc, .content:
             if let size = attrs?[.size] as? Int64 {

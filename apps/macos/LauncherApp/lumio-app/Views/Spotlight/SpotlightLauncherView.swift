@@ -43,11 +43,20 @@ struct SpotlightLauncherView: View {
     @State private var query = ""
     /// Results currently shown. When the panel collapses, keep the old list so it fades
     /// out with the panel instead of vanishing first.
-    @State private var all: [SpotlightItem] = []
+    /// `all` + `filter` and what the body derives from them, computed once per change
+    /// instead of on every read (`results` alone is read ~40 times per render).
+    @State private var list = SpotlightResultList()
+    private var all: [SpotlightItem] {
+        get { list.all }
+        nonmutating set { list.all = newValue }
+    }
     @State private var sel = 0
     /// Set by ⌘D on a clip: the next publish keeps this row index (the rows below slide up) instead of jumping to the top.
     @State private var keepSelOnPublish: Int?
-    @State private var filter: SpotlightKind?
+    private var filter: SpotlightKind? {
+        get { list.filter }
+        nonmutating set { list.filter = newValue }
+    }
     /// Item whose actions are being viewed (⌘K).
     @State private var scope: SpotlightItem?
     /// Query before opening actions — restored on exit.
@@ -116,26 +125,19 @@ struct SpotlightLauncherView: View {
 
     @State private var idleTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
+    @State private var hiddenTrim = DelayedAction()
+    /// The pending selected-text read of the last open (Accessibility IPC runs off-main).
+    @State private var selectionTask: Task<Void, Never>?
     @State private var toastTask: Task<Void, Never>?
     @State private var pidToRestore: pid_t?
     @FocusState private var isFocused: Bool
 
     // MARK: - Derived
 
-    private var results: [SpotlightItem] {
-        guard let filter else { return all }
-        return all.filter { $0.kind.pillGroup == filter }
-    }
+    private var results: [SpotlightItem] { list.results }
 
-    /// Pills for the groups present in the results. OCR is not one of them: its pill is always
-    /// shown (last), since it switches to a different search rather than filtering this one.
-    private var kinds: [SpotlightKind] {
-        var seen: [SpotlightKind] = []
-        for item in all where !SpotlightKind.modeTabs.contains(item.kind.pillGroup) && !seen.contains(item.kind.pillGroup) {
-            seen.append(item.kind.pillGroup)
-        }
-        return seen
-    }
+    /// Pills for the groups present in the results (see `SpotlightResultList.kinds`).
+    private var kinds: [SpotlightKind] { list.kinds }
 
     private var inOCR: Bool { browse == .content }
 
@@ -159,18 +161,11 @@ struct SpotlightLauncherView: View {
 
     private static let clipPreviewDelay: Duration = .seconds(1)
 
-    /// Clipboard rows: a line of text, or a taller row for an image thumbnail.
-    private static let clipRowHeight: CGFloat = 30
-    private static let clipImageRowHeight: CGFloat = 64
-
     /// tw": the list is a narrow column of words, like the Dictionary.app sidebar.
     private var isLookup: Bool { all.first?.kind == .lookup }
 
     /// Width of the list column; the rest of the panel is the preview.
     private var listPaneWidth: CGFloat { isLookup ? 180 : 300 }
-
-    /// Height of a word row in the tw" list (other rows use `Metric.rowHeight`).
-    private static let wordRowHeight: CGFloat = 32
 
     /// Item shown in the preview pane: the item whose actions are being viewed, otherwise the selected row.
     private var previewItem: SpotlightItem? {
@@ -634,7 +629,7 @@ struct SpotlightLauncherView: View {
                     ScrollView(.vertical) {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
-                                rowView(item, selected: index == sel)
+                                resultRow(item, selected: index == sel)
                                     .id(item.id)
                                     .modifier(SpotlightRiseIn(
                                         animation: introActive ? motion(SpotlightMotion.rowRise(index)) : nil
@@ -681,115 +676,6 @@ struct SpotlightLauncherView: View {
         }
     }
 
-    @ViewBuilder
-    private func rowView(_ item: SpotlightItem, selected: Bool) -> some View {
-        if item.kind == .lookup {
-            wordRow(item, selected: selected)
-        } else if item.kind == .clip || item.kind == .clipImage {
-            clipRow(item, selected: selected)
-        } else if item.kind == .translation {
-            standardRow(translationRow(item), selected: selected)
-        } else {
-            standardRow(item, selected: selected)
-        }
-    }
-
-    /// tr": the translation on top, the target language below.
-    private func translationRow(_ item: SpotlightItem) -> SpotlightItem {
-        let name = translation.result(for: item.payload)?.text
-            ?? (translation.failed(item.payload) ? "Couldn't translate" : "Translating…")
-        return SpotlightItem(
-            id: item.id, name: name, kind: item.kind, colors: item.colors,
-            meta: item.meta, symbol: item.symbol, payload: item.payload
-        )
-    }
-
-    /// tw": just the word, like the Dictionary.app sidebar.
-    private func wordRow(_ item: SpotlightItem, selected: Bool) -> some View {
-        Text(item.name)
-            .font(.system(size: 14.5, weight: selected ? .semibold : .regular))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .frame(height: Self.wordRowHeight)
-            .modifier(SpotlightSelection(
-                isSelected: selected,
-                fill: palette.rowSel,
-                namespace: selectionSpace,
-                reduceMotion: reduceMotion
-            ))
-            .contentShape(Rectangle())
-    }
-
-    /// Clipboard: just the copied text on one line, or a thumbnail of the image. The full text
-    /// and details open in the side preview (see `scheduleClipPreview`).
-    private func clipRow(_ item: SpotlightItem, selected: Bool) -> some View {
-        let isImage = item.kind == .clipImage
-        return Group {
-            if isImage, let path = item.iconPath, let image = RowIconCache.thumbnail(forFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .frame(maxHeight: Self.clipImageRowHeight - 12)
-            } else {
-                Text(item.name)
-                    .font(.system(size: 14))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        .padding(.trailing, selected ? (item.isPinned ? 46 : 46) : (item.isPinned ? 24 : 0))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .overlay(alignment: .trailing) {
-            clipRowButtons(item, selected: selected).padding(.trailing, 6)
-        }
-        .frame(height: isImage ? Self.clipImageRowHeight : Self.clipRowHeight)
-        .modifier(SpotlightSelection(
-            isSelected: selected,
-            fill: palette.rowSel,
-            namespace: selectionSpace,
-            reduceMotion: reduceMotion
-        ))
-        .contentShape(Rectangle())
-    }
-
-    /// Pin and delete, on the selected clip. A pinned clip always shows its pin.
-    @ViewBuilder
-    private func clipRowButtons(_ item: SpotlightItem, selected: Bool) -> some View {
-        if selected || item.isPinned {
-            HStack(spacing: 4) {
-                clipIconButton(
-                    item.isPinned ? "pin.fill" : "pin",
-                    help: item.isPinned ? "Unpin (⌘P)" : "Pin (⌘P)",
-                    active: item.isPinned
-                ) { togglePin(item) }
-                if selected {
-                    clipIconButton("trash", help: "Delete (⌘D)") { deleteClip(item) }
-                }
-            }
-            .padding(.leading, 6)
-        }
-    }
-
-    private func clipIconButton(
-        _ symbol: String, help: String, active: Bool = false, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .frame(width: 18, height: 18)
-                .background(palette.kbd, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-
     private func togglePin(_ item: SpotlightItem) {
         if item.kind == .clip, let id = item.clipID {
             clipboardStore.togglePin(id: id)
@@ -825,49 +711,33 @@ struct SpotlightLauncherView: View {
         return true
     }
 
-    private func standardRow(_ item: SpotlightItem, selected: Bool) -> some View {
-        HStack(spacing: 11) {
-            SpotlightRowIcon(item: item, size: 30, isSelected: selected)
-            // Narrow left column (right half is the preview): name on top, path / description below.
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.kind == .web ? "Search the web — \(item.name)" : item.name)
-                    .font(.system(size: 14.5, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let meta = rowMeta(item), !meta.isEmpty {
-                    Text(meta)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .layoutPriority(1)
-            Spacer(minLength: 4)
-            // Change IMMEDIATELY on selection: cross-fading them in step with the slide would make the
-            // text of both states overlap.
-            Group {
-                if item.kind == .calc, let calcResult = item.calcResult {
-                    Text("= \(SpotlightCalc.format(calcResult))")
-                        .font(.system(size: 15, weight: .medium).monospacedDigit())
-                        .fixedSize()
-                } else if selected {
-                    keyCap("⏎")
-                } else if armedKillPID != nil, item.pid == armedKillPID {
-                    keyCap("⏎")
-                }
-            }
-            .animation(nil, value: selected)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: Metric.rowHeight)
-        .modifier(SpotlightSelection(
-            isSelected: selected,
-            fill: palette.rowSel,
+    /// One list row. Everything the row draws is passed by value (the row skips its body when
+    /// none of it changed); the two clip actions are closures over this launcher's state.
+    private func resultRow(_ item: SpotlightItem, selected: Bool) -> some View {
+        SpotlightRow(
+            item: item.kind == .translation ? translationRow(item) : item,
+            selected: selected,
+            armed: armedKillPID != nil && item.pid == armedKillPID,
+            thumbnail: item.kind == .clipImage
+                ? item.iconPath.flatMap { RowIconCache.thumbnail(forFile: $0) }
+                : nil,
+            palette: palette,
+            reduceMotion: reduceMotion,
             namespace: selectionSpace,
-            reduceMotion: reduceMotion
-        ))
-        .contentShape(Rectangle())
+            onTogglePin: { togglePin(item) },
+            onDelete: { deleteClip(item) }
+        )
+        .equatable()
+    }
+
+    /// tr": the translation on top, the target language below.
+    private func translationRow(_ item: SpotlightItem) -> SpotlightItem {
+        let name = translation.result(for: item.payload)?.text
+            ?? (translation.failed(item.payload) ? "Couldn't translate" : "Translating…")
+        return SpotlightItem(
+            id: item.id, name: name, kind: item.kind, colors: item.colors,
+            meta: item.meta, symbol: item.symbol, payload: item.payload
+        )
     }
 
     /// Clipboard: what the side preview lists under the clip (app, copy times, count).
@@ -1382,15 +1252,12 @@ struct SpotlightLauncherView: View {
             hide()
             return
         }
-        var text = ""
-        if tab == .lookup || tab == .translation,
-           let front = NSWorkspace.shared.frontmostApplication,
-           front.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        {
-            text = SelectedTextReader.selection(in: front) ?? ""
-        }
+        let wantsSelection = tab == .lookup || tab == .translation
+        if !wantsSelection { selectionTask?.cancel() }
+        let read = wantsSelection ? startSelectionRead() : nil
         show()
-        openTab(tab, text: text)
+        openTab(tab, text: "")
+        if let read { applySelection(read) { text in query = text } }
     }
 
     /// Shows the results. Expands the panel if it isn't already.
@@ -1809,17 +1676,42 @@ struct SpotlightLauncherView: View {
             hide()
             return
         }
-        // Text selected in the app in front: open straight on its lookup (tw"). Read it
-        // BEFORE Lumio takes focus.
-        var selection: String?
-        if let front = NSWorkspace.shared.frontmostApplication,
-           front.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        {
-            selection = SelectedTextReader.selection(in: front)
-        }
+        // Text selected in the app in front: open straight on its lookup (tw"). The read must
+        // target the app that is in front BEFORE Lumio takes focus, so its pid is captured and
+        // the read starts first; the (slow) Accessibility IPC then runs off the main thread
+        // while the launcher appears, and the result is applied only if nothing changed.
+        let read = startSelectionRead()
         show()
-        if let selection {
-            openTab(.lookup, text: selection)
+        if let read {
+            applySelection(read) { text in openTab(.lookup, text: text) }
+        }
+    }
+
+    /// Starts reading the selection of the frontmost app (not Lumio) on a background thread.
+    /// nil when there is no other frontmost app.
+    private func startSelectionRead() -> Task<String?, Never>? {
+        selectionTask?.cancel()
+        selectionTask = nil
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              front.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else { return nil }
+        let pid = front.processIdentifier
+        return Task.detached(priority: .userInitiated) {
+            SelectedTextReader.selection(pid: pid)
+        }
+    }
+
+    /// Waits for `read` and, if the launcher is still open exactly as `show()` left it (no
+    /// typing, no other tab, not closed or reopened since), hands the text to `apply`.
+    private func applySelection(_ read: Task<String?, Never>, apply: @escaping @MainActor (String) -> Void) {
+        let guardrail = SelectionApplyGuard(queryAtShow: query, browseAtShow: browse)
+        selectionTask = Task { @MainActor in
+            guard let text = await read.value, !Task.isCancelled,
+                  guardrail.shouldApply(
+                      isOpen: isOpen, dismissing: dismissing, query: query, browse: browse,
+                      inScope: scope != nil, hasActiveCommand: activeCommand != nil)
+            else { return }
+            apply(text)
         }
     }
 
@@ -1830,6 +1722,7 @@ struct SpotlightLauncherView: View {
         dismissTask?.cancel()
         dismissTask = nil
         dismissing = false
+        hiddenTrim.cancel()
 
         if pidToRestore == nil,
            let front = NSWorkspace.shared.frontmostApplication,
@@ -1904,6 +1797,7 @@ struct SpotlightLauncherView: View {
         guard isOpen, !dismissing, let window = launcherWindow() else { return }
         dismissing = true
         idleTask?.cancel()
+        selectionTask?.cancel()
         isFocused = false
         // Quick Look belongs to the launcher: don't leave it floating on its own.
         SpotlightQuickLook.close()
@@ -1945,8 +1839,12 @@ struct SpotlightLauncherView: View {
             // Hidden: poll the clipboard less often; next time ps" is entered, take a fresh process snapshot.
             clipboardStore.setMonitoringMode(.background)
             processModel.invalidate()
-            // Hidden: drop every cache that is only there for speed on screen.
-            await MemoryTrim.releaseCaches()
+            // Hidden: drop the caches that are only there for speed on screen, but only once
+            // the launcher has stayed hidden a while (show() cancels this; the condition
+            // re-checks on wake-up so a reopen can never be purged under).
+            hiddenTrim.schedule(after: MemoryTrim.hiddenTrimDelay, if: { !isOpen && !dismissing }) {
+                await MemoryTrim.releaseCaches()
+            }
         }
     }
 
@@ -2023,67 +1921,6 @@ private struct SpotlightPopIn: ViewModifier {
     }
 }
 
-/// Background of the selected row. ONE single bar is moved between rows via
-/// `matchedGeometryEffect`, so it SLIDES when the selection change happens inside
-/// `withAnimation` (arrow keys, hover) and jumps straight when it doesn't (new results).
-/// The newly selected row also zooms up one beat and back — same approach as the legacy launcher's
-/// SelectionPill, just a different color (follows the glass, not the theme).
-private struct SpotlightSelection: ViewModifier {
-    let isSelected: Bool
-    let fill: Color
-    let namespace: Namespace.ID
-    let reduceMotion: Bool
-
-    @State private var zoomed = false
-    /// Incremented on each zoom: the return leg of an old beat doesn't cut off a new one
-    /// (moving away then back very quickly).
-    @State private var generation = 0
-
-    func body(content: Content) -> some View {
-        content
-            // Pushed down so the row's icon zooms in step.
-            .environment(\.isSelectionZoomed, zoomed)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: SpotlightSpec.Metric.rowRadius, style: .continuous)
-                        .fill(fill)
-                        .matchedGeometryEffect(id: "spotlight.selection", in: namespace)
-                        .scaleEffect(zoomed ? SpotlightMotion.pillZoomScale : 1)
-                }
-            }
-            // No .animation(value:) here: attached per row, every row the
-            // selection bar passes over would flash.
-            .onChange(of: isSelected) { _, selected in
-                generation &+= 1
-                guard selected else {
-                    zoomed = false
-                    return
-                }
-                guard !reduceMotion else { return }
-                let mine = generation
-                withAnimation(SpotlightMotion.zoomIn) { zoomed = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + SpotlightMotion.zoomInSeconds) {
-                    guard mine == generation else { return }
-                    withAnimation(SpotlightMotion.zoomOut) { zoomed = false }
-                }
-            }
-    }
-}
-
-/// The row's icon, zooming with the selection beat. A separate view because a view can't read
-/// environment values set by its own body.
-private struct SpotlightRowIcon: View {
-    @Environment(\.isSelectionZoomed) private var zoomed
-    let item: SpotlightItem
-    let size: CGFloat
-    let isSelected: Bool
-
-    var body: some View {
-        SpotlightTile(item: item, size: size)
-            .scaleEffect(isSelected && zoomed ? SpotlightMotion.iconZoomScale : 1)
-    }
-}
-
 /// Only let hover change the selected row when the mouse actually moves. Not
 /// @Observable: a mouse position change doesn't need to redraw anything.
 private final class MouseGate {
@@ -2123,7 +1960,9 @@ struct SpotlightTile: View {
     /// icon flickers on every keystroke.
     private var realImage: NSImage? {
         if item.kind == .process, let pid = item.pid {
-            return RowIconCache.image(key: "pid:\(pid)") { LauncherProcessFeature.icon(forPID: pid) }
+            return RowIconCache.image(key: "pid:\(pid)") {
+                RowIconCache.rasterized(LauncherProcessFeature.icon(forPID: pid), points: RowIconCache.iconPoints)
+            }
         }
         if item.kind == .clipImage, let path = item.iconPath {
             return RowIconCache.thumbnail(forFile: path)
@@ -2180,14 +2019,33 @@ private struct SpotlightModeHooks: ViewModifier {
     }
 }
 
-private struct SelectionZoomedKey: EnvironmentKey {
-    static let defaultValue = false
-}
+/// The rows the launcher holds, the pill filter, and what the view derives from them.
+/// Derived values are refreshed when `all` or `filter` change, not on every read.
+struct SpotlightResultList {
+    var all: [SpotlightItem] = [] {
+        didSet { derive() }
+    }
+    var filter: SpotlightKind? {
+        didSet { if filter != oldValue { derive() } }
+    }
+    /// `all` narrowed to the selected pill group.
+    private(set) var results: [SpotlightItem] = []
+    /// Pills for the groups present in the results. OCR is not one of them: its pill is always
+    /// shown (last), since it switches to a different search rather than filtering this one.
+    private(set) var kinds: [SpotlightKind] = []
 
-extension EnvironmentValues {
-    /// True during the one-shot zoom of the newly selected row.
-    var isSelectionZoomed: Bool {
-        get { self[SelectionZoomedKey.self] }
-        set { self[SelectionZoomedKey.self] = newValue }
+    private mutating func derive() {
+        if let filter {
+            results = all.filter { $0.kind.pillGroup == filter }
+        } else {
+            results = all
+        }
+        let modeTabs = SpotlightKind.modeTabs
+        var seen: [SpotlightKind] = []
+        for item in all {
+            let group = item.kind.pillGroup
+            if !modeTabs.contains(group), !seen.contains(group) { seen.append(group) }
+        }
+        kinds = seen
     }
 }

@@ -153,6 +153,18 @@ struct SpotlightItem: Identifiable, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
 }
 
+/// Fields of a `SpotlightItem` a row draws or acts on. `SpotlightItem.==` compares ids only (it
+/// identifies rows), which would hide a renamed or re-pinned row from the diff.
+extension SpotlightItem {
+    func sameRowContent(as other: SpotlightItem) -> Bool {
+        id == other.id && name == other.name && kind == other.kind && colors == other.colors
+            && glyph == other.glyph && meta == other.meta && calcResult == other.calcResult
+            && iconPath == other.iconPath && symbol == other.symbol && pid == other.pid
+            && payload == other.payload && clipID == other.clipID && isPinned == other.isPinned
+            && target == other.target && candidateID == other.candidateID
+    }
+}
+
 // MARK: - Sample data (motion lab / Preview only)
 
 enum SpotlightData {
