@@ -32,6 +32,10 @@ struct ThemeSettings: Codable, Equatable {
     var translationLanguages: [String] = TranslationLanguage.defaultCodes
     /// Order of the tool tabs in the launcher (`tab_order`), SpotlightKind raw values.
     var tabOrder: [String] = TabOrder.defaultCodes
+    /// Tool tabs left out of the pill row and the Tab cycle (`tab_hidden`).
+    var hiddenTabs: [String] = []
+    /// What each round button of the idle bar opens, in order (`quick_bubbles`).
+    var quickBubbles: [String] = QuickBubbles.defaultCodes
     /// Global shortcuts: HotKeyAction raw value → `cmd+shift+v` ("" = off).
     var hotkeys: [String: String] = HotKeyAction.defaultValues
 
@@ -62,6 +66,8 @@ struct ThemeSettings: Codable, Equatable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         translationLanguages = try c.decodeIfPresent([String].self, forKey: .translationLanguages) ?? d.translationLanguages
         tabOrder = TabOrder.normalized(try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? d.tabOrder)
+        hiddenTabs = TabOrder.normalizedHidden(try c.decodeIfPresent([String].self, forKey: .hiddenTabs) ?? d.hiddenTabs)
+        quickBubbles = QuickBubbles.normalized(try c.decodeIfPresent([String].self, forKey: .quickBubbles) ?? d.quickBubbles)
         launcherCornerRadius = min(max(try c.decodeIfPresent(Double.self, forKey: .launcherCornerRadius) ?? d.launcherCornerRadius, Self.cornerRadiusRange.lowerBound), Self.cornerRadiusRange.upperBound)
         liquidGlassEnabled = try c.decodeIfPresent(Bool.self, forKey: .liquidGlassEnabled) ?? d.liquidGlassEnabled
         let savedHotkeys = try c.decodeIfPresent([String: String].self, forKey: .hotkeys) ?? [:]

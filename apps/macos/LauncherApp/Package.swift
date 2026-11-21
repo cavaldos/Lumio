@@ -30,6 +30,7 @@ let package = Package(
                 "Support/ContentIndex/ContentIndexConfig.swift",
                 "Support/ContentIndex/ContentIndexWorkerMessage.swift",
                 "Support/Launcher/TabOrder.swift",
+                "Support/Launcher/QuickBubbles.swift",
                 "Support/DelayedAction.swift",
                 "Support/RowIconCache.swift",
                 "Support/Launcher/SelectionApplyGuard.swift",

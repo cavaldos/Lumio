@@ -128,6 +128,8 @@ final class ThemeStore: ObservableObject {
         ConfigFileLines.upsert(&lines, key: "launch_at_login", value: settings.launchAtLogin ? "true" : "false")
         ConfigFileLines.upsert(&lines, key: "translation_languages", value: settings.translationLanguages.joined(separator: ","))
         ConfigFileLines.upsert(&lines, key: TabOrder.configKey, value: TabOrder.render(settings.tabOrder))
+        ConfigFileLines.upsert(&lines, key: TabOrder.hiddenConfigKey, value: TabOrder.renderHidden(settings.hiddenTabs))
+        ConfigFileLines.upsert(&lines, key: QuickBubbles.configKey, value: QuickBubbles.render(settings.quickBubbles))
         for action in HotKeyAction.allCases {
             ConfigFileLines.upsert(&lines, key: action.configKey, value: settings.hotKey(for: action)?.configValue ?? "")
         }
@@ -264,6 +266,10 @@ final class ThemeStore: ObservableObject {
                 if let parsed = parseBool(value) { settings.launchAtLogin = parsed }
             case TabOrder.configKey:
                 settings.tabOrder = TabOrder.parse(value)
+            case TabOrder.hiddenConfigKey:
+                settings.hiddenTabs = TabOrder.parseHidden(value)
+            case QuickBubbles.configKey:
+                settings.quickBubbles = QuickBubbles.parse(value)
             case "translation_languages":
                 let codes = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 let known = codes.filter { TranslationLanguage.named($0) != nil }

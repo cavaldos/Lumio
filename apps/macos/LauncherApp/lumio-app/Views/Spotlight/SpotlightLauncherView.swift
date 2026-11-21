@@ -25,12 +25,12 @@ struct SpotlightQuickItem: Identifiable {
 struct SpotlightLauncherView: View {
     private typealias Metric = SpotlightSpec.Metric
 
-    static let quickItems: [SpotlightQuickItem] = [
-        SpotlightQuickItem(kind: .app, icon: "square.grid.2x2", label: "Applications"),
-        SpotlightQuickItem(kind: .folder, icon: "folder", label: "Folders"),
-        SpotlightQuickItem(kind: .doc, icon: "doc.text", label: "Documents"),
-        SpotlightQuickItem(kind: .content, icon: "text.viewfinder", label: "OCR"),
-    ]
+    /// The idle bar's round buttons, as picked in Settings → Tabs (`quick_bubbles`).
+    static var quickItems: [SpotlightQuickItem] {
+        QuickBubbles.normalized(ThemeStore.shared.settings.quickBubbles)
+            .compactMap(SpotlightKind.init(rawValue:))
+            .map { SpotlightQuickItem(kind: $0, icon: $0.quickIcon, label: $0.quickLabel) }
+    }
 
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var themeStore = ThemeStore.shared
@@ -116,6 +116,8 @@ struct SpotlightLauncherView: View {
     @State private var launching = false
     @State private var expanded = false
     @State private var idle = false
+    /// Round button Tab has moved to while idle (Enter opens it). nil = the field.
+    @State private var quickFocus: Int?
     @State private var panelHeight = SpotlightSpec.Metric.barHeight
     /// Delay for the next height animation (see SpotlightMotion.expandAfterMerge).
     @State private var resizeDelay: Double = 0
@@ -297,7 +299,11 @@ struct SpotlightLauncherView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .modifier(modeHooks)
+        .onChange(of: idle) { _, isIdle in
+            if !isIdle { quickFocus = nil }
+        }
         .onChange(of: query) {
+            quickFocus = nil
             sel = 0
             filter = nil
             // Typed more after Enter: that Enter belonged to the old text, drop it.
@@ -426,15 +432,23 @@ struct SpotlightLauncherView: View {
     }
 
     private func quickButton(_ item: SpotlightQuickItem, index: Int) -> some View {
-        Button {
+        let focused = quickFocus == index
+        let shape = RoundedRectangle(cornerRadius: themeStore.settings.cornerRadius(side: Metric.quickSize), style: .continuous)
+        return Button {
+            quickFocus = nil
             toggleBrowse(item.kind)
         } label: {
             Image(systemName: item.icon)
-                .font(.system(size: 21, weight: .regular))
-                .foregroundStyle(browse == item.kind ? HierarchicalShapeStyle.primary : .secondary)
+                .font(.system(size: 21, weight: focused ? .semibold : .regular))
+                .foregroundStyle(browse == item.kind || focused ? HierarchicalShapeStyle.primary : .secondary)
                 .modifier(SpotlightPopIn(animation: reduceMotion ? nil : motion(SpotlightMotion.quickIcon(index))))
                 .frame(width: Metric.quickSize, height: Metric.quickSize)
-                .contentShape(RoundedRectangle(cornerRadius: themeStore.settings.cornerRadius(side: Metric.quickSize), style: .continuous))
+                .contentShape(shape)
+                // Tab focus (idle only): a soft fill + ring, like the selected row.
+                .background(shape.fill(palette.pillOn).opacity(focused ? 1 : 0))
+                .overlay(shape.strokeBorder(Color.primary.opacity(focused ? 0.35 : 0), lineWidth: 1.5))
+                .scaleEffect(focused ? 1.06 : 1)
+                .animation(motion(SpotlightMotion.chip), value: focused)
         }
         .buttonStyle(.plain)
         .spotlightGlass(
@@ -619,7 +633,7 @@ struct SpotlightLauncherView: View {
                         }
                         .id(kind.rawValue)
                     }
-                    ForEach(SpotlightKind.modeTabs) { tab in
+                    ForEach(shownModeTabs) { tab in
                         pillButton(label: tab.tabLabel, active: browse == tab) {
                             toggleBrowse(tab)
                         }
@@ -645,6 +659,12 @@ struct SpotlightLauncherView: View {
 
     private static let allPillID = "pill-all"
 
+    /// Tool tab pills: the visible ones, plus a hidden tab while it is open (from a round
+    /// button or a command) so the row still shows where you are.
+    private var shownModeTabs: [SpotlightKind] {
+        SpotlightKind.modeTabs.filter { SpotlightKind.visibleModeTabs.contains($0) || $0 == browse }
+    }
+
     /// Tab / Shift+Tab: move to the next / previous pill (All → Applications → … → tools → OCR → All).
     /// Landing on OCR or a tool switches to its search; leaving goes back to the name search.
     private func cycleFilter(_ step: Int) {
@@ -652,12 +672,13 @@ struct SpotlightLauncherView: View {
         // collapsed but `all` still holds the old results (kept so they fade out), and their
         // groups would otherwise be invisible stops: Tab seemed to do nothing for a few presses.
         let groups = expanded && !inModeTab ? kinds : []
-        let options: [SpotlightKind?] = [nil] + groups + SpotlightKind.modeTabs.map(Optional.some)
+        let options: [SpotlightKind?] = [nil] + groups + SpotlightKind.visibleModeTabs.map(Optional.some)
         let current = inModeTab ? (options.firstIndex(of: browse) ?? 0) : (options.firstIndex(of: filter) ?? 0)
         let next = options[(current + step + options.count) % options.count]
         if let next, SpotlightKind.modeTabs.contains(next) {
             filter = nil
-            withAnimation(motion(SpotlightMotion.chip)) { scope = nil; browse = next }
+            // A Lumio tab replaces a search tag chip (GitHub, YouTube…): never both at once.
+            withAnimation(motion(SpotlightMotion.chip)) { scope = nil; tagStack = []; browse = next }
         } else {
             if inModeTab { leaveModeTab() }
             filter = next
@@ -682,6 +703,7 @@ struct SpotlightLauncherView: View {
             scope = nil
             activeCommand = nil
             filter = nil
+            if tab != nil { tagStack = [] }  // a Lumio tab replaces a search tag chip
             browse = tab
         }
         query = text
@@ -2198,6 +2220,12 @@ struct SpotlightLauncherView: View {
 
     /// Enter.
     private func activate() {
+        // Idle with a round button focused by Tab: open that one.
+        if idle, let index = quickFocus, Self.quickItems.indices.contains(index) {
+            quickFocus = nil
+            toggleBrowse(Self.quickItems[index].kind)
+            return
+        }
         // Results for the latest text haven't arrived: wait, then open, so we don't open a stale row.
         if searchTask != nil {
             activateWhenReady = true
@@ -2386,6 +2414,7 @@ struct SpotlightLauncherView: View {
         withAnimation(motion(SpotlightMotion.chip)) {
             scope = nil
             browse = (browse == kind) ? nil : kind
+            if browse != nil { tagStack = [] }  // a Lumio tab replaces a search tag chip
         }
         focusField()
     }
@@ -2413,6 +2442,11 @@ struct SpotlightLauncherView: View {
     /// Escape always closes the launcher, even inside a mode (Clipboard, Dictionary, …).
     /// ⌫ on an empty field still leaves the mode without closing.
     private func handleEscape() {
+        // Esc first drops the Tab focus on a round button, then closes.
+        if quickFocus != nil {
+            quickFocus = nil
+            return
+        }
         hide()
     }
 
@@ -2474,6 +2508,14 @@ struct SpotlightLauncherView: View {
         case KeyCode.tab:
             // `yt` + Tab → YouTube search tag. Otherwise Tab cycles the filter pills as before.
             if !flags.contains(.shift), enterTag() { return true }
+            // Idle (the round buttons are out): Tab walks field → buttons → field, Enter opens one.
+            if idle, query.isEmpty {
+                let stops = Self.quickItems.count + 1  // + the field itself
+                let current = quickFocus.map { $0 + 1 } ?? 0
+                let next = (current + (flags.contains(.shift) ? -1 : 1) + stops) % stops
+                quickFocus = next == 0 ? nil : next - 1
+                return true
+            }
             cycleFilter(flags.contains(.shift) ? -1 : 1)
             return true
         case Self.backspaceKeyCode where flags.isEmpty:
@@ -2638,6 +2680,7 @@ struct SpotlightLauncherView: View {
             showingSuggestions = false
             expanded = false
             idle = false
+            quickFocus = nil
             launching = false
             toastMsg = nil
             resizeDelay = 0

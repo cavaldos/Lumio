@@ -41,4 +41,38 @@ nonisolated enum TabOrder {
         order.insert(code, at: to)
         return order
     }
+
+    // MARK: Hidden tabs (`tab_hidden=process,translation`)
+
+    static let hiddenConfigKey = "tab_hidden"
+
+    /// Known, unique codes only. Hidden tabs leave the pill row and the Tab cycle; they can still
+    /// be opened from a round button or a command.
+    static func normalizedHidden(_ codes: [String]) -> [String] {
+        var seen = Set<String>()
+        return codes
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { defaultCodes.contains($0) && seen.insert($0).inserted }
+    }
+
+    static func parseHidden(_ raw: String) -> [String] {
+        normalizedHidden(raw.split(separator: ",").map(String.init))
+    }
+
+    static func renderHidden(_ codes: [String]) -> String {
+        normalizedHidden(codes).joined(separator: ",")
+    }
+
+    /// The tabs shown in the launcher, in order.
+    static func visible(order: [String], hidden: [String]) -> [String] {
+        let hide = Set(normalizedHidden(hidden))
+        return normalized(order).filter { !hide.contains($0) }
+    }
+
+    /// `hidden` with `code` shown (`show`) or hidden.
+    static func setting(_ code: String, shown show: Bool, in hidden: [String]) -> [String] {
+        var out = normalizedHidden(hidden).filter { $0 != code }
+        if !show, defaultCodes.contains(code) { out.append(code) }
+        return out
+    }
 }

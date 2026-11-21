@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// The pages of the Settings window, listed in its sidebar (like Fluent Search's settings).
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, search, appearance, indexing, shortcuts, tabs, clipboard, translation, about
+    case general, search, appearance, indexing, shortcuts, tabs, clipboard, translation
 
     var id: String { rawValue }
 
@@ -18,7 +18,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .tabs: "Tabs"
         case .clipboard: "Clipboard"
         case .translation: "Translation"
-        case .about: "About"
         }
     }
 
@@ -32,7 +31,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .tabs: "rectangle.3.group.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .translation: "globe"
-        case .about: "info.circle.fill"
         }
     }
 
@@ -47,22 +45,20 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .tabs: Color(nsColor: .systemPurple)
         case .clipboard: Color(nsColor: .systemYellow)
         case .translation: Color(nsColor: .systemGreen)
-        case .about: Color(nsColor: .systemPink)
         }
     }
 
     /// Words "Search settings" matches, beyond the page's own title: its rows.
     var keywords: String {
         switch self {
-        case .general: "launch at login startup log level config file reset"
+        case .general: "launch at login startup log level config file reset about version update check"
         case .search: "file manager finder explorer open folders external drives ssd usb suggestions empty recent web google"
         case .appearance: "corner radius liquid glass blur theme look"
         case .indexing: "scan scope depth limit lazy folders skipped extra index files everything"
         case .shortcuts: "hotkey keyboard key combination launcher clipboard quick look"
-        case .tabs: "tab order clipboard dictionary translate processes ocr"
+        case .tabs: "tab order hide show hidden round buttons bubbles idle clipboard dictionary translate processes ocr"
         case .clipboard: "clipboard history clips images keep limit"
         case .translation: "languages translate dictionary"
-        case .about: "version update check"
         }
     }
 }

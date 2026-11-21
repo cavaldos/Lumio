@@ -58,6 +58,36 @@ enum SpotlightKind: String, CaseIterable, Identifiable {
         TabOrder.normalized(ThemeStore.shared.settings.tabOrder).compactMap(SpotlightKind.init(rawValue:))
     }
 
+    /// `modeTabs` minus the ones hidden in Settings (`tab_hidden`): the pill row and the Tab cycle.
+    static var visibleModeTabs: [SpotlightKind] {
+        let settings = ThemeStore.shared.settings
+        return TabOrder.visible(order: settings.tabOrder, hidden: settings.hiddenTabs)
+            .compactMap(SpotlightKind.init(rawValue:))
+    }
+
+    /// SF Symbol of the idle bar's round button for this feature.
+    var quickIcon: String {
+        switch self {
+        case .app: "square.grid.2x2"
+        case .folder: "folder"
+        case .doc: "doc.text"
+        case .content: "text.viewfinder"
+        case .clip: "doc.on.clipboard"
+        case .lookup: "character.book.closed"
+        case .translation: "translate"
+        case .process: "cpu"
+        default: "circle"
+        }
+    }
+
+    /// Name of the round button / tab for this feature (Settings, tooltips).
+    var quickLabel: String {
+        switch self {
+        case .lookup, .translation: tabLabel
+        default: label
+        }
+    }
+
     var tabLabel: String {
         switch self {
         case .lookup: "Dictionary"

@@ -30,9 +30,6 @@ extension ThemeSettingsView {
                     case .tabs: tabsSection
                     case .clipboard: clipboardSection
                     case .translation: translationSection
-                    case .about:
-                        aboutSection
-                            .id(Self.aboutAnchorID)
                     }
                 }
                 .padding(.bottom, 8)
@@ -189,6 +186,10 @@ extension ThemeSettingsView {
         SettingsCard {
             tabOrderRow
         }
+        SettingsSectionTitle("Round buttons")
+        SettingsCard {
+            quickBubblesRow
+        }
     }
 
     @ViewBuilder
@@ -251,6 +252,12 @@ extension ThemeSettingsView {
 
     @ViewBuilder
     private var generalSection: some View {
+        SettingsSectionTitle("About")
+        SettingsCard {
+            AppUpdateStatusView(themeStore: themeStore)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+        }
         SettingsSectionTitle("Startup")
         SettingsCard {
             SettingsToggleRow(
@@ -349,15 +356,17 @@ extension ThemeSettingsView {
         }
     }
 
-    static let aboutAnchorID = "lumio-about-section"
-
     /// The launcher's tool tabs in their current order, each with arrows to move it.
     var tabOrderRow: some View {
         let order = TabOrder.normalized(settings.tabOrder)
-        return SettingsRow("Tab order", icon: "rectangle.3.group", detail: "Order of the tabs after All in the launcher") {
-            if order != TabOrder.defaultCodes {
+        return SettingsRow(
+            "Tab order", icon: "rectangle.3.group",
+            detail: "Order of the tabs after All in the launcher. The eye hides a tab from the pill row and from Tab"
+        ) {
+            if order != TabOrder.defaultCodes || !settings.hiddenTabs.isEmpty {
                 Button("Reset") {
                     settings.tabOrder = TabOrder.defaultCodes
+                    settings.hiddenTabs = []
                 }
             }
         } below: {
@@ -370,7 +379,8 @@ extension ThemeSettingsView {
     }
 
     private func tabOrderChip(code: String, isFirst: Bool, isLast: Bool) -> some View {
-        HStack(spacing: 4) {
+        let shown = !settings.hiddenTabs.contains(code)
+        return HStack(spacing: 4) {
             tabOrderArrow("chevron.left", disabled: isFirst) {
                 settings.tabOrder = TabOrder.moving(code, by: -1, in: settings.tabOrder)
             }
@@ -378,8 +388,82 @@ extension ThemeSettingsView {
                 .lineLimit(1)
                 .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .semibold))
                 .foregroundStyle(themeStore.fontColor())
+                .strikethrough(!shown)
+                .opacity(shown ? 1 : 0.45)
+                // The chips share the row, so long names get cut: hover shows the whole name.
+                .help(SpotlightKind(rawValue: code)?.tabLabel ?? code)
+            tabOrderArrow(shown ? "eye" : "eye.slash", disabled: false) {
+                settings.hiddenTabs = TabOrder.setting(code, shown: !shown, in: settings.hiddenTabs)
+            }
+            .help(shown ? "Hide this tab" : "Show this tab")
             tabOrderArrow("chevron.right", disabled: isLast) {
                 settings.tabOrder = TabOrder.moving(code, by: 1, in: settings.tabOrder)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(
+            themeStore.liftColor(opacity: Self.activeFillOpacity),
+            in: RoundedRectangle(cornerRadius: themeStore.controlRadius, style: .continuous)
+        )
+    }
+
+    /// The idle bar's round buttons: what each one opens (menu) and their order (arrows).
+    var quickBubblesRow: some View {
+        let slots = QuickBubbles.normalized(settings.quickBubbles)
+        return SettingsRow(
+            "Round buttons", icon: "circle.grid.2x2",
+            detail: "What the 4 buttons beside the empty search bar open, in order (⌘1-⌘4)"
+        ) {
+            if slots != QuickBubbles.defaultCodes {
+                Button("Reset") {
+                    settings.quickBubbles = QuickBubbles.defaultCodes
+                }
+            }
+        } below: {
+            HStack(spacing: 8) {
+                ForEach(Array(slots.enumerated()), id: \.offset) { index, code in
+                    quickBubbleChip(slot: index, code: code, isLast: index == slots.count - 1)
+                }
+            }
+        }
+    }
+
+    private func quickBubbleChip(slot: Int, code: String, isLast: Bool) -> some View {
+        let kind = SpotlightKind(rawValue: code)
+        return HStack(spacing: 4) {
+            tabOrderArrow("chevron.left", disabled: slot == 0) {
+                settings.quickBubbles = QuickBubbles.moving(slot: slot, by: -1, in: settings.quickBubbles)
+            }
+            Menu {
+                ForEach(QuickBubbles.choices, id: \.self) { choice in
+                    let option = SpotlightKind(rawValue: choice)
+                    Button {
+                        settings.quickBubbles = QuickBubbles.setting(slot: slot, to: choice, in: settings.quickBubbles)
+                    } label: {
+                        Label(option?.quickLabel ?? choice, systemImage: choice == code ? "checkmark" : (option?.quickIcon ?? "circle"))
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: kind?.quickIcon ?? "circle")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(kind?.quickLabel ?? code)
+                        .lineLimit(1)
+                        .font(themeStore.uiFont(size: CGFloat(AppConstants.ThemeUI.fontSize - 2), weight: .semibold))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(themeStore.secondaryTextColor())
+                }
+                .foregroundStyle(themeStore.fontColor())
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("⌘\(slot + 1): \(kind?.quickLabel ?? code) (click to change)")
+            tabOrderArrow("chevron.right", disabled: isLast) {
+                settings.quickBubbles = QuickBubbles.moving(slot: slot, by: 1, in: settings.quickBubbles)
             }
         }
         .padding(.horizontal, 6)
@@ -463,17 +547,6 @@ extension ThemeSettingsView {
         }
         // Keep the catalog's display order.
         settings.translationLanguages = TranslationLanguage.supported.map(\.code).filter(next.contains)
-    }
-
-    var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SettingsSectionTitle("About")
-            SettingsCard {
-                AppUpdateStatusView(themeStore: themeStore)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-            }
-        }
     }
 
     func selectExcludedFolderPath() {
