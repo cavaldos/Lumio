@@ -87,20 +87,6 @@ nonisolated struct TranslationLanguage: Hashable, Identifiable, Sendable {
     }
 }
 
-nonisolated struct TextTranslation: Equatable, Sendable {
-    enum Engine: Equatable, Sendable {
-        /// Apple Translation, on-device.
-        case apple
-        /// Google, online (fallback).
-        case google
-        /// Already in the target language: the text as typed.
-        case unchanged
-    }
-
-    let text: String
-    let engine: Engine
-}
-
 nonisolated enum TextTranslator {
     /// Language of `text`, nil when it can't be told. Short text leans towards `likely`
     /// (the languages chosen in Settings, most likely first): a single word is ambiguous
@@ -127,6 +113,8 @@ nonisolated enum TextTranslator {
     }
 
     /// Translates `text` (written in `source`, nil = unknown) into `target`. nil when every engine failed.
+    /// A text already translated this session comes from `TranslationCache`: reopening the
+    /// launcher on the same text, or typing it again, must not call the API again.
     static func translate(
         _ text: String,
         from source: Locale.Language?,
@@ -137,8 +125,12 @@ nonisolated enum TextTranslator {
         if let source, target.matches(source) {
             return TextTranslation(text: text, engine: .unchanged)
         }
+        let key = TranslationCache.key(text, sourceID: source?.minimalIdentifier, targetCode: target.code)
+        if let cached = TranslationCache.shared.get(key) { return cached }
         if let source, let translated = await translateOnDevice(text, from: source, to: target.locale) {
-            return TextTranslation(text: translated, engine: .apple)
+            let result = TextTranslation(text: translated, engine: .apple)
+            TranslationCache.shared.set(key, result)
+            return result
         }
         guard !Task.isCancelled else { return nil }
         // The bridge call blocks on the network: keep it off the caller's thread.
@@ -146,7 +138,32 @@ nonisolated enum TextTranslator {
             EngineBridge.shared.translate(text: text, targetLang: target.googleCode)?.translated
         }.value
         guard let online = nonEmpty(online) else { return nil }
-        return TextTranslation(text: online, engine: .google)
+        let result = TextTranslation(text: online, engine: .google)
+        // Only successes are kept: a failure (offline, rate limit) is retried next time.
+        TranslationCache.shared.set(key, result)
+        return result
+    }
+
+    /// Every target's translation when all of them are known without any work (cached, or the
+    /// text is already in that language); nil as soon as one would need an engine.
+    static func cachedTranslations(
+        _ text: String,
+        from source: Locale.Language?,
+        to targets: [TranslationLanguage]
+    ) -> [String: TextTranslation]? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        var results: [String: TextTranslation] = [:]
+        for target in targets {
+            if let source, target.matches(source) {
+                results[target.code] = TextTranslation(text: text, engine: .unchanged)
+            } else if let cached = TranslationCache.shared.get(TranslationCache.key(text, sourceID: source?.minimalIdentifier, targetCode: target.code)) {
+                results[target.code] = cached
+            } else {
+                return nil
+            }
+        }
+        return results
     }
 
     /// Apple Translation, only when both languages are already downloaded (never prompts).
@@ -172,3 +189,4 @@ nonisolated enum TextTranslator {
         return trimmed
     }
 }
+

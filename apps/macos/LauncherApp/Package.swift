@@ -33,6 +33,7 @@ let package = Package(
                 "Support/DelayedAction.swift",
                 "Support/RowIconCache.swift",
                 "Support/Launcher/SelectionApplyGuard.swift",
+                "Support/Launcher/TranslationCache.swift",
             ]
         ),
         .testTarget(

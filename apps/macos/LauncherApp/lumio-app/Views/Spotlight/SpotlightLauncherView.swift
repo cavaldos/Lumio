@@ -1034,6 +1034,19 @@ struct SpotlightLauncherView: View {
         guard !rows.isEmpty else { return }
 
         let targets = rows.compactMap { TranslationLanguage.named($0.payload) }
+        // Already translated (reopened on the same text, or typed it again): show it now,
+        // with no debounce, no "Translating…" flash and no API call.
+        if let cached = TextTranslator.cachedTranslations(text, from: source, to: targets) {
+            searchTask?.cancel()
+            searchTask = nil
+            translation.results = cached
+            translation.isTranslating = false
+            if activateWhenReady {
+                activateWhenReady = false
+                activate()
+            }
+            return
+        }
         searchTask = Task { @MainActor in
             if debounce > .zero {
                 try? await Task.sleep(for: debounce)
