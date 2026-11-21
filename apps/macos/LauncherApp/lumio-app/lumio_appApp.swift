@@ -88,13 +88,13 @@ struct lumio_appApp: App {
                     + "\(BrowserKeywords.all().count) saved search engines")
                 // The suggestion request, run from inside the app (blocks this short-lived process).
                 let done = DispatchSemaphore(value: 0)
-                nonisolated(unsafe) var outcome = "no answer in 8 s"
+                let answer = DiagnosisAnswer()
                 Task.detached {
-                    outcome = await WebSuggestions.diagnose(term)
+                    answer.set(await WebSuggestions.diagnose(term))
                     done.signal()
                 }
                 _ = done.wait(timeout: .now() + 8)
-                lines.append("web suggestions: \(outcome)")
+                lines.append("web suggestions: \(answer.value)")
                 lines.append("web_suggestions mode: \(WebSuggestions.mode.rawValue)")
             }
             lines.append("window search (Accessibility): \(AccessibilityAccess.summary(AccessibilityAccess.check()))")
@@ -247,4 +247,15 @@ struct lumio_appApp: App {
             }
         }
     }
+}
+
+/// One answer written by a detached task and read by the thread that waits for it.
+/// The semaphore orders the write before the read, so the lock is only belt and braces.
+nonisolated private final class DiagnosisAnswer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = "no answer in 8 s"
+
+    var value: String { lock.withLock { text } }
+
+    func set(_ newValue: String) { lock.withLock { text = newValue } }
 }
