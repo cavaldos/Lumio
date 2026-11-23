@@ -2,7 +2,7 @@
     <img src="apps/macos/LauncherApp/lumio-app/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width=160 height=160>
     <h1>Lumio</h1>
     <p><strong>A fast, free and open-source keyboard launcher for macOS.</strong></p>
-    <p>Press <code>Option+Space</code> and get results as you type. A Rust core searches apps, files, folders, clipboard history and text inside images and PDFs (OCR) in milliseconds, behind a native SwiftUI interface. Everything runs locally on your Mac.</p>
+    <p>Press <code>Option+Space</code> to find apps, files, browser tabs and more. Lumio combines a Rust search index, macOS Spotlight and on-device OCR in a native SwiftUI launcher, with Fluent Search–inspired tags and actions.</p>
     <p>A fork of <a href="https://github.com/kunkka19xx/look"><strong>kunkka19xx/look</strong></a>. Huge thanks to <a href="https://github.com/kunkka19xx">kunkka19xx</a> for the original work this project builds on.</p>
 </div>
 
@@ -126,9 +126,13 @@ rm -rf ~/.lumio "$HOME/Library/Application Support/lumio"
 | Actions for the selected item | `Cmd+K` |
 | Move to Trash (delete a clip in clipboard mode) | `Cmd+D` |
 | Hide the selected app from results | `Cmd+Shift+H` |
-| Browse Applications / Folders / Documents / OCR | `Cmd+1` … `Cmd+4` |
+| Browse launcher tabs | `Cmd+1` … `Cmd+4` (depends on tab order) |
 | Search tag (`yt`, `g`, `drive`, `gh`…) | type keyword, then `Tab` |
+| Browse search tags | `Option+T` |
 | Cycle result filters | `Tab` / `Shift+Tab` |
+| Pin / unpin a result | `Cmd+Shift+P` |
+| Quick Look preview | `Shift+Enter` / `Cmd+Y` |
+| Cycle sort order | `Option+S` |
 | Command mode | `Cmd+/` |
 | Help | `Cmd+H` |
 | Close | `Esc` |
@@ -137,20 +141,44 @@ Select a word in any app before pressing `Option+Space` and Lumio opens straight
 
 **OCR tab.** Find images and PDFs by the text *inside* them, not just their name. It is the last tab; reading the files runs in a separate process that starts only when you open it, so Lumio itself stays light. See [OCR search](assets/docs/ocr-search.md).
 
-**Search tags, files, tabs and suggestions** (Fluent Search–style). Type `yt` and press `Tab` to search YouTube directly, or `drive` + `Tab` to see your open Drive tabs and recent docs. File tags work the same way: `downloads` + `Tab`, `pdf` + `Tab`, or any folder path + `Tab`, and they stack. File results include matches from anywhere on the Mac. Folders can open in your own file manager (`file_manager=`). Open tabs in Safari, Chrome, Arc, Brave and Edge show up in results, and `Enter` switches to the tab instead of opening a new one. The empty field lists your recent apps and files. See [Search tags](assets/docs/search-tags.md).
+### Fluent Search–inspired search
 
-**Commands.** Type `:` or press `Cmd+/`: `:kill <name, PID or port>`, `:emptytrash`, `:help`.
+Lumio combines its own fuzzy index with macOS Spotlight: the latter adds matches from your home folder, iCloud Drive and indexed external drives. Search results can include browser bookmarks, history, open tabs and windows. Results learn from what you open; the detail pane offers previews, file actions and clickable tags. Drag files or links out to other apps.
+
+Type a tag and press `Tab` to narrow a search. Tags can be stacked, and `Option+T` opens the tag browser:
+
+```text
+yt Tab lofi beats          Search YouTube
+pdf Tab contract           Find PDFs by name
+downloads Tab pdf Tab      Find PDFs in Downloads
+~/Projects Tab             Search a specific folder
+content Tab invoice        Search document text via Spotlight
+windows Tab                List open windows
+```
+
+`content` searches Spotlight's text index; the **OCR** tab separately finds text in images and scanned PDFs. Open browser tabs switch to the existing tab with `Enter`. You can pin results to Home with `Cmd+Shift+P` and optionally enable recent apps and files in Settings → General → **Suggestions when empty**. Choose Finder or another file manager in Settings → General.
+
+See [Search tags, browser tabs and suggestions](assets/docs/search-tags.md) for supported browsers, custom tags, shortcuts and configuration.
+
+**Commands and conversions.** Type `:` or press `Cmd+/` for `:kill <name, PID or port>`, `:emptytrash` and `:help`. Type `> npm run dev` to run a terminal command, or enter conversions such as `5 km to miles` and `100 usd to gbp`.
 
 ## Configuration
 
-Settings live in `~/.lumio/config`, created on first launch: which folders to index, scan depth and limits, ignore patterns, search aliases (`alias_code=Visual Studio Code|Cursor|Zed`), OCR search, the order of the launcher tabs (`tab_order`), clipboard history size, and the editor and terminal behind `Cmd+E` / `Cmd+T`. Change them from Settings (`Cmd+Shift+Space`), or edit the file and press `Cmd+Shift+;` to reload.
+Settings live in `~/.lumio/config`, created on first launch. Use Settings (`Cmd+Shift+Space`) to configure indexing, skipped folders, search, shortcuts and your file manager. After choosing a skipped folder, click **Save Config**; it and its contents are excluded from Lumio file search. You can also edit the config file and press `Cmd+Shift+;` to reload.
+
+Other options include scan depth and limits, ignore patterns, search aliases, OCR, tab order, clipboard history, custom search tags, web suggestions and the editor and terminal used by `Cmd+E` / `Cmd+T`.
 
 ## Permissions
 
-Lumio works without any special permission. Two are asked for only when you use the feature:
+Most features work without special permissions. macOS may request access when you use these features:
 
-- **Accessibility**: to read the selected word for a dictionary lookup.
-- **Automation (Finder)**: to empty the Trash, which macOS protects.
+- **Accessibility**: read selected text and list or switch to open windows.
+- **Automation**: access open tabs in each supported browser, or empty the Trash via Finder.
+- **Full Disk Access**: read Safari bookmarks and history. Other features continue to work without it.
+
+## Privacy and network access
+
+File indexing, OCR and clipboard history run locally. Browser bookmarks and history are read from local browser data. Web suggestions are enabled by default and send the typed query to Google's suggestion service; set `web_suggestions=tags` to limit them to web tags, or `web_suggestions=off` to disable them. Currency conversion downloads public exchange rates, and search-tag icons may be fetched from Google's icon service. Updates and web searches also use the network.
 
 ## Documentation
 
