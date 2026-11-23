@@ -131,22 +131,25 @@ nonisolated enum SpotlightFiles {
 
     /// Files matching `term`, from the Spotlight queue. Empty when the calling task is
     /// cancelled first (the text changed).
-    static func search(term: String, scope: FileScope?, limit: Int) async -> [FileHit] {
+    static func search(term: String, scope: FileScope?, limit: Int, excluding skippedFolders: [String]) async -> [FileHit] {
         await SpotlightQueue.run(skipped: []) { isCancelled in
-            blockingSearch(term: term, scope: scope, limit: limit, isCancelled: isCancelled)
+            blockingSearch(term: term, scope: scope, limit: limit, excluding: skippedFolders, isCancelled: isCancelled)
         }
     }
 
     /// One or two Spotlight queries, each blocking until Spotlight answers. Only ever called
     /// on `SpotlightQueue`.
     private static func blockingSearch(
-        term: String, scope: FileScope?, limit: Int, isCancelled: () -> Bool
+        term: String, scope: FileScope?, limit: Int, excluding skippedFolders: [String], isCancelled: () -> Bool
     ) -> [FileHit] {
         let (words, typedExtensions) = parse(term)
         let scope = scope ?? FileScope()
         // No folder asked for: the home folder plus any plugged-in drives.
-        let folders = scope.folders.isEmpty ? [NSHomeDirectory()] + ExternalDrives.searchPaths : scope.folders
         let insideUserFolders = scope.folders.isEmpty
+        let folders = (insideUserFolders ? [NSHomeDirectory()] + ExternalDrives.searchPaths : scope.folders)
+            .filter { !ContentIndexConfig.isExcluded($0, by: skippedFolders) }
+        // An explicitly skipped scope must not fall back to a whole-Mac search.
+        guard !folders.isEmpty else { return [] }
 
         // `content` tag: the words must appear inside the document (word starts), not in its name.
         if scope.contentSearch, words.isEmpty { return [] }
@@ -195,7 +198,8 @@ nonisolated enum SpotlightFiles {
         let home = NSHomeDirectory()
         let needle = words.joined(separator: " ")
         return hits
-            .filter { isUserFile($0.path, home: home, strict: insideUserFolders) }
+            .filter { isUserFile($0.path, home: home, strict: insideUserFolders)
+                && !ContentIndexConfig.isExcluded($0.path, by: skippedFolders) }
             // Code and config files last (unless an extension was asked for, e.g. "align.ts").
             .map { hit in
                 (hit, nameScore(hit.name.lowercased(), needle: needle, words: words)

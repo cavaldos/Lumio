@@ -59,6 +59,16 @@ final class ContentIndexConfigTests: XCTestCase {
         XCTAssertTrue(config.skipDirNames.contains("node_modules"))
     }
 
+    func testSkippedFolderMatchesNestedPathsButNotSimilarlyNamedSiblings() {
+        let folders = ["/Users/test/Documents/private"]
+        XCTAssertTrue(ContentIndexConfig.isExcluded("/Users/test/Documents/private/", by: folders))
+        XCTAssertTrue(ContentIndexConfig.isExcluded("/Users/test/Documents/private/sub/report.pdf", by: folders))
+        XCTAssertFalse(ContentIndexConfig.isExcluded("/Users/test/Documents/private-work/report.pdf", by: folders))
+        XCTAssertFalse(ContentIndexConfig.isExcluded("/Users/test/Documents/private/../public/report.pdf", by: folders))
+        XCTAssertTrue(ContentIndexConfig.isExcluded("/Users/test/Documents/file.pdf", by: ["/"]))
+        XCTAssertFalse(ContentIndexConfig.isExcluded("/Users/test/Documents/file.pdf", by: []))
+    }
+
     func testReadsTheFileIndexKeysAndItsOwn() {
         let config = ContentIndexConfig.from(keyValues: [
             "content_index_enabled": "false",

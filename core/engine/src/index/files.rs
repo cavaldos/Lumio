@@ -200,7 +200,7 @@ fn should_skip_dir(name: &str, skip_dir_names: &[String]) -> bool {
     skip_dir_names.iter().any(|entry| entry == &lower)
 }
 
-fn should_exclude_path(path: &str, file_exclude_paths: &[String]) -> bool {
+pub(crate) fn should_exclude_path(path: &str, file_exclude_paths: &[String]) -> bool {
     file_exclude_paths.iter().any(|entry| {
         let normalized_exclude = entry.trim();
         if normalized_exclude.is_empty() {

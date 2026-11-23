@@ -4,6 +4,7 @@ mod apps;
 mod files;
 mod settings;
 
+pub(crate) use files::should_exclude_path;
 use lumio_indexing::{Candidate, CandidateIdKind};
 use std::collections::HashSet;
 use std::sync::mpsc;

@@ -80,9 +80,13 @@ impl QueryEngine {
     }
 
     pub fn new_with_config(candidates: Vec<Candidate>, config: &RuntimeConfig) -> Self {
-        // Build an in-memory search index up front (hot path reads only).
+        // Cached rows can predate the current exclusions. Drop them before ranking.
         let candidates = candidates
             .into_iter()
+            .filter(|candidate| {
+                !matches!(candidate.kind, CandidateKind::File | CandidateKind::Folder)
+                    || !index::should_exclude_path(&candidate.path, &config.file_exclude_paths)
+            })
             .map(IndexedCandidate::new)
             .collect();
         let search_aliases = config.search_aliases.clone();
@@ -414,6 +418,44 @@ mod tests {
         let mut c = Candidate::new(id, CandidateKind::File, name, path);
         c.fs_modified_at_unix_s = Some(modified);
         c
+    }
+
+    #[test]
+    fn skipped_folders_hide_cached_files_and_folders_from_search() {
+        let config = RuntimeConfig {
+            file_exclude_paths: vec!["/Users/u/Documents/private".into()],
+            ..RuntimeConfig::default()
+        };
+        let engine = QueryEngine::new_with_config(
+            vec![
+                Candidate::new(
+                    "folder:private",
+                    CandidateKind::Folder,
+                    "private",
+                    "/Users/u/Documents/private",
+                ),
+                file_candidate(
+                    "file:hidden",
+                    "report.pdf",
+                    "/Users/u/Documents/private/sub/report.pdf",
+                    2,
+                ),
+                file_candidate(
+                    "file:visible",
+                    "report.pdf",
+                    "/Users/u/Documents/private-work/report.pdf",
+                    1,
+                ),
+            ],
+            &config,
+        );
+        assert!(engine.search("d\"private", 10).is_empty());
+        let results = engine.search("report", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "file:visible");
+        let results = engine.search_files(&FileFilter::default(), 10).results;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "file:visible");
     }
 
     #[test]

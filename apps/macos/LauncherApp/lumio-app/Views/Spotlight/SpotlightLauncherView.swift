@@ -318,6 +318,12 @@ struct SpotlightLauncherView: View {
         }
         // Entering / leaving actions (⌘K) or a search tag (⇥ / ⌫) re-runs the search.
         .onChange(of: chipKey) { refresh() }
+        .onChange(of: themeStore.excludedFolderPaths) {
+            guard isOpen, !dismissing else { return }
+            all.removeAll(where: isSkippedFileRow)
+            sel = 0
+            refresh()
+        }
         .onChange(of: browse) { _, tab in
             sel = 0
             filter = nil
@@ -1102,10 +1108,11 @@ struct SpotlightLauncherView: View {
             // on the Mac (Spotlight), bookmarks and history (read like a browser extension would).
             let wantsExtras = request.browse == nil && urlQuery.count >= 3 && !urlQuery.hasPrefix(":")
                 && !urlQuery.hasPrefix(">")
+            let skippedFolders = themeStore.excludedFolderPaths
             // Spotlight answers on its own queue (see SpotlightQueue), the browsers are read meanwhile.
             let extrasTask: Task<SpotlightBackend.Extras, Never>? = wantsExtras
                 ? Task.detached(priority: .userInitiated) {
-                    async let files = SpotlightFiles.search(term: urlQuery, scope: nil, limit: 25)
+                    async let files = SpotlightFiles.search(term: urlQuery, scope: nil, limit: 25, excluding: skippedFolders)
                     let bookmarks = BrowserBookmarks.search(urlQuery, limit: 2)
                     let history = BrowserHistory.search(urlQuery, limit: 3)
                     let blocked = BrowserHistory.isBlocked()
@@ -1209,7 +1216,9 @@ struct SpotlightLauncherView: View {
             }
             if let scope = tag.files {
                 // File tag: files from anywhere on the Mac in that folder / of that kind.
-                let hits = await SpotlightFiles.search(term: term, scope: scope, limit: SpotlightBackend.resultLimit)
+                let hits = await SpotlightFiles.search(
+                    term: term, scope: scope, limit: SpotlightBackend.resultLimit, excluding: themeStore.excludedFolderPaths
+                )
                 guard !Task.isCancelled else { return }
                 searchTask = nil
                 let rows = SpotlightBackend.fileRows(hits)
@@ -1330,7 +1339,7 @@ struct SpotlightLauncherView: View {
             let pinnedTargets = Set(pinned.compactMap { $0.target?.lowercased() })
             let suggested = SpotlightBackend.suggestionRows(apps: recent.apps, files: recent.files)
                 .filter { !pinnedTargets.contains(($0.target ?? "").lowercased()) }
-            let rows = pinned + suggested
+            let rows = (pinned + suggested).filter { !isSkippedFileRow($0) }
             guard !rows.isEmpty else {
                 showingSuggestions = false
                 if expanded { setExpanded(false) }
@@ -1786,8 +1795,11 @@ struct SpotlightLauncherView: View {
                 try? await Task.sleep(for: debounce)
                 guard !Task.isCancelled else { return }
             }
+            let skippedFolders = themeStore.excludedFolderPaths
             let (hits, status) = await Task.detached(priority: .userInitiated) {
-                (ContentIndex.shared.search(term, limit: limit), ContentIndex.shared.status())
+                let hits = ContentIndex.shared.search(term, limit: limit)
+                    .filter { !ContentIndexConfig.isExcluded($0.path, by: skippedFolders) }
+                return (hits, ContentIndex.shared.status())
             }.value
             guard !Task.isCancelled else { return }
             searchTask = nil
@@ -2177,10 +2189,16 @@ struct SpotlightLauncherView: View {
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
-    /// Apps that can be uninstalled by moving them to the Trash: in an Applications folder,
-    /// not part of macOS, and not Lumio itself.
+    private func isSkippedFileRow(_ item: SpotlightItem) -> Bool {
+        guard item.kind == .doc || item.kind == .folder || item.kind == .content,
+              let path = item.target else { return false }
+        return ContentIndexConfig.isExcluded(path, by: themeStore.excludedFolderPaths)
+    }
+
     /// Shows the results. Expands the panel if it isn't already.
-    private func publish(_ rows: [SpotlightItem]) {
+    private func publish(_ candidates: [SpotlightItem]) {
+        // Cached index rows, pins and learned picks can outlive a config change.
+        let rows = candidates.filter { !isSkippedFileRow($0) }
         // The first results after the panel opens rise in one by one (SpotlightRiseIn). Later
         // ones, while typing, swap with a short spring: rows that stay slide to their new place,
         // new rows fade in, dropped rows vanish. Swapping instantly made the list flicker.

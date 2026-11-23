@@ -61,7 +61,10 @@ pub extern "C" fn lumio_reload_config() -> bool {
             return false;
         }
         state::refresh_engine_cache();
-        state::clear_index_dirty();
+        // The config may have added excluded/skipped folders. Rows already in the
+        // DB for them are only pruned by a walk, so ask for one (scoped to all
+        // sources) rather than declaring the index clean.
+        state::mark_index_dirty();
         true
     }))
     .unwrap_or(false)

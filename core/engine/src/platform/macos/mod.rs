@@ -375,7 +375,9 @@ mod tests {
 
         assert_eq!(titles.len(), 1);
         assert_eq!(
-            titles.get("test.lumio.settings-fixture").map(String::as_str),
+            titles
+                .get("test.lumio.settings-fixture")
+                .map(String::as_str),
             Some(LOCALIZED_FIXTURE_NAME)
         );
     }

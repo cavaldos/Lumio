@@ -79,7 +79,14 @@ nonisolated struct ContentIndexConfig: Equatable, Sendable {
 
     /// True when `path` is an excluded folder or inside one.
     func isExcluded(_ path: String) -> Bool {
-        excludedPaths.contains { path == $0 || path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+        Self.isExcluded(path, by: excludedPaths)
+    }
+
+    /// `folders` contains standardized absolute paths from the config or folder picker.
+    static func isExcluded(_ path: String, by folders: [String]) -> Bool {
+        guard !folders.isEmpty, path.hasPrefix("/") else { return false }
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        return folders.contains { path == $0 || path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
     }
 
     private static func parseBool(_ raw: String) -> Bool? {

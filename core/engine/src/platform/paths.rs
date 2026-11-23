@@ -67,8 +67,11 @@ impl PathPolicy {
             return false;
         }
 
-        let parent_prefix = format!("{normalized_parent}/");
-        normalized_path == normalized_parent || normalized_path.starts_with(parent_prefix.as_str())
+        normalized_path
+            .strip_prefix(normalized_parent.as_ref())
+            .is_some_and(|rest| {
+                rest.is_empty() || rest.starts_with('/') || normalized_parent == "/"
+            })
     }
 
     pub(crate) fn join(&self, base: &str, child: &str) -> String {
@@ -268,6 +271,15 @@ mod tests {
             "C:/Users/demo/Down",
             "C:/Users/demo/Downloads"
         ));
+    }
+
+    #[test]
+    fn posix_root_contains_absolute_paths() {
+        let policy = PathPolicy {
+            style: PathStyle::Posix,
+        };
+        assert!(policy.is_same_or_child("/Users/demo", "/"));
+        assert!(!policy.is_same_or_child("relative/path", "/"));
     }
 
     #[test]
